@@ -1,4 +1,8 @@
+﻿# AGENT.md — Wandr Coding Guardrails
 
+## Hard rules — never violate, never simplify away
+
+### Architecture
 - Router calls Service only. Service calls Repository only. Router never touches DB directly.
 - LLM calls happen ONLY through `src/core/llm/client.py`. Never import litellm, groq, or openai directly anywhere else.
 - Geo calls happen ONLY through `src/geo/`. Never call Nominatim, Overpass, or OSRM directly outside this module.
