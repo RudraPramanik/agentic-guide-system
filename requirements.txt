@@ -1,1 +1,2 @@
 ﻿pydantic-settings==2.3.0  # centralized env var parsing — step 0.2
+structlog  # structured logging — step 0.4
