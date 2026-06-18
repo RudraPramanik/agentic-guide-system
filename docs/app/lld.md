@@ -41,7 +41,7 @@ Router  →  Service  →  Repository  →  Database
 
 ## Pattern Catalog
 
-### Implemented (steps 0.1–0.7)
+### Implemented (steps 0.1–0.10)
 
 | Pattern | Location | Purpose |
 |---------|----------|---------|
@@ -53,6 +53,11 @@ Router  →  Service  →  Repository  →  Database
 | **Gateway** | `core/llm/client.py` | Only LLM entry point; LiteLLM + tenacity retry |
 | **Strategy** | `chat_completion(model=...)`, `chat_with_tools()` | Provider/model swappable via env vars |
 | **Response Envelope (lists)** | `PaginatedResponse[T]`, `paginate()` | Every list endpoint returns same pagination shape |
+| **Response Envelope (single)** | `ApiResponse[T]`, `ErrorResponse` | Success/error JSON shape for all endpoints |
+| **Exception Hierarchy** | `WandrError` tree in `core/exceptions.py` | Domain errors → `ErrorResponse` via global handler |
+| **App Factory** | `create_app()` in `main.py` | Decouples app creation from uvicorn execution; test client injection |
+| **Lifespan** | `@asynccontextmanager` in `main.py` | Startup: logging, DB ping (fail-fast), Qdrant ping (warn-only). Shutdown: flush tracer, dispose pool |
+| **Global Exception Handlers** | `main.py` | `WandrError` → status from exception; `RequestValidationError` → 422; `Exception` → 500 (no stack leak) |
 
 #### Step 0.4 — Logging design detail
 
@@ -136,13 +141,73 @@ async def list_places(params: PageParams = Depends()) -> PaginatedResponse[Place
 - `PaginatedResponse[T]` — callers pass only `items`, `total`, `page`, `size`; `pages`, `has_next`, `has_prev` auto-computed
 - `paginate(items, total, params)` — convenience wrapper for services/repos
 
+#### Step 0.8 — Response envelope design detail
+
+Module: `src/core/responses.py` — schema only, no logic.
+
+```python
+# Success (single resource)
+return ApiResponse(data=trip_out)
+
+# Error (global exception handler — step 0.10)
+return JSONResponse(
+    status_code=exc.status_code,
+    content=ErrorResponse(code=exc.code, message=exc.message, details=exc.details).model_dump(),
+)
+```
+
+- `ApiResponse[T]` — `success=True`, `data`, optional `message`
+- `ErrorResponse` — `success=False`, `code`, `message`, optional `details`
+- Lists use `PaginatedResponse[T]` (step 0.7); singles use `ApiResponse[T]`
+
+#### Step 0.9 — Exception hierarchy design detail
+
+Module: `src/core/exceptions.py`
+
+| Class | status | code | Raised by |
+|-------|--------|------|-----------|
+| `WandrError` | 500 | custom | Base — never raised directly |
+| `NotFoundError` | 404 | `not_found` | Services/repos |
+| `UnauthorizedError` | 401 | `unauthorized` | Auth middleware |
+| `ForbiddenError` | 403 | `forbidden` | Auth/ownership checks |
+| `ExternalServiceError` | 502 | `external_service_error` | Geo/search gateways |
+| `WandrLLMError` | 503 | `llm_unavailable` | `core/llm/client.py` only |
+
+All subclasses expose `status_code`, `code`, `message`, `details` — global handler maps these to `ErrorResponse`. `WandrLLMError` is caught in planner nodes, not routers.
+
+#### Step 0.10 — App factory design detail
+
+Module: `src/main.py` — **only FastAPI entry point**. `uvicorn src.main:app`.
+
+```python
+# Module level — uvicorn target
+app = create_app()
+
+# Lifespan startup (ordered)
+configure_logging()
+log.info("wandr.startup", env=..., version=...)
+await ping_db()          # failure → log critical + SystemExit(1)
+GET {QDRANT_URL}/healthz # failure → warning only, app continues
+
+# Lifespan shutdown
+flush_tracer()
+log.info("wandr.shutdown")
+await dispose_engine()
+```
+
+- `create_app()` → `FastAPI(title="Wandr API", version=APP_VERSION, lifespan=lifespan)`
+- Global handlers: `WandrError`, `RequestValidationError` (422), `Exception` (500, `exc_info=True` server-side)
+- `GET /api/v1/health` → `ApiResponse` with `status`, `env`, `version`; 503 `ErrorResponse` if DB ping fails at request time
+- Minimal async engine in `core/database/session.py` (`ping_db`, `dispose_engine`) — full `get_db()` Unit of Work in step 1.2
+- Qdrant startup check uses `httpx.AsyncClient` (import inside lifespan); 5s connect timeout
+- No router includes yet; no `X-Request-ID` middleware (step 1.8)
+
+Packages: `fastapi==0.137.1`, `uvicorn[standard]==0.49.0`, `sqlalchemy[asyncio]==2.0.51`, `asyncpg==0.31.0`
+
 ### Planned (upcoming steps)
 
 | Pattern | Location | Step |
 |---------|----------|------|
-| **Response Envelope** | `ApiResponse[T]`, `ErrorResponse` | 0.8 |
-| **Exception Hierarchy** | `WandrError` tree | 0.9 |
-| **App Factory** | `create_app()` in `main.py` | 0.10 |
 | **Generic Repository** | `BaseRepository[M, ID]` | 1.2 |
 | **Unit of Work** | Session per request | 1.2 |
 | **Cache-Aside** | Destinations, planner cache | P2+ |

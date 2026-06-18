@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # Core
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
+    APP_VERSION: str = "1.0.0"
     SECRET_KEY: str
 
     # Database

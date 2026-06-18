@@ -60,7 +60,7 @@ Domain Services          ← business logic, orchestration
 
 | Service | Image | Port | Purpose |
 |---------|-------|------|---------|
-| `wandr_postgres` | `postgis/postgis:16-3.4` | 5432 | PostgreSQL + PostGIS |
+| `wandr_postgres` | `postgis/postgis:16-3.4` | 5433 | PostgreSQL + PostGIS (host port 5433 avoids conflict with local Postgres on 5432) |
 | `wandr_qdrant` | `qdrant/qdrant:latest` | 6333/6334 | Vector search |
 
 Redis is feature-flagged off in dev (`REDIS_URL` empty → in-memory fallback).
@@ -125,6 +125,38 @@ Module: `src/core/pagination.py`
 - `paginate(items, total, params)` — builds response from repo results + params
 - No DB logic — routers/services pass `offset`/`size` to repos, wrap with `paginate()`
 
+### Response envelopes — step 0.8
+
+Module: `src/core/responses.py`
+
+- `ApiResponse[T]` — success wrapper: `success=True`, `data`, optional `message`
+- `ErrorResponse` — error wrapper: `success=False`, `code`, `message`, optional `details`
+- Every single-resource endpoint returns `ApiResponse[T]`; global handler returns `ErrorResponse` (wired in step 0.10)
+
+### Exception hierarchy — step 0.9
+
+Module: `src/core/exceptions.py`
+
+- `WandrError` base with `code`, `message`, `status_code`, `details`
+- Domain subclasses: `NotFoundError` (404), `UnauthorizedError` (401), `ForbiddenError` (403), `ExternalServiceError` (502), `WandrLLMError` (503)
+- `ExternalServiceError` auto-injects `service` into `details`
+- `WandrLLMError` raised only by LLM gateway; caught in planner nodes with fallbacks
+- Tests: `tests/core/test_exceptions.py`
+
+### FastAPI app — step 0.10
+
+Module: `src/main.py`
+
+- **App Factory:** `create_app() → FastAPI`; module-level `app = create_app()` for `uvicorn src.main:app`
+- **Lifespan startup:** `configure_logging()` → `wandr.startup` log → DB `SELECT 1` ping (fail-fast `SystemExit(1)`) → Qdrant `/healthz` ping (warning only if down)
+- **Lifespan shutdown:** `flush_tracer()` → `wandr.shutdown` log → `dispose_engine()`
+- **Global exception handlers:** `WandrError` → `ErrorResponse` with exception status; `RequestValidationError` → 422; unhandled `Exception` → 500 with generic message (full traceback logged server-side via `exc_info=True`)
+- **`GET /api/v1/health`:** no auth; returns `ApiResponse` with `status`, `env`, `version`; 503 if DB unreachable at request time
+- **Minimal DB engine:** `src/core/database/session.py` — `get_engine()`, `ping_db()`, `dispose_engine()` (full `get_db()` dependency in step 1.2)
+- No domain routers registered yet; no `X-Request-ID` header (step 1.8)
+
+Packages: `fastapi==0.137.1`, `uvicorn[standard]==0.49.0`, `sqlalchemy[asyncio]==2.0.51`, `asyncpg==0.31.0`
+
 ## Build Progress
 
 | Step | Status | Deliverable |
@@ -136,7 +168,10 @@ Module: `src/core/pagination.py`
 | 0.5 | Done | Langfuse tracing + `NoOpTracer` |
 | 0.6 | Done | LiteLLM gateway (`chat_completion`, `chat_with_tools`) |
 | 0.7 | Done | Pagination (`PageParams`, `PaginatedResponse[T]`, `paginate`) |
-| 0.8+ | Pending | FastAPI app, DB, auth, planner |
+| 0.8 | Done | Response envelopes (`ApiResponse[T]`, `ErrorResponse`) |
+| 0.9 | Done | Exception hierarchy (`WandrError` tree) |
+| 0.10 | Done | FastAPI app factory, lifespan, `/api/v1/health`, global exception handlers |
+| 1.0+ | Pending | Full DB layer, auth, planner |
 
 ## Key Constraints for AI Agents
 
