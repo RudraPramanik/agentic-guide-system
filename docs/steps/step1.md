@@ -1,9 +1,31 @@
 
 # Wandr — P1 Cursor Prompts: Database Foundation + Auth
-> Blueprint: `wandr_blueprint_v6.md` — Phase P1 (3 days · 9 blueprint steps)
+> Blueprint: [`docs/blueprint_final.md`](../blueprint_final.md) — Phase P1 (3 days · 9 blueprint steps)
+> Built-so-far context: [`docs/app/system.md`](../app/system.md) · Guardrails: [`AGENT.md`](../../AGENT.md)
 > Expanded to **13 prompts** for solidity. New steps marked ★.
 > Paste each prompt into Cursor **Agent mode** in order.
 > Do NOT advance to the next prompt until the current ✅ validation passes.
+
+## Prerequisites (P0 must be complete)
+
+Before step 1.1, confirm P0 from `docs/app/system.md`:
+
+- `src/config.py`, `src/main.py` (app factory, lifespan, `/api/v1/health`, global exception handlers)
+- `src/core/exceptions.py`, `src/core/responses.py`, `src/core/pagination.py`
+- `src/core/database/session.py` — **minimal** lazy `get_engine()`, `ping_db()`, `dispose_engine()` (step 1.2 extends this)
+- `requirements.txt` already has `sqlalchemy[asyncio]==2.0.51` and `asyncpg==0.31.0` from step 0.10 — **do not downgrade or reinstall**
+- Docker: Postgres on host port **5433** (`DATABASE_URL=postgresql+asyncpg://wandr:wandr@localhost:5433/wandr`)
+- `alembic/` folder exists with placeholder `env.py` — step 1.3 replaces it
+
+## Prompt conventions (every step)
+
+Each prompt block starts with `Read AGENT.md before proceeding.` Also:
+
+- **Extend, don't replace** P0 code unless the step explicitly says replace (e.g. Alembic `env.py`).
+- **Failure boundaries:** external HTTP → typed `WandrError` (never raw 500); JWT → `None` or `UnauthorizedError` (never 422); rate limiter → fail open; DB session → rollback on exception.
+- **Time:** use `datetime.now(timezone.utc)`, never `datetime.utcnow()` (deprecated Python 3.12+).
+- **httpx:** always `httpx.Timeout(connect=5.0, read=10.0)` (or blueprint values) — never bare `timeout=10.0`.
+- **Windows:** use `Select-String` instead of `grep` where noted in validation.
 
 ---
 
@@ -35,18 +57,10 @@
 ## Step 1.1 — core/database/base.py — Declarative Base + Mixins
 
 ```
-Read AGENT.md before proceeding. Every line you write must comply with its rules.
+Read AGENT.md and docs/app/system.md before proceeding. Every line you write must comply with AGENT.md rules.
 
 TASK: Implement the SQLAlchemy declarative base and three reusable model mixins.
-This is step 1.1. Install SQLAlchemy and asyncpg now.
-
-─── INSTALL ───
-Append to requirements.txt (with inline comments):
-  sqlalchemy[asyncio]==2.0.31   # async ORM — step 1.1
-  asyncpg==0.29.0               # async PostgreSQL driver — step 1.1
-
-Install:
-  pip install "sqlalchemy[asyncio]==2.0.31" asyncpg==0.29.0
+This is step 1.1. No new package installs — sqlalchemy[asyncio]==2.0.51 and asyncpg==0.31.0 are already in requirements.txt from step 0.10.
 
 ─── IMPLEMENT src/core/database/base.py ───
 
@@ -115,44 +129,62 @@ Expected: PASS line with all five column names. No import errors.
 ## Step 1.2 — core/database/session.py — Async Engine + Pool + Connection Test
 
 ```
-Read AGENT.md before proceeding.
+Read AGENT.md and docs/app/system.md before proceeding.
 
-TASK: Implement the async database engine, session factory, FastAPI dependency, and a connection test script.
+TASK: Extend the existing async database session module (from step 0.10) with full pool config,
+session factory, FastAPI dependency, and a connection test script.
 This is step 1.2. No new package installs.
 
-─── IMPLEMENT src/core/database/session.py ───
+─── EXTEND src/core/database/session.py ───
+P0 already ships lazy `get_engine()`, `ping_db()`, `dispose_engine()`. Keep that pattern — do NOT
+create a second module-level engine or break lazy init. Enhance `get_engine()` and add the rest.
 
-Three things:
-
-1. Module-level async engine:
-   from sqlalchemy.ext.asyncio import create_async_engine
+1. Update get_engine() — add pool settings when creating the engine:
+   from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine, async_sessionmaker, AsyncSession
    from src.config import get_settings
 
-   engine = create_async_engine(
-       get_settings().DATABASE_URL,
-       pool_size=10,
-       max_overflow=20,
-       pool_pre_ping=True,    # recycles stale connections — mandatory for hosted Postgres
-       pool_recycle=3600,     # recycle after 1 hour — prevents silent connection drops
-       echo=get_settings().DEBUG,
-   )
+   _engine: AsyncEngine | None = None
+   _session_factory: async_sessionmaker[AsyncSession] | None = None
 
-2. Module-level async session factory:
-   from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+   def get_engine() -> AsyncEngine:
+       global _engine
+       if _engine is None:
+           settings = get_settings()
+           _engine = create_async_engine(
+               settings.DATABASE_URL,
+               pool_size=10,
+               max_overflow=20,
+               pool_pre_ping=True,    # recycles stale connections — mandatory for hosted Postgres
+               pool_recycle=3600,     # recycle after 1 hour — prevents silent connection drops
+               echo=settings.DEBUG,
+           )
+       return _engine
 
-   AsyncSessionLocal = async_sessionmaker(
-       bind=engine,
-       class_=AsyncSession,
-       expire_on_commit=False,   # prevents DetachedInstanceError after commit in async code
-       autocommit=False,
-       autoflush=False,
-   )
+2. Session factory — lazy init bound to get_engine():
+
+   def get_session_factory() -> async_sessionmaker[AsyncSession]:
+       global _session_factory
+       if _session_factory is None:
+           _session_factory = async_sessionmaker(
+               bind=get_engine(),
+               class_=AsyncSession,
+               expire_on_commit=False,
+               autocommit=False,
+               autoflush=False,
+           )
+       return _session_factory
+
+   # Back-compat alias used by scripts and smoke tests:
+   def AsyncSessionLocal() -> AsyncSession:
+       """Callable factory — returns a new session context manager."""
+       return get_session_factory()()
 
 3. get_db() — FastAPI async dependency generator:
    from typing import AsyncGenerator
 
    async def get_db() -> AsyncGenerator[AsyncSession, None]:
-       async with AsyncSessionLocal() as session:
+       factory = get_session_factory()
+       async with factory() as session:
            try:
                yield session
            except Exception:
@@ -161,16 +193,12 @@ Three things:
            finally:
                await session.close()
 
-4. get_engine() — returns the module-level engine (for lifespan, migrations, tests):
-   def get_engine():
-       return engine
+4. Keep ping_db() and dispose_engine() from P0 — ping_db() uses get_engine().connect().
+   dispose_engine() must reset both _engine = None and _session_factory = None.
 
-─── UPDATE src/main.py lifespan ───
-Replace any inline DB connection in the lifespan startup with:
-   from src.core.database.session import get_engine
-   from sqlalchemy import text
-   async with get_engine().connect() as conn:
-       await conn.execute(text("SELECT 1"))
+─── src/main.py lifespan ───
+Do NOT change lifespan DB startup — it already calls await ping_db(). No edits required unless
+imports break after session.py refactor.
 
 ─── CREATE scripts/test_db_conn.py ───
 Standalone script — NOT a pytest test — verifies DB connection outside the app:
@@ -201,8 +229,9 @@ Standalone script — NOT a pytest test — verifies DB connection outside the a
   commit without this triggers lazy-load errors inside async context.
 - get_db() MUST rollback before re-raising on exception. Open transactions block table locks.
 - Never use sync Session or sync sessionmaker anywhere in this project.
-- get_settings() is called at module import time here. If DATABASE_URL is missing from .env,
-  this raises immediately on import — which is the correct fail-fast behaviour.
+- Engine is created lazily on first get_engine() / ping_db() call. Missing DATABASE_URL still
+  fails fast on first DB access — correct behaviour.
+- Local dev Postgres is on port 5433 (see docs/app/system.md), not 5432.
 
 ─── VALIDATION ───
 Ensure Docker Postgres is running:
@@ -223,18 +252,18 @@ Expected:
 ## Step 1.3 — Alembic + Migration 001: PostGIS
 
 ```
-Read AGENT.md before proceeding.
+Read AGENT.md and docs/app/system.md before proceeding.
 
 TASK: Configure Alembic for async SQLAlchemy and run the first migration to enable PostGIS.
 This is step 1.3. Install alembic and geoalchemy2 now.
 
 ─── INSTALL ───
 Append to requirements.txt:
-  alembic==1.13.2       # database migrations — step 1.3
-  geoalchemy2==0.15.2   # PostGIS geometry types for SQLAlchemy — step 1.3
+  alembic==1.18.4          # database migrations — step 1.3
+  geoalchemy2==0.20.0      # PostGIS geometry types for SQLAlchemy — step 1.3
 
 Install:
-  pip install alembic==1.13.2 geoalchemy2==0.15.2
+  pip install alembic==1.18.4 geoalchemy2==0.20.0
 
 ─── CONFIGURE alembic.ini ───
 Replace the placeholder content with a real config. Key settings:
@@ -246,8 +275,9 @@ Replace the placeholder content with a real config. Key settings:
 Do NOT set sqlalchemy.url in alembic.ini — it is injected at runtime from get_settings().
 
 ─── IMPLEMENT alembic/env.py ───
-Must support async SQLAlchemy. Full implementation below — replace the placeholder entirely:
+Must support async SQLAlchemy. Replace the placeholder entirely:
 
+  import geoalchemy2  # noqa: F401 — registers Geometry types for autogenerate
   from logging.config import fileConfig
   from sqlalchemy import pool
   from sqlalchemy.engine import Connection
@@ -358,7 +388,7 @@ This is step 1.4a — first of four model steps. No package installs.
 ─── IMPLEMENT src/auth/models.py ───
 
   import uuid
-  from datetime import datetime
+  from datetime import datetime, timezone
   from sqlalchemy import String, Boolean
   from sqlalchemy.orm import Mapped, mapped_column
   from sqlalchemy.dialects.postgresql import UUID as PgUUID
@@ -619,7 +649,7 @@ Every field maps exactly to the TripEvaluation schema in the blueprint.
 No SoftDeleteMixin — evaluations are append-only, never deleted.
 
   import uuid
-  from datetime import datetime
+  from datetime import datetime, timezone
   from sqlalchemy import String, Integer, Float, Boolean, Text, Index, ForeignKey
   from sqlalchemy.orm import Mapped, mapped_column
   from sqlalchemy.dialects.postgresql import UUID as PgUUID, JSONB
@@ -775,8 +805,7 @@ Required on trip_evaluations table:
   [ ] All 28+ columns from 1.4c present
 
 If the Geometry column appears as VARCHAR or Text in the migration — STOP.
-This means geoalchemy2 isn't registered. Fix by ensuring geoalchemy2 is imported
-in env.py: add "import geoalchemy2" at the top of alembic/env.py.
+geoalchemy2 must be imported at the top of alembic/env.py (done in step 1.3). Verify that import exists.
 
 ─── RUN MIGRATION ───
 Once the review passes:
@@ -832,7 +861,7 @@ Implement every method completely — no stubs, no pass bodies.
   from sqlalchemy.ext.asyncio import AsyncSession
   from sqlalchemy import select, func, true, update as sa_update
   from sqlalchemy.orm import DeclarativeBase
-  from datetime import datetime
+  from datetime import datetime, timezone
 
   from src.core.exceptions import NotFoundError
 
@@ -975,7 +1004,7 @@ Implement every method completely — no stubs, no pass bodies.
                   f"{self.model_class.__name__} does not support soft delete (no deleted_at column)"
               )
           obj = await self.get_by_id_or_raise(id)
-          obj.deleted_at = datetime.utcnow()
+          obj.deleted_at = datetime.now(timezone.utc)
           await self.session.flush()
 
 ─── RULES ───
@@ -1037,16 +1066,16 @@ This is step 1.6. Install python-jose now.
 
 ─── INSTALL ───
 Append to requirements.txt:
-  python-jose[cryptography]==3.3.0  # JWT — step 1.6
+  python-jose[cryptography]==3.5.0  # JWT — step 1.6
 
 Install:
-  pip install "python-jose[cryptography]==3.3.0"
+  pip install "python-jose[cryptography]==3.5.0"
 
 ─── IMPLEMENT src/core/security/jwt.py ───
 
   import uuid
   from dataclasses import dataclass
-  from datetime import datetime, timedelta, timezone
+  from datetime import datetime, timezone, timedelta, timezone
   from jose import jwt, JWTError, ExpiredSignatureError
   from src.config import get_settings
 
@@ -1198,12 +1227,18 @@ Read AGENT.md before proceeding.
 
 TASK: Implement all auth Pydantic schemas and auth-specific exceptions.
 This is step 1.7a — schemas and exceptions only. No HTTP or DB logic yet.
-No package installs.
+
+─── INSTALL ───
+Append to requirements.txt:
+  email-validator==2.3.0   # required by Pydantic EmailStr — step 1.7a
+
+Install:
+  pip install email-validator==2.3.0
 
 ─── IMPLEMENT src/auth/schemas.py ───
 
   import uuid
-  from datetime import datetime
+  from datetime import datetime, timezone
   from pydantic import BaseModel, EmailStr, ConfigDict
 
 
@@ -1313,10 +1348,10 @@ This is step 1.7b. Install httpx now (used for Google OAuth calls).
 
 ─── INSTALL ───
 Append to requirements.txt:
-  httpx==0.27.0   # async HTTP client — step 1.7b (used for OAuth, Nominatim, OSRM)
+  httpx==0.28.1   # async HTTP client — step 1.7b (used for OAuth, Nominatim, OSRM)
 
 Install:
-  pip install httpx==0.27.0
+  pip install httpx==0.28.1
 
 ─── IMPLEMENT src/auth/repository.py ───
 
@@ -1348,6 +1383,7 @@ Install:
   import uuid
   import httpx
   import structlog
+  from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
   from sqlalchemy.ext.asyncio import AsyncSession
 
   from src.auth.models import User
@@ -1359,6 +1395,7 @@ Install:
 
   GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
   GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+  _HTTP_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0)  # AGENT.md: explicit connect + read
 
 
   class AuthService:
@@ -1413,12 +1450,20 @@ Install:
           """
           Verify a Google access token via Google's userinfo endpoint.
           Returns the userinfo dict on success.
-          Raises GoogleOAuthError on network failure.
-          Raises UnauthorizedError if Google rejects the token.
-          Timeout: 10s.
+          Raises GoogleOAuthError on network failure after retries.
+          Raises UnauthorizedError if Google rejects the token (no retry on 401).
           """
+          return await self._fetch_google_userinfo(access_token)
+
+      @retry(
+          stop=stop_after_attempt(3),
+          wait=wait_exponential(min=1, max=8),
+          retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError)),
+          reraise=True,
+      )
+      async def _fetch_google_userinfo(self, access_token: str) -> dict:
           try:
-              async with httpx.AsyncClient(timeout=10.0) as client:
+              async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
                   response = await client.get(
                       GOOGLE_USERINFO_URL,
                       headers={"Authorization": f"Bearer {access_token}"},
@@ -1429,8 +1474,6 @@ Install:
                   return response.json()
           except UnauthorizedError:
               raise
-          except httpx.TimeoutException:
-              raise GoogleOAuthError("Google OAuth userinfo request timed out")
           except httpx.HTTPStatusError as e:
               raise GoogleOAuthError(
                   f"Google OAuth returned {e.response.status_code}",
@@ -1449,10 +1492,21 @@ Install:
           """
           Exchange an OAuth authorization code for a Google access token.
           Returns the access_token string.
-          Raises GoogleOAuthError on any failure.
+          Raises GoogleOAuthError on any failure after retries.
           """
+          return await self._post_google_token_exchange(code, redirect_uri, client_id, client_secret)
+
+      @retry(
+          stop=stop_after_attempt(3),
+          wait=wait_exponential(min=1, max=8),
+          retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError)),
+          reraise=True,
+      )
+      async def _post_google_token_exchange(
+          self, code: str, redirect_uri: str, client_id: str, client_secret: str,
+      ) -> str:
           try:
-              async with httpx.AsyncClient(timeout=10.0) as client:
+              async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
                   response = await client.post(
                       GOOGLE_TOKEN_URL,
                       data={
@@ -1471,8 +1525,6 @@ Install:
                   return access_token
           except GoogleOAuthError:
               raise
-          except httpx.TimeoutException:
-              raise GoogleOAuthError("Google token exchange timed out")
           except httpx.HTTPStatusError as e:
               raise GoogleOAuthError(f"Google token exchange failed: {e.response.status_code}")
           except httpx.RequestError as e:
@@ -1482,9 +1534,12 @@ Install:
 - Router calls Service only. Service calls Repository only. This file has NO FastAPI imports.
 - upsert_google_user commits — exception to the "service flushes, caller commits" rule because
   auth upsert is always a standalone operation, never part of a larger transaction.
-- All Google HTTP calls have explicit 10.0s timeouts. No unbounded httpx calls.
+- All Google HTTP calls use httpx.Timeout(connect=5.0, read=10.0) and tenacity retry (3x,
+  exponential 1–8s) on TimeoutException/ConnectError only — never retry 401/400.
 - verify_google_token and exchange_code_for_token raise only WandrError subclasses — never raw
   httpx exceptions or HTTPException.
+- 🚨 Failure boundary: Google network failure after retries → GoogleOAuthError (502).
+  Invalid/rejected token → UnauthorizedError (401). Never an unhandled 500.
 
 ─── VALIDATION ───
 Run:
@@ -1538,28 +1593,41 @@ Four endpoints:
 2. GET /api/v1/auth/callback — Handle OAuth redirect from Google
    - Receives code: str and optional error: str as query params.
    - If error param present: redirect to "/auth/error?reason={error}"
-   - Call AuthService.exchange_code_for_token(code, redirect_uri, client_id, client_secret)
-   - Call AuthService.verify_google_token(access_token) → userinfo dict
-   - Call AuthService.upsert_google_user(google_id, email, name, avatar_url)
-   - Create JWT: create_access_token(user.id, user.email)
-   - Set httpOnly cookie "wandr_token":
+   - Wrap token exchange / userinfo / upsert in try/except WandrError → redirect to
+     "/auth/error?reason=oauth_failed" (never unhandled 500 HTML).
+   - Happy path:
+       settings = get_settings()
+       access_token = await AuthService(db).exchange_code_for_token(
+           code, settings.GOOGLE_REDIRECT_URI, settings.GOOGLE_CLIENT_ID, settings.GOOGLE_CLIENT_SECRET
+       )
+       userinfo = await AuthService(db).verify_google_token(access_token)
+       user = await AuthService(db).upsert_google_user(
+           google_id=userinfo["sub"], email=userinfo["email"],
+           name=userinfo.get("name", userinfo["email"]),
+           avatar_url=userinfo.get("picture"),
+       )
+       token = create_access_token(user.id, user.email)
+   - Build JSONResponse with ApiResponse[TokenResponse] body AND set cookie:
        response.set_cookie(
            "wandr_token", token,
            httponly=True, samesite="lax",
            secure=(settings.ENVIRONMENT == "production"),
            max_age=7 * 24 * 3600,
        )
-   - Return ApiResponse[TokenResponse]
-   - Wrap entire handler in try/except WandrError — on auth errors, return ErrorResponse
-     with appropriate status code rather than raising (OAuth errors shouldn't be 500s).
 
 3. GET /api/v1/auth/me — Current user or guest info
    - Dependency: optional_auth → TokenPayload | None
-   - Also reads cookie "wandr_session" for guest session ID.
+   - Reads cookie "wandr_session" for session ID (guest and authenticated users share this
+     cookie — trips are keyed by session_id before login).
    - If authenticated (payload not None):
        user = await AuthService(db).get_user_by_id(payload.user_id)
        if user is None: raise UnauthorizedError("User account not found")
-       return ApiResponse(data=AuthMeResponse(is_guest=False, session_id=str(user.id), user=UserOut.model_validate(user)))
+       if not user.is_active: raise AccountInactiveError()
+       session_id = request.cookies.get("wandr_session") or str(uuid.uuid4())
+       response.set_cookie("wandr_session", session_id, httponly=False, samesite="lax", max_age=30*24*3600)
+       return ApiResponse(data=AuthMeResponse(
+           is_guest=False, session_id=session_id, user=UserOut.model_validate(user)
+       ))
    - If guest:
        session_id = request.cookies.get("wandr_session") or str(uuid.uuid4())
        response.set_cookie("wandr_session", session_id, httponly=False, samesite="lax", max_age=30*24*3600)
@@ -1572,7 +1640,9 @@ Four endpoints:
 
 Dependencies injected:
   db: AsyncSession = Depends(get_db)
-  settings: Settings = Depends(get_settings)  (or call get_settings() directly)
+  settings = get_settings()  # call directly — not a FastAPI Depends() target
+
+Import AccountInactiveError from src.auth.exceptions in the router.
 
 ─── UPDATE src/main.py ───
 Register the auth router in create_app():
@@ -1584,11 +1654,11 @@ Add a comment above all include_router calls:
 
 ─── RULES ───
 - This router calls AuthService only. Never calls UserRepository directly.
-- All WandrError exceptions propagate to the global exception handler in main.py — do NOT
-  add try/except for WandrError in individual route handlers (exception: the OAuth callback,
-  where a domain error should not produce a 500 HTML page).
+- All WandrError exceptions propagate to the global exception handler EXCEPT the OAuth callback,
+  which must catch WandrError and redirect to /auth/error (blueprint failure boundary).
 - optional_auth returns None for guests — this is valid, not an error.
 - Cookie secure=True only in production. Dev uses HTTP localhost where secure=True breaks cookies.
+- Import get_settings from src.config and call it inside handlers — do not use Depends(get_settings).
 
 ─── VALIDATION ───
 Start server:
@@ -1707,12 +1777,14 @@ Start server (if not already running):
   uvicorn src.main:app --reload
 
 Test 1 — X-Request-ID appears in response:
-  curl -si http://localhost:8000/api/v1/health | grep -i "x-request-id"
+  curl -si http://localhost:8000/api/v1/health | Select-String -Pattern "x-request-id" -CaseSensitive:$false
+  # Linux/macOS: ... | grep -i "x-request-id"
 
 Expected: line like:  x-request-id: <some-uuid>
 
 Test 2 — Custom request ID is preserved:
-  curl -si -H "X-Request-ID: my-trace-id-42" http://localhost:8000/api/v1/health | grep -i "x-request-id"
+  curl -si -H "X-Request-ID: my-trace-id-42" http://localhost:8000/api/v1/health | Select-String -Pattern "x-request-id" -CaseSensitive:$false
+  # Linux/macOS: ... | grep -i "x-request-id"
 
 Expected: x-request-id: my-trace-id-42
 
@@ -1939,7 +2011,8 @@ add_middleware(RequestLoggingMiddleware) means RequestLoggingMiddleware is outer
 
 ─── VALIDATION ───
 Start server and check rate limit headers appear on health endpoint:
-  curl -si http://localhost:8000/api/v1/health | grep -i "x-ratelimit"
+  curl -si http://localhost:8000/api/v1/health | Select-String -Pattern "x-ratelimit" -CaseSensitive:$false
+  # Linux/macOS: ... | grep -i "x-ratelimit"
 
 Expected:
   x-ratelimit-limit: 60
@@ -1970,12 +2043,12 @@ This is step 1.11.
 
 ─── INSTALL ───
 Append to requirements.txt:
-  pytest==8.2.2              # test runner — step 1.11
-  pytest-asyncio==0.23.7    # async test support — step 1.11
-  pytest-mock==3.14.0       # mock fixtures — step 1.11
+  pytest==9.1.0              # test runner — step 1.11
+  pytest-asyncio==1.4.0      # async test support — step 1.11
+  pytest-mock==3.15.1        # mock fixtures — step 1.11
 
 Install:
-  pip install pytest==8.2.2 pytest-asyncio==0.23.7 pytest-mock==3.14.0
+  pip install pytest==9.1.0 pytest-asyncio==1.4.0 pytest-mock==3.15.1
 
 ─── CREATE pytest.ini at repo root ───
 
@@ -2149,10 +2222,10 @@ This is step 1.12. Install shapely now (needed for PostGIS geometry construction
 
 ─── INSTALL ───
 Append to requirements.txt:
-  shapely==2.0.5   # geometry construction for PostGIS seed/test scripts — step 1.12
+  shapely==2.1.2   # geometry construction for PostGIS seed/test scripts — step 1.12
 
 Install:
-  pip install shapely==2.0.5
+  pip install shapely==2.1.2
 
 ─── CREATE scripts/test_p1_smoke.py ───
 
@@ -2163,7 +2236,7 @@ Install:
   """
   import asyncio
   import uuid
-  from datetime import datetime
+  from datetime import datetime, timezone
   from sqlalchemy import text, select
   from sqlalchemy.ext.asyncio import AsyncSession
   from geoalchemy2.shape import from_shape
@@ -2275,7 +2348,7 @@ Install:
           uid = user.id
 
           # Soft-delete
-          user.deleted_at = datetime.utcnow()
+          user.deleted_at = datetime.now(timezone.utc)
           await session.flush()
 
           # Raw query should still find it
@@ -2377,10 +2450,12 @@ Do NOT proceed to P2 if any test fails.
 
 Run this entire block before starting P2. Every item must pass.
 
+On **Windows PowerShell**, use `Select-String` instead of `grep`, and `Stop-Process` instead of `kill`.
+
 ```bash
-# ── Packages ──
-pip show sqlalchemy asyncpg alembic geoalchemy2 python-jose httpx pytest pytest-asyncio shapely | grep "^Name:"
-# Expected: all 9 names listed
+# ── Packages (sqlalchemy/asyncpg from 0.10; rest from P1 steps) ──
+pip show sqlalchemy asyncpg alembic geoalchemy2 python-jose httpx email-validator pytest pytest-asyncio shapely | findstr /B "Name:"
+# Expected: all 10 names listed
 
 # ── Database ──
 docker compose ps
@@ -2430,33 +2505,32 @@ assert verify_token('garbage') is None
 print('JWT OK')
 "
 
-# ── Server starts ──
-uvicorn src.main:app --port 8001 &
-sleep 3
+# ── Server starts (use a free port) ──
+# PowerShell: Start-Process ... or run uvicorn in a second terminal
+uvicorn src.main:app --port 8001
+# In another terminal:
 curl -s http://localhost:8001/api/v1/health | python -m json.tool
-kill %1 2>/dev/null
 # Expected: {"success": true, "data": {"status": "ok", ...}}
 
-# ── Middleware headers ──
-curl -si http://localhost:8000/api/v1/health | grep -i "x-request-id"
-# Expected: x-request-id: <uuid>
-curl -si http://localhost:8000/api/v1/health | grep -i "x-ratelimit-limit"
-# Expected: x-ratelimit-limit: 60
+# ── Middleware headers (server on 8000 or 8001) ──
+curl -si http://localhost:8000/api/v1/health | Select-String -Pattern "x-request-id" -CaseSensitive:$false
+curl -si http://localhost:8000/api/v1/health | Select-String -Pattern "x-ratelimit-limit" -CaseSensitive:$false
 
 # ── Auth me guest ──
 curl -s http://localhost:8000/api/v1/auth/me | python -m json.tool
 # Expected: is_guest: true, session_id present, user: null
 
-# ── Pytest suite ──
+# ── Pytest suite (requires wandr_test database — step 1.11) ──
 pytest tests/ -v
 # Expected: 6 passed, 0 failed
 
 # ── DB smoke test ──
 python scripts/test_p1_smoke.py
-# Expected: ALL P1 SMOKE TESTS PASSED ✓
+# Expected: ALL P1 SMOKE TESTS PASSED
 
 # ── Import guards ──
-grep -r "import litellm" src/ --include="*.py" | grep -v "core/llm/client.py"
+# PowerShell:
+Get-ChildItem -Path src -Recurse -Filter *.py | Select-String "import litellm" | Where-Object { $_.Path -notmatch "core\\llm\\client.py" }
 # Expected: zero results
 
 echo "P1 COMPLETE — proceed to P2"

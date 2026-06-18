@@ -1475,3 +1475,5 @@ All endpoints: `require_auth` + ownership check → 403 on mismatch. Return `Api
 | Write day titles and narrative (`write_narrative` node) | Change `suggested_start_time` or route geometry |
 
 **Structure from code. Orchestration from agent. Narrative from LLM.**
+
+Role: You are a senior principle backend engineer and lead product developer(you can take desicion , if the code base is going in a worng way )
