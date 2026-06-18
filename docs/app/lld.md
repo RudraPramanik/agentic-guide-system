@@ -199,8 +199,12 @@ await dispose_engine()
 - Global handlers: `WandrError`, `RequestValidationError` (422), `Exception` (500, `exc_info=True` server-side)
 - `GET /api/v1/health` → `ApiResponse` with `status`, `env`, `version`; 503 `ErrorResponse` if DB ping fails at request time
 - Minimal async engine in `core/database/session.py` (`ping_db`, `dispose_engine`) — full `get_db()` Unit of Work in step 1.2
-- Qdrant startup check uses `httpx.AsyncClient` (import inside lifespan); 5s connect timeout
+- Qdrant startup check uses `httpx.AsyncClient` (import inside lifespan); 5s connect/read timeout
 - No router includes yet; no `X-Request-ID` middleware (step 1.8)
+
+**Local dev port mapping** (see `docker-compose.yml`):
+- Postgres host `5433` → container `5432` (avoids local Postgres on 5432)
+- Qdrant host `6335` → container `6333` (avoids other Qdrant on 6333)
 
 Packages: `fastapi==0.137.1`, `uvicorn[standard]==0.49.0`, `sqlalchemy[asyncio]==2.0.51`, `asyncpg==0.31.0`
 

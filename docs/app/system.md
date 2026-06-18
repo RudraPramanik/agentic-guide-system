@@ -61,7 +61,7 @@ Domain Services          ← business logic, orchestration
 | Service | Image | Port | Purpose |
 |---------|-------|------|---------|
 | `wandr_postgres` | `postgis/postgis:16-3.4` | 5433 | PostgreSQL + PostGIS (host port 5433 avoids conflict with local Postgres on 5432) |
-| `wandr_qdrant` | `qdrant/qdrant:latest` | 6333/6334 | Vector search |
+| `wandr_qdrant` | `qdrant/qdrant:latest` | 6335/6336 | Vector search (host port 6335 avoids conflict with other Qdrant on 6333) |
 
 Redis is feature-flagged off in dev (`REDIS_URL` empty → in-memory fallback).
 
@@ -172,6 +172,38 @@ Packages: `fastapi==0.137.1`, `uvicorn[standard]==0.49.0`, `sqlalchemy[asyncio]=
 | 0.9 | Done | Exception hierarchy (`WandrError` tree) |
 | 0.10 | Done | FastAPI app factory, lifespan, `/api/v1/health`, global exception handlers |
 | 1.0+ | Pending | Full DB layer, auth, planner |
+
+## P0 Complete — Verification
+
+Run before starting P1. On Windows, use PowerShell equivalents where noted.
+
+| # | Check | Command | Expected |
+|---|-------|---------|----------|
+| 1 | Directory tree | `find src/ -type d \| sort` | All domain packages present |
+| 2 | Guardrails | `head AGENT.md` | Readable at repo root |
+| 3 | Settings | `python -c "from src.config import get_settings; print(get_settings().PLANNER_MAX_TOOL_CALLS)"` | `12` |
+| 4 | Logging | `configure_logging(); get_logger().info('check', step='p0')` | Structured log line |
+| 5 | Tracing | `get_tracer().trace('p0_check')` | `NoOpTracer` or `Langfuse`, no crash |
+| 6 | LLM gateway | `from src.core.llm.client import chat_completion, chat_with_tools` | Imports cleanly |
+| 7 | litellm isolation | `grep -r "import litellm" src/ \| grep -v client.py` | Zero results |
+| 8 | Pagination | `from src.core.pagination import PaginatedResponse, paginate` | OK |
+| 9 | Responses | `from src.core.responses import ApiResponse, ErrorResponse` | OK |
+| 10 | Exceptions | `from src.core.exceptions import WandrError, NotFoundError, WandrLLMError` | OK |
+| 11 | Health | `GET /api/v1/health` | `{"success": true, "data": {"status": "ok", ...}}` |
+| 12 | Docker | `docker compose ps` | `wandr_postgres` healthy, `wandr_qdrant` running |
+
+**Run the app** (requires `.env` with `SECRET_KEY`, `DATABASE_URL`, `LLM_API_KEY`, `NOMINATIM_USER_AGENT`):
+
+```bash
+docker compose up -d
+uvicorn src.main:app --reload
+# Health: curl -s http://localhost:8000/api/v1/health | python -m json.tool
+```
+
+Local dev notes:
+- Postgres: `DATABASE_URL=postgresql+asyncpg://wandr:wandr@localhost:5433/wandr` (port 5433, not 5432)
+- Qdrant: `QDRANT_URL=http://localhost:6335` (port 6335 if 6333 is taken by another service)
+- No `X-Request-ID` header yet (step 1.8)
 
 ## Key Constraints for AI Agents
 

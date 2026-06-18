@@ -38,3 +38,4 @@
 - If a node needs to call an LLM, go through `core/llm/client.py` — no exceptions.
 - If unsure about a timeout value, use the value from the Resilience Contracts table.
 ---
+
