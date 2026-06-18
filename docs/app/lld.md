@@ -41,7 +41,7 @@ Router  →  Service  →  Repository  →  Database
 
 ## Pattern Catalog
 
-### Implemented (steps 0.1–0.4)
+### Implemented (steps 0.1–0.7)
 
 | Pattern | Location | Purpose |
 |---------|----------|---------|
@@ -49,6 +49,10 @@ Router  →  Service  →  Repository  →  Database
 | **Configuration Object** | `src/config.py` | All env vars in one `Settings` class |
 | **Singleton** | `get_settings()` | `@lru_cache` — parsed once per process |
 | **Context Propagation** | `core/observability/logging.py` | `bind_contextvars()` flows `request_id` through all log lines without per-call passing |
+| **Null Object** | `NoOpTracer` in `core/observability/tracing.py` | Callers use tracer unconditionally; no `if tracer:` branches |
+| **Gateway** | `core/llm/client.py` | Only LLM entry point; LiteLLM + tenacity retry |
+| **Strategy** | `chat_completion(model=...)`, `chat_with_tools()` | Provider/model swappable via env vars |
+| **Response Envelope (lists)** | `PaginatedResponse[T]`, `paginate()` | Every list endpoint returns same pagination shape |
 
 #### Step 0.4 — Logging design detail
 
@@ -72,20 +76,78 @@ Renderer selection reads `get_settings().ENVIRONMENT`:
 
 `configure_logging()` is idempotent and falls back to `ConsoleRenderer` if settings are not yet loadable.
 
+#### Step 0.5 — Tracing design detail
+
+```python
+# App lifespan startup
+tracer = get_tracer()  # Langfuse or NoOpTracer — never None
+
+# Any layer — no isinstance checks needed
+tracer.trace("planner_run", input=request_summary)
+tracer.trace("llm_call").generation("chat", model=model).end()
+
+# App lifespan shutdown
+flush_tracer()
+```
+
+`get_tracer()` reads `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` from `get_settings()`:
+
+- both non-empty → `Langfuse` client (init failures → `NoOpTracer` + warning log)
+- either missing → `NoOpTracer`
+- cached in module-level `_tracer` on first call
+
+`flush_tracer()` catches all exceptions and logs warnings — never propagates to user requests.
+
+#### Step 0.6 — LLM gateway design detail
+
+Module: `src/core/llm/client.py` — **only file that imports `litellm`**.
+
+```python
+from src.core.llm.client import chat_completion, chat_with_tools
+
+text = await chat_completion(messages, response_format=None)
+result = await chat_with_tools(messages, tools, tool_choice="auto")
+# result.tool_calls  OR  result.content
+```
+
+- `chat_completion()` — unstructured or JSON-mode text via `response_format`
+- `chat_with_tools()` — returns `LLMToolResponse` with `tool_calls` or `content`
+- Provider/model swappable via `LLM_MODEL`, `LLM_API_KEY`, `LLM_API_BASE` env vars
+- Tenacity retry on `litellm.Timeout` / `litellm.RateLimitError`: `LLM_MAX_RETRIES` attempts, exponential wait 2–30s
+- Rate-limit: sleeps `Retry-After` (or 5s) before re-raise
+- After retries exhausted → `WandrLLMError(code="llm_unavailable")` (never raw provider errors)
+- Every retry logged via structlog: `model`, `attempt_number`, `error_type`, `wait_seconds`
+
+Packages: `litellm==1.89.1`, `tenacity==9.1.4`
+
+#### Step 0.7 — Pagination design detail
+
+Module: `src/core/pagination.py` — pure schema/math, no DB logic.
+
+```python
+# Router
+@router.get("/places")
+async def list_places(params: PageParams = Depends()) -> PaginatedResponse[PlaceOut]:
+    items, total = await service.list(params.offset, params.size)
+    return paginate(items, total, params)
+```
+
+- `PageParams` — FastAPI dependency: `page` (≥1), `size` (1–100), computed `offset`
+- `PaginatedResponse[T]` — callers pass only `items`, `total`, `page`, `size`; `pages`, `has_next`, `has_prev` auto-computed
+- `paginate(items, total, params)` — convenience wrapper for services/repos
+
 ### Planned (upcoming steps)
 
 | Pattern | Location | Step |
 |---------|----------|------|
-| **Null Object** | `NoOpTracer` in `core/observability/tracing.py` | 0.5 |
-| **Gateway** | `core/llm/client.py` | 0.6 |
-| **Strategy** | `chat_completion(model=...)`, `RoutingProvider` | 0.6, P4 |
-| **Response Envelope** | `ApiResponse[T]`, `PaginatedResponse[T]` | 0.7–0.8 |
+| **Response Envelope** | `ApiResponse[T]`, `ErrorResponse` | 0.8 |
 | **Exception Hierarchy** | `WandrError` tree | 0.9 |
 | **App Factory** | `create_app()` in `main.py` | 0.10 |
 | **Generic Repository** | `BaseRepository[M, ID]` | 1.2 |
 | **Unit of Work** | Session per request | 1.2 |
 | **Cache-Aside** | Destinations, planner cache | P2+ |
 | **Protocol / DI** | `travel_engine` routing injection | P4 |
+| **Strategy** | `RoutingProvider` | P4 |
 | **Tool Registry** | `planner/tools/registry.py` | P5 |
 | **Phase-Gated Tool Loop** | `agent` ↔ `tool_executor` | P5 |
 | **Bounded ReAct** | `tool_loop_count` ceiling | P5 |

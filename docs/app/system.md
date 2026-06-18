@@ -91,9 +91,39 @@ Module: `src/core/observability/logging.py`
 
 Processing chain: `merge_contextvars` → `add_log_level` → `TimeStamper(iso)` → renderer.
 
-### Tracing — step 0.5 (planned)
+### Tracing — step 0.5
 
-`src/core/observability/tracing.py` — Langfuse with `NoOpTracer` fallback (Null Object Pattern).
+Module: `src/core/observability/tracing.py`
+
+- `get_tracer()` → `Langfuse` when both `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are set; otherwise `NoOpTracer`
+- `flush_tracer()` — called on app shutdown lifespan
+- **Null Object Pattern:** callers never branch on `if tracer:` — `NoOpTracer` implements the same interface (`trace`, `span`, `generation`, `update`, `end`, `flush`)
+- Init and flush errors are caught, logged as warnings via structlog, never propagated to requests
+- Result cached in a module-level variable (first call only)
+
+Package: `langfuse==2.60.10` (latest v2 line; v3+ removed the `trace()` client API this step depends on).
+
+### LLM gateway — step 0.6
+
+Module: `src/core/llm/client.py`
+
+- **Only** module that imports `litellm` — all LLM calls go through here
+- `chat_completion(messages, model?, response_format?)` → plain string
+- `chat_with_tools(messages, tools, tool_choice?, model?)` → `LLMToolResponse` with `tool_calls` or `content`
+- Provider swappable via `LLM_MODEL`, `LLM_API_KEY`, `LLM_API_BASE` in `config.py`
+- Tenacity retry: `LLM_MAX_RETRIES` attempts, exponential wait 2–30s, on timeout/rate-limit only
+- Exhausted retries → `WandrLLMError` (503) — caught by planner nodes, never a raw 500
+
+Packages: `litellm==1.89.1`, `tenacity==9.1.4`
+
+### Pagination — step 0.7
+
+Module: `src/core/pagination.py`
+
+- `PageParams` — `Depends()` query params: `page=1`, `size=20` (max 100), `offset` property
+- `PaginatedResponse[T]` — list envelope with auto-computed `pages`, `has_next`, `has_prev`
+- `paginate(items, total, params)` — builds response from repo results + params
+- No DB logic — routers/services pass `offset`/`size` to repos, wrap with `paginate()`
 
 ## Build Progress
 
@@ -103,7 +133,10 @@ Processing chain: `merge_contextvars` → `add_log_level` → `TimeStamper(iso)`
 | 0.2 | Done | `src/config.py`, `.env.example` |
 | 0.3 | Done | `docker-compose.yml` (PostGIS + Qdrant) |
 | 0.4 | Done | `structlog` logging |
-| 0.5+ | Pending | Tracing, LLM client, FastAPI app, DB, auth, planner |
+| 0.5 | Done | Langfuse tracing + `NoOpTracer` |
+| 0.6 | Done | LiteLLM gateway (`chat_completion`, `chat_with_tools`) |
+| 0.7 | Done | Pagination (`PageParams`, `PaginatedResponse[T]`, `paginate`) |
+| 0.8+ | Pending | FastAPI app, DB, auth, planner |
 
 ## Key Constraints for AI Agents
 

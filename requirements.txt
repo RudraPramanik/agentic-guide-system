@@ -1,2 +1,5 @@
 ﻿pydantic-settings==2.3.0  # centralized env var parsing — step 0.2
 structlog  # structured logging — step 0.4
+langfuse==2.60.10  # LLM observability tracing — step 0.5 (v2 API: trace/span/generation)
+litellm==1.89.1  # LLM provider abstraction — step 0.6
+tenacity==9.1.4  # retry logic for all external calls — step 0.6
