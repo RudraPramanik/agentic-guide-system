@@ -41,7 +41,7 @@ Router  →  Service  →  Repository  →  Database
 
 ## Pattern Catalog
 
-### Implemented (steps 0.1–0.10)
+### Implemented (steps 0.1–1.2)
 
 | Pattern | Location | Purpose |
 |---------|----------|---------|
@@ -58,6 +58,9 @@ Router  →  Service  →  Repository  →  Database
 | **App Factory** | `create_app()` in `main.py` | Decouples app creation from uvicorn execution; test client injection |
 | **Lifespan** | `@asynccontextmanager` in `main.py` | Startup: logging, DB ping (fail-fast), Qdrant ping (warn-only). Shutdown: flush tracer, dispose pool |
 | **Global Exception Handlers** | `main.py` | `WandrError` → status from exception; `RequestValidationError` → 422; `Exception` → 500 (no stack leak) |
+| **Mixin Inheritance** | `core/database/base.py` | Horizontal reuse: `UUIDMixin`, `TimestampMixin`, `SoftDeleteMixin` composed per model |
+| **Lazy Singleton (engine)** | `get_engine()` in `session.py` | Module-level `_engine`; created on first DB access; one pool per process |
+| **Unit of Work** | `get_db()` in `session.py` | One `AsyncSession` per HTTP request; rollback on error; close in `finally` |
 
 #### Step 0.4 — Logging design detail
 
@@ -198,7 +201,7 @@ await dispose_engine()
 - `create_app()` → `FastAPI(title="Wandr API", version=APP_VERSION, lifespan=lifespan)`
 - Global handlers: `WandrError`, `RequestValidationError` (422), `Exception` (500, `exc_info=True` server-side)
 - `GET /api/v1/health` → `ApiResponse` with `status`, `env`, `version`; 503 `ErrorResponse` if DB ping fails at request time
-- Minimal async engine in `core/database/session.py` (`ping_db`, `dispose_engine`) — full `get_db()` Unit of Work in step 1.2
+- DB lifecycle via `core/database/session.py` — see step 1.2 below
 - Qdrant startup check uses `httpx.AsyncClient` (import inside lifespan); 5s connect/read timeout
 - No router includes yet; no `X-Request-ID` middleware (step 1.8)
 
@@ -208,12 +211,57 @@ await dispose_engine()
 
 Packages: `fastapi==0.137.1`, `uvicorn[standard]==0.49.0`, `sqlalchemy[asyncio]==2.0.51`, `asyncpg==0.31.0`
 
+#### Step 1.1 — Declarative base + mixins design detail
+
+Module: `src/core/database/base.py` — zero domain awareness.
+
+```python
+class User(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "users"
+    email: Mapped[str] = mapped_column(String(320), ...)
+```
+
+| Mixin | Columns | Key rule |
+|-------|---------|----------|
+| `UUIDMixin` | `id` | Python `default=uuid.uuid4` — ID available before INSERT for same-transaction FKs |
+| `TimestampMixin` | `created_at`, `updated_at` | `server_default=func.now()` — DB timezone, not app server |
+| `SoftDeleteMixin` | `deleted_at` | Column only; repos filter `deleted_at IS NULL` |
+
+- SQLAlchemy 2.0 `Mapped[]` + `mapped_column()` only — no `Column()`, no `relationship()` here
+- `Base` has no `__abstract__`; mixins are plain classes mixed into concrete models
+
+#### Step 1.2 — Async session + pool design detail
+
+Module: `src/core/database/session.py` — async only; no sync `Session` or `sessionmaker`.
+
+```python
+# Router dependency (step 1.2+)
+async def endpoint(db: AsyncSession = Depends(get_db)):
+    ...
+
+# Script / smoke test
+async with AsyncSessionLocal() as session:
+    ...
+```
+
+| Function | Role |
+|----------|------|
+| `get_engine()` | Lazy singleton; `pool_pre_ping=True`, `pool_recycle=3600`, `expire_on_commit=False` via factory |
+| `get_session_factory()` | Lazy `async_sessionmaker` bound to engine |
+| `get_db()` | FastAPI generator — yield session, rollback on exception, close in `finally` |
+| `AsyncSessionLocal()` | Back-compat callable for scripts |
+| `ping_db()` | Startup/health `SELECT 1` |
+| `dispose_engine()` | Shutdown — dispose pool, reset `_engine` and `_session_factory` |
+
+`pool_pre_ping=True` is mandatory for hosted Postgres (Neon/Supabase idle drops). `expire_on_commit=False` is mandatory for async — without it, attribute access after commit triggers lazy-load errors.
+
+Connection verification: `python scripts/test_db_conn.py` (requires `docker compose up -d`).
+
 ### Planned (upcoming steps)
 
 | Pattern | Location | Step |
 |---------|----------|------|
-| **Generic Repository** | `BaseRepository[M, ID]` | 1.2 |
-| **Unit of Work** | Session per request | 1.2 |
+| **Generic Repository** | `BaseRepository[M, ID]` | 1.5 |
 | **Cache-Aside** | Destinations, planner cache | P2+ |
 | **Protocol / DI** | `travel_engine` routing injection | P4 |
 | **Strategy** | `RoutingProvider` | P4 |

@@ -152,10 +152,38 @@ Module: `src/main.py`
 - **Lifespan shutdown:** `flush_tracer()` → `wandr.shutdown` log → `dispose_engine()`
 - **Global exception handlers:** `WandrError` → `ErrorResponse` with exception status; `RequestValidationError` → 422; unhandled `Exception` → 500 with generic message (full traceback logged server-side via `exc_info=True`)
 - **`GET /api/v1/health`:** no auth; returns `ApiResponse` with `status`, `env`, `version`; 503 if DB unreachable at request time
-- **Minimal DB engine:** `src/core/database/session.py` — `get_engine()`, `ping_db()`, `dispose_engine()` (full `get_db()` dependency in step 1.2)
 - No domain routers registered yet; no `X-Request-ID` header (step 1.8)
 
 Packages: `fastapi==0.137.1`, `uvicorn[standard]==0.49.0`, `sqlalchemy[asyncio]==2.0.51`, `asyncpg==0.31.0`
+
+### Database foundation — steps 1.1–1.2
+
+#### Declarative base + mixins — step 1.1
+
+Module: `src/core/database/base.py`
+
+- `Base` — SQLAlchemy 2.0 `DeclarativeBase` (no `__abstract__` on Base itself)
+- `UUIDMixin` — `id: Mapped[uuid.UUID]`, `UUID(as_uuid=True)`, `primary_key=True`, Python `default=uuid.uuid4` (not `server_default` — ID known before INSERT for same-transaction FKs)
+- `TimestampMixin` — `created_at` / `updated_at`, `server_default=func.now()`, `onupdate=func.now()` on `updated_at`; DB-side timestamps, never Python `utcnow()`
+- `SoftDeleteMixin` — `deleted_at: Mapped[datetime | None]`, column only; repos filter `deleted_at IS NULL` (User, Place use it; Trip, Destination, etc. do not)
+- SQLAlchemy 2.0 `Mapped[]` + `mapped_column()` throughout — no legacy `Column()` API, no `relationship()` in this file
+
+#### Async session + pool — step 1.2
+
+Module: `src/core/database/session.py`
+
+- **Lazy singleton engine:** `get_engine()` creates on first use; `pool_size=10`, `max_overflow=20`, `pool_pre_ping=True`, `pool_recycle=3600`, `echo=settings.DEBUG`
+- **Lazy session factory:** `get_session_factory()` → `async_sessionmaker` with `expire_on_commit=False`, `autocommit=False`, `autoflush=False`
+- **FastAPI dependency:** `get_db()` yields one `AsyncSession` per request; rolls back on exception before re-raise; closes in `finally`
+- **Back-compat alias:** `AsyncSessionLocal()` — callable returning a new session context manager (scripts/smoke tests)
+- **Lifecycle:** `ping_db()` — `SELECT 1` via `get_engine().connect()`; `dispose_engine()` — disposes pool and resets `_engine` + `_session_factory` to `None`
+- **Connection test script:** `scripts/test_db_conn.py` — standalone (not pytest); prints Postgres version, database name, active connections
+
+```bash
+docker compose up -d
+python scripts/test_db_conn.py
+# Expected: Connected: PostgreSQL 16.x ..., Database: wandr, Pool OK — connection test passed
+```
 
 ## Build Progress
 
@@ -171,7 +199,9 @@ Packages: `fastapi==0.137.1`, `uvicorn[standard]==0.49.0`, `sqlalchemy[asyncio]=
 | 0.8 | Done | Response envelopes (`ApiResponse[T]`, `ErrorResponse`) |
 | 0.9 | Done | Exception hierarchy (`WandrError` tree) |
 | 0.10 | Done | FastAPI app factory, lifespan, `/api/v1/health`, global exception handlers |
-| 1.0+ | Pending | Full DB layer, auth, planner |
+| 1.1 | Done | `Base`, `UUIDMixin`, `TimestampMixin`, `SoftDeleteMixin` |
+| 1.2 | Done | Async engine pool, `get_db()`, `scripts/test_db_conn.py` |
+| 1.3+ | Pending | Alembic, models, auth, planner |
 
 ## P0 Complete — Verification
 
