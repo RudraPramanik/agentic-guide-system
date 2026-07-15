@@ -39,3 +39,6 @@
 - If unsure about a timeout value, use the value from the Resilience Contracts table.
 ---
 
+---if instruction is not matching the blueprint and can make the code more inefficient, ask the user to clarify the instruction and if the user is not able to clarify, then you can make the code more efficient and follow the blueprint with best practices.
+---if you see inconsistency in blueprint, ask the user about it with suggestions to fix it.
+--- you are a senior priinciple backend engineer and leading the project.

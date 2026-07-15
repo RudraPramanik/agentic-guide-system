@@ -1,0 +1,42 @@
+# Wandr — Cursor rules
+
+## Session start (required read order)
+
+1. `docs/context.md` — what is done, what is next, what is stub-only
+2. `AGENT.md` — hard coding guardrails
+3. Current step prompt in `docs/steps/step*.md` or `docs/blueprint_final.md`
+
+Do not implement from memory. Do not assume stub files contain logic.
+
+## docs/context.md — maintenance rules
+
+**Purpose:** Lean checkpoint for AI agents. Not a duplicate of `docs/app/system.md` or the blueprint.
+
+**Update when:** A build step is completed and validated (imports pass, step proof command passes).
+
+**Do update:**
+- `Last updated` date and `Next step` number
+- Progress table row (⬜ → ✅)
+- `Implemented modules` table (new real modules only)
+- `Current state` one-liner
+- `Live endpoints` if routers were registered
+- `Stubs only` list if a former stub now has real code
+
+**Do not put in context.md:**
+- Full step instructions (keep those in `docs/steps/`)
+- Architecture essays (keep in `docs/app/system.md` and `docs/app/lld.md`)
+- AGENT.md rules verbatim
+- Package version lists (use `requirements.txt`)
+- Future/planned design for unbuilt steps
+
+**Style:**
+- Keep under ~120 lines; tables over prose
+- One fact per cell — no paragraphs
+- Mark stubs explicitly so agents do not import non-existent APIs
+- If unsure whether something is implemented, check file content — stubs are ~1 line
+
+**Who updates:** The agent that completes the step, in the same PR/session as the code change.
+
+## Code rules
+
+Follow `AGENT.md` completely. When instructions conflict with the blueprint, ask the user; if unclear, prefer blueprint + efficiency.

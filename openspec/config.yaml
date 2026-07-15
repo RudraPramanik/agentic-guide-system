@@ -1,0 +1,54 @@
+schema: spec-driven
+
+# Injected into every OpenSpec artifact prompt for this repo.
+context: |
+  Project: Wandr — FastAPI travel planner (AI trip itinerary generation).
+
+  Session start (required read order for agents):
+  1. docs/context.md — what is done, next step, stubs only
+  2. AGENT.md — hard coding guardrails (never violate)
+  3. Current step: docs/steps/step*.md (or docs/blueprint_final.md)
+
+  Stack: Python, FastAPI, SQLAlchemy 2.0 async (Mapped[]), Alembic, PostGIS,
+  asyncpg, Qdrant, litellm via core gateway, LangGraph (planner later).
+
+  Local: Postgres :5433, Qdrant :6335 (docker compose). DATABASE_URL via get_settings().
+
+  Architecture (non-negotiable):
+  - Router → Service → Repository only; routers never touch DB
+  - LLM only via src/core/llm/client.py (never import litellm/groq/openai elsewhere)
+  - Geo only via src/geo/ (never Nominatim/Overpass/OSRM outside it)
+  - travel_engine/ — pure Python, no LLM, no network/DB I/O
+  - Planner side effects only via src/planner/tools/ or domain services
+  - evaluation/ records every generation and every edit
+  - All env via get_settings(); never os.environ.get() directly
+  - Endpoints return ApiResponse[T] or PaginatedResponse[T] — never raw dicts
+  - No new packages without requirements.txt + why-comment
+
+  Deep refs (do not duplicate into OpenSpec wholesale):
+  docs/app/system.md, docs/app/lld.md, docs/blueprint_final.md
+
+  Current phase: P1 (DB/auth). Specs grow delta-first from real changes —
+  do not backfill the whole blueprint into openspec/specs/.
+
+  After completing a validated build step: update docs/context.md
+  (Last updated, Next step, Progress, Implemented modules, stubs).
+
+rules:
+  proposal:
+    - If this is a numbered build step, cite docs/steps/step*.md and the step id (e.g. 1.3)
+    - List AGENT.md constraints that apply; flag conflicts with the blueprint and ask
+    - Include Non-goals; keep scope to the delta, not the whole system
+    - Note stub vs real modules from docs/context.md — do not assume stubs have APIs
+  specs:
+    - Behavior-first; prefer Given/When/Then scenarios for API and DB behavior
+    - Do not invent endpoints, tools, or schemas that contradict the blueprint
+    - Mark stub-only modules explicitly until they have real implementations
+  design:
+    - Prefer patterns already in docs/app/lld.md and existing src/core code
+    - Call out Resilience Contracts (timeouts, tenacity, named fallbacks) for any external I/O
+    - Keep travel_engine free of I/O; inject routing times via RoutingProvider
+  tasks:
+    - Small, verifiable tasks; include import/proof checks from the step doc when present
+    - Update docs/context.md as the final task when the change completes a build step
+    - Do not implement from memory; re-read context.md and the step file before coding
