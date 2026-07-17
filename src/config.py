@@ -52,6 +52,15 @@ class Settings(BaseSettings):
     NOMINATIM_USER_AGENT: str
     OSRM_BASE_URL: str = "https://router.project-osrm.org"
 
+    # Auth / JWT
+    ACCESS_TOKEN_EXPIRE_DAYS: int = 7
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/callback"
+    GOOGLE_AUTH_URL: str = "https://accounts.google.com/o/oauth2/v2/auth"
+    GOOGLE_TOKEN_URL: str = "https://oauth2.googleapis.com/token"
+    GOOGLE_USERINFO_URL: str = "https://www.googleapis.com/oauth2/v3/userinfo"
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -9,3 +9,6 @@ fastapi==0.137.1  # web framework — step 0.10
 uvicorn[standard]==0.49.0  # ASGI server — step 0.10
 alembic==1.18.4          # database migrations — step 1.3
 geoalchemy2==0.20.0      # PostGIS geometry types for SQLAlchemy — step 1.3
+python-jose[cryptography]==3.5.0  # JWT — step 1.6
+email-validator==2.3.0   # required by Pydantic EmailStr — step 1.7a
+httpx==0.28.1   # async HTTP client — step 1.7b (used for OAuth, Nominatim, OSRM)

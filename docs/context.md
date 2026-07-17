@@ -4,13 +4,13 @@
 > Deep reference: `docs/app/system.md` (architecture), `docs/app/lld.md` (patterns).
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-17 · **Phase:** P1 · **Next step:** 1.5
+**Last updated:** 2026-07-17 · **Phase:** P1 · **Next step:** 1.8
 
 ---
 
 ## Current state (one line)
 
-P0 complete. P1 in progress — core DB models + migration 002 applied (6 tables); BaseRepository, auth, middleware not started.
+P0 complete. P1 in progress — JWT, auth domain (Google OAuth + guest `/me`), BaseRepository done; request-logging middleware not started.
 
 ---
 
@@ -26,7 +26,12 @@ P0 complete. P1 in progress — core DB models + migration 002 applied (6 tables
 | 1.4b | ✅ Done | Place + Trip + TripPlace models (PostGIS POINT, TripStatus enum) |
 | 1.4c | ✅ Done | TripEvaluation model |
 | 1.4d | ✅ Done | Migration 002 — 6 tables + `trip_status` enum |
-| 1.5–1.12 | ⬜ Pending | `BaseRepository`, JWT, auth, middleware, tests — see `docs/steps/step1.md` |
+| 1.5 | ✅ Done | `BaseRepository` — soft-delete aware CRUD, flush-only writes |
+| 1.6 | ✅ Done | JWT + `require_auth` / `optional_auth` (Bearer or `wandr_token` cookie) |
+| 1.7a | ✅ Done | Auth schemas + exceptions |
+| 1.7b | ✅ Done | `UserRepository` + `AuthService` (Google OAuth, upsert commits) |
+| 1.7c | ✅ Done | Auth router + `main.py` registration |
+| 1.8–1.12 | ⬜ Pending | Middleware, TripEditEvent, rate limit, pytest, smoke — see `docs/steps/step1.md` |
 
 ---
 
@@ -34,7 +39,7 @@ P0 complete. P1 in progress — core DB models + migration 002 applied (6 tables
 
 | Module | Exports / notes |
 |--------|-----------------|
-| `src/config.py` | `get_settings()` — all env vars |
+| `src/config.py` | `get_settings()` — all env vars incl. Google OAuth + JWT TTL |
 | `src/core/observability/logging.py` | `configure_logging()`, `get_logger()` |
 | `src/core/observability/tracing.py` | `get_tracer()`, `flush_tracer()` |
 | `src/core/llm/client.py` | `chat_completion()`, `chat_with_tools()` — **only** litellm import |
@@ -43,11 +48,19 @@ P0 complete. P1 in progress — core DB models + migration 002 applied (6 tables
 | `src/core/exceptions.py` | `WandrError` tree |
 | `src/core/database/base.py` | `Base`, mixins (SQLAlchemy 2.0 `Mapped[]`) |
 | `src/core/database/session.py` | `get_engine()`, `get_session_factory()`, `get_db()`, `ping_db()`, `dispose_engine()` |
-| `src/main.py` | `create_app()`, lifespan, global handlers, health endpoint |
+| `src/core/database/base_repository.py` | `BaseRepository[ModelT, IDT]` — soft-delete, paginate, flush-only writes |
+| `src/core/security/jwt.py` | `TokenPayload`, `create_access_token()`, `verify_token()` |
+| `src/core/security/permissions.py` | `require_auth`, `optional_auth`, `get_current_user_id` |
+| `src/main.py` | `create_app()`, lifespan, global handlers, health + auth router |
 | `alembic/env.py` | Async Alembic + `include_object` filter + all model imports |
 | `alembic/versions/001_enable_postgis.py` | PostGIS + uuid-ossp extensions |
 | `alembic/versions/20260717_*_create_all_tables.py` | Migration 002 — 6 core tables |
 | `src/auth/models.py` | `User` |
+| `src/auth/schemas.py` | `UserOut`, `AuthMeResponse`, `TokenResponse`, `GoogleCallbackParams` |
+| `src/auth/exceptions.py` | `GoogleOAuthError`, `InvalidTokenError`, `AccountInactiveError` |
+| `src/auth/repository.py` | `UserRepository` |
+| `src/auth/service.py` | `AuthService` — upsert, Google exchange/userinfo |
+| `src/auth/router.py` | `/api/v1/auth/google|callback|me|logout` |
 | `src/destinations/models.py` | `Destination` |
 | `src/places/models.py` | `Place` (Geometry POINT SRID 4326) |
 | `src/trips/models.py` | `TripStatus`, `Trip`, `TripPlace` |
@@ -61,7 +74,7 @@ P0 complete. P1 in progress — core DB models + migration 002 applied (6 tables
 
 ## Stubs only (do not assume implemented)
 
-All other `src/**/*.py` files (auth/destinations/places/trips/evaluation except `models.py`, planner, geo, search, travel_engine, security, middleware, `base_repository.py`) are step 0.1 placeholders — one-line docstrings, no logic.
+All other `src/**/*.py` files (destinations/places/trips/evaluation except `models.py`, planner, geo, search, travel_engine, middleware; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic.
 
 ---
 
@@ -70,8 +83,10 @@ All other `src/**/*.py` files (auth/destinations/places/trips/evaluation except 
 | Method | Path | Auth |
 |--------|------|------|
 | GET | `/api/v1/health` | None |
-
-No domain routers registered in `main.py` yet.
+| GET | `/api/v1/auth/google` | None (redirect or not-configured message) |
+| GET | `/api/v1/auth/callback` | None (OAuth redirect) |
+| GET | `/api/v1/auth/me` | Optional (guest or cookie/Bearer) |
+| POST | `/api/v1/auth/logout` | None |
 
 ---
 
