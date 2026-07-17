@@ -2,6 +2,7 @@
 
 > **Read this first every session.** Then `AGENT.md` (rules), then the current step in `docs/steps/step1.md` (or blueprint).
 > Deep reference: `docs/app/system.md` (architecture), `docs/app/lld.md` (patterns).
+> Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
 **Last updated:** 2026-07-05 · **Phase:** P1 · **Next step:** 1.3
 
