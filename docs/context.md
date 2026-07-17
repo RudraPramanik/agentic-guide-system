@@ -4,13 +4,13 @@
 > Deep reference: `docs/app/system.md` (architecture), `docs/app/lld.md` (patterns).
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-05 · **Phase:** P1 · **Next step:** 1.3
+**Last updated:** 2026-07-17 · **Phase:** P1 · **Next step:** 1.4a
 
 ---
 
 ## Current state (one line)
 
-P0 complete. P1 in progress — DB base + async session done; Alembic, models, auth, middleware not started. Domain packages exist as **empty stubs** only.
+P0 complete. P1 in progress — DB base, async session, and Alembic + PostGIS migration 001 done; domain models, auth, middleware not started. Domain packages exist as **empty stubs** only.
 
 ---
 
@@ -21,8 +21,9 @@ P0 complete. P1 in progress — DB base + async session done; Alembic, models, a
 | 0.1–0.10 | ✅ Done | Scaffold, config, logging, tracing, LLM gateway, pagination, responses, exceptions, FastAPI app + `/api/v1/health` |
 | 1.1 | ✅ Done | `src/core/database/base.py` — `Base`, `UUIDMixin`, `TimestampMixin`, `SoftDeleteMixin` |
 | 1.2 | ✅ Done | `src/core/database/session.py` — pool, `get_db()`, `scripts/test_db_conn.py` |
-| 1.3 | ⏳ Next | Alembic async setup + migration 001 PostGIS (`alembic`, `geoalchemy2`) |
-| 1.4–1.12 | ⬜ Pending | Models, `BaseRepository`, JWT, auth, middleware, tests — see `docs/steps/step1.md` |
+| 1.3 | ✅ Done | Alembic async env + migration 001 PostGIS (`alembic`, `geoalchemy2`) |
+| 1.4a–1.4d | ⬜ Pending | Models + migration 002 — see `docs/steps/step1.md` |
+| 1.5–1.12 | ⬜ Pending | `BaseRepository`, JWT, auth, middleware, tests — see `docs/steps/step1.md` |
 
 ---
 
@@ -40,6 +41,8 @@ P0 complete. P1 in progress — DB base + async session done; Alembic, models, a
 | `src/core/database/base.py` | `Base`, mixins (SQLAlchemy 2.0 `Mapped[]`) |
 | `src/core/database/session.py` | `get_engine()`, `get_session_factory()`, `get_db()`, `ping_db()`, `dispose_engine()` |
 | `src/main.py` | `create_app()`, lifespan, global handlers, health endpoint |
+| `alembic/env.py` | Async Alembic env — `get_settings()` URL, `Base.metadata`, `geoalchemy2` import |
+| `alembic/versions/001_enable_postgis.py` | PostGIS + uuid-ossp extensions |
 
 **Tests:** `tests/core/test_exceptions.py`
 
@@ -50,8 +53,6 @@ P0 complete. P1 in progress — DB base + async session done; Alembic, models, a
 ## Stubs only (do not assume implemented)
 
 All other `src/**/*.py` files (auth, destinations, places, trips, planner, geo, search, travel_engine, evaluation, security, middleware, `base_repository.py`) are step 0.1 placeholders — one-line docstrings, no logic.
-
-`alembic/env.py` is a placeholder until step 1.3.
 
 ---
 
@@ -71,6 +72,7 @@ No domain routers registered in `main.py` yet.
 docker compose up -d          # Postgres :5433, Qdrant :6335
 uvicorn src.main:app --reload
 python scripts/test_db_conn.py
+alembic upgrade head          # run migrations (deploy/CLI only — not at app startup)
 ```
 
 - `DATABASE_URL=postgresql+asyncpg://wandr:wandr@localhost:5433/wandr` (port **5433**, not 5432)
