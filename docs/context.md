@@ -10,7 +10,7 @@
 
 ## Current state (one line)
 
-P0 complete. P1 in progress — JWT, auth domain (Google OAuth + guest `/me`), BaseRepository done; request-logging middleware not started.
+P0 complete. P1 in progress — JWT, auth domain, pytest harness + auth unit/API tests done; request-logging middleware (1.8) not started.
 
 ---
 
@@ -31,7 +31,9 @@ P0 complete. P1 in progress — JWT, auth domain (Google OAuth + guest `/me`), B
 | 1.7a | ✅ Done | Auth schemas + exceptions |
 | 1.7b | ✅ Done | `UserRepository` + `AuthService` (Google OAuth, upsert commits) |
 | 1.7c | ✅ Done | Auth router + `main.py` registration |
-| 1.8–1.12 | ⬜ Pending | Middleware, TripEditEvent, rate limit, pytest, smoke — see `docs/steps/step1.md` |
+| 1.8–1.10 | ⬜ Pending | Middleware logging, TripEditEvent, rate limit — see `docs/steps/step1.md` |
+| 1.11 | ✅ Partial | pytest harness + auth unit/API tests; middleware header asserts deferred to after 1.8/1.10 |
+| 1.12 | ⬜ Pending | P1 DB smoke script |
 
 ---
 
@@ -66,7 +68,7 @@ P0 complete. P1 in progress — JWT, auth domain (Google OAuth + guest `/me`), B
 | `src/trips/models.py` | `TripStatus`, `Trip`, `TripPlace` |
 | `src/evaluation/models.py` | `TripEvaluation` |
 
-**Tests:** `tests/core/test_exceptions.py`
+**Tests:** `tests/core/test_exceptions.py`, `test_jwt.py`, `test_permissions.py`; `tests/auth/test_*.py` — run `pytest tests/ -v` (DB `wandr_test`)
 
 **Scripts:** `scripts/test_db_conn.py` (DB smoke test)
 

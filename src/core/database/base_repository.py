@@ -127,5 +127,6 @@ class BaseRepository(Generic[ModelT, IDT]):
                 f"(no deleted_at column)"
             )
         obj = await self.get_by_id_or_raise(id)
-        obj.deleted_at = datetime.now(timezone.utc)
+        # Columns are TIMESTAMP WITHOUT TIME ZONE — store UTC as naive.
+        obj.deleted_at = datetime.now(timezone.utc).replace(tzinfo=None)
         await self.session.flush()
