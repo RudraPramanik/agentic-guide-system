@@ -4,13 +4,13 @@
 > Deep reference: `docs/app/system.md` (architecture), `docs/app/lld.md` (patterns).
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-17 · **Phase:** P1 · **Next step:** 1.8
+**Last updated:** 2026-07-18 · **Phase:** P1 · **Next step:** 1.9
 
 ---
 
 ## Current state (one line)
 
-P0 complete. P1 in progress — JWT, auth domain, pytest harness + auth unit/API tests done; request-logging middleware (1.8) not started.
+P0 complete. P1 in progress — JWT, auth, pytest harness, and request-logging middleware done; TripEditEvent (1.9) not started.
 
 ---
 
@@ -31,8 +31,9 @@ P0 complete. P1 in progress — JWT, auth domain, pytest harness + auth unit/API
 | 1.7a | ✅ Done | Auth schemas + exceptions |
 | 1.7b | ✅ Done | `UserRepository` + `AuthService` (Google OAuth, upsert commits) |
 | 1.7c | ✅ Done | Auth router + `main.py` registration |
-| 1.8–1.10 | ⬜ Pending | Middleware logging, TripEditEvent, rate limit — see `docs/steps/step1.md` |
-| 1.11 | ✅ Partial | pytest harness + auth unit/API tests; middleware header asserts deferred to after 1.8/1.10 |
+| 1.8 | ✅ Done | `RequestLoggingMiddleware` — `X-Request-ID` + latency logs |
+| 1.9–1.10 | ⬜ Pending | TripEditEvent, rate limit — see `docs/steps/step1.md` |
+| 1.11 | ✅ Partial | pytest harness + auth unit/API tests; middleware header asserts deferred to after 1.10 |
 | 1.12 | ⬜ Pending | P1 DB smoke script |
 
 ---
@@ -53,7 +54,8 @@ P0 complete. P1 in progress — JWT, auth domain, pytest harness + auth unit/API
 | `src/core/database/base_repository.py` | `BaseRepository[ModelT, IDT]` — soft-delete, paginate, flush-only writes |
 | `src/core/security/jwt.py` | `TokenPayload`, `create_access_token()`, `verify_token()` |
 | `src/core/security/permissions.py` | `require_auth`, `optional_auth`, `get_current_user_id` |
-| `src/main.py` | `create_app()`, lifespan, global handlers, health + auth router |
+| `src/core/middleware/logging.py` | `RequestLoggingMiddleware` — `X-Request-ID`, structlog context, latency |
+| `src/main.py` | `create_app()`, lifespan, logging middleware, global handlers, health + auth router |
 | `alembic/env.py` | Async Alembic + `include_object` filter + all model imports |
 | `alembic/versions/001_enable_postgis.py` | PostGIS + uuid-ossp extensions |
 | `alembic/versions/20260717_*_create_all_tables.py` | Migration 002 — 6 core tables |
@@ -76,7 +78,7 @@ P0 complete. P1 in progress — JWT, auth domain, pytest harness + auth unit/API
 
 ## Stubs only (do not assume implemented)
 
-All other `src/**/*.py` files (destinations/places/trips/evaluation except `models.py`, planner, geo, search, travel_engine, middleware; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic.
+All other `src/**/*.py` files (destinations/places/trips/evaluation except `models.py`, planner, geo, search, travel_engine, `src/core/middleware/rate_limit.py`; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic.
 
 ---
 

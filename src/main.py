@@ -55,6 +55,11 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Outermost middleware — added last (Starlette LIFO). Rate limit (1.10) adds earlier.
+    from src.core.middleware.logging import RequestLoggingMiddleware
+
+    app.add_middleware(RequestLoggingMiddleware)
+
     @app.exception_handler(WandrError)
     async def wandr_error_handler(_request: Request, exc: WandrError) -> JSONResponse:
         return JSONResponse(
