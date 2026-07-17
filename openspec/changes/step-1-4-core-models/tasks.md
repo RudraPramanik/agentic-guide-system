@@ -1,17 +1,17 @@
 ## 1. Step 1.4a — User + Destination
 
-- [ ] 1.1 Re-read `docs/context.md`, `AGENT.md`, `docs/steps/step1.md` §1.4a
-- [ ] 1.2 Implement `src/auth/models.py` (User)
-- [ ] 1.3 Implement `src/destinations/models.py` (Destination)
-- [ ] 1.4 Add User + Destination imports to `alembic/env.py`
-- [ ] 1.5 Run step 1.4a validation snippet — expect PASS
+- [x] 1.1 Re-read `docs/context.md`, `AGENT.md`, `docs/steps/step1.md` §1.4a
+- [x] 1.2 Implement `src/auth/models.py` (User)
+- [x] 1.3 Implement `src/destinations/models.py` (Destination)
+- [x] 1.4 Add User + Destination imports to `alembic/env.py`
+- [x] 1.5 Run step 1.4a validation snippet — expect PASS
 
 ## 2. Step 1.4b — Place + Trip + TripPlace
 
-- [ ] 2.1 Implement `src/places/models.py` (Place with Geometry POINT SRID 4326)
-- [ ] 2.2 Implement `src/trips/models.py` (TripStatus, Trip, TripPlace — include `Text` import for polyline)
-- [ ] 2.3 Add Place + Trip imports to `alembic/env.py`
-- [ ] 2.4 Run step 1.4b validation snippet — expect PASS
+- [x] 2.1 Implement `src/places/models.py` (Place with Geometry POINT SRID 4326)
+- [x] 2.2 Implement `src/trips/models.py` (TripStatus, Trip, TripPlace — include `Text` import for polyline)
+- [x] 2.3 Add Place + Trip imports to `alembic/env.py`
+- [x] 2.4 Run step 1.4b validation snippet — expect PASS
 
 ## 3. Step 1.4c — TripEvaluation
 

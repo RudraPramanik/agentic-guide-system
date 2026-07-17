@@ -4,13 +4,13 @@
 > Deep reference: `docs/app/system.md` (architecture), `docs/app/lld.md` (patterns).
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-17 · **Phase:** P1 · **Next step:** 1.4a
+**Last updated:** 2026-07-17 · **Phase:** P1 · **Next step:** 1.4c
 
 ---
 
 ## Current state (one line)
 
-P0 complete. P1 in progress — DB base, async session, and Alembic + PostGIS migration 001 done; domain models, auth, middleware not started. Domain packages exist as **empty stubs** only.
+P0 complete. P1 in progress — DB base, session, Alembic 001, and models for User/Destination/Place/Trip/TripPlace done; TripEvaluation + migration 002, auth, middleware not started.
 
 ---
 
@@ -22,7 +22,9 @@ P0 complete. P1 in progress — DB base, async session, and Alembic + PostGIS mi
 | 1.1 | ✅ Done | `src/core/database/base.py` — `Base`, `UUIDMixin`, `TimestampMixin`, `SoftDeleteMixin` |
 | 1.2 | ✅ Done | `src/core/database/session.py` — pool, `get_db()`, `scripts/test_db_conn.py` |
 | 1.3 | ✅ Done | Alembic async env + migration 001 PostGIS (`alembic`, `geoalchemy2`) |
-| 1.4a–1.4d | ⬜ Pending | Models + migration 002 — see `docs/steps/step1.md` |
+| 1.4a | ✅ Done | User + Destination models |
+| 1.4b | ✅ Done | Place + Trip + TripPlace models (PostGIS POINT, TripStatus enum) |
+| 1.4c–1.4d | ⬜ Pending | TripEvaluation + migration 002 — see `docs/steps/step1.md` |
 | 1.5–1.12 | ⬜ Pending | `BaseRepository`, JWT, auth, middleware, tests — see `docs/steps/step1.md` |
 
 ---
@@ -43,6 +45,10 @@ P0 complete. P1 in progress — DB base, async session, and Alembic + PostGIS mi
 | `src/main.py` | `create_app()`, lifespan, global handlers, health endpoint |
 | `alembic/env.py` | Async Alembic env — `get_settings()` URL, `Base.metadata`, `geoalchemy2` import |
 | `alembic/versions/001_enable_postgis.py` | PostGIS + uuid-ossp extensions |
+| `src/auth/models.py` | `User` |
+| `src/destinations/models.py` | `Destination` |
+| `src/places/models.py` | `Place` (Geometry POINT SRID 4326) |
+| `src/trips/models.py` | `TripStatus`, `Trip`, `TripPlace` |
 
 **Tests:** `tests/core/test_exceptions.py`
 
@@ -52,7 +58,7 @@ P0 complete. P1 in progress — DB base, async session, and Alembic + PostGIS mi
 
 ## Stubs only (do not assume implemented)
 
-All other `src/**/*.py` files (auth, destinations, places, trips, planner, geo, search, travel_engine, evaluation, security, middleware, `base_repository.py`) are step 0.1 placeholders — one-line docstrings, no logic.
+All other `src/**/*.py` files (auth except models, destinations except models, places except models, trips except models, planner, geo, search, travel_engine, evaluation, security, middleware, `base_repository.py`) are step 0.1 placeholders — one-line docstrings, no logic.
 
 ---
 
