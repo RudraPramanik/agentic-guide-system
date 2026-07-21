@@ -4,13 +4,13 @@
 > Deep reference: `docs/app/system.md` (architecture), `docs/app/lld.md` (patterns).
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-21 · **Phase:** P1 · **Next step:** 1.10
+**Last updated:** 2026-07-21 · **Phase:** P1 complete · **Next step:** P2.1
 
 ---
 
 ## Current state (one line)
 
-P0 complete. P1 in progress — TripEditEvent (1.9) done; rate limit middleware (1.10) next.
+P1 complete — DB foundation, auth, middleware chain (logging + rate limit), pytest harness, P1 smoke script validated.
 
 ---
 
@@ -33,9 +33,9 @@ P0 complete. P1 in progress — TripEditEvent (1.9) done; rate limit middleware 
 | 1.7c | ✅ Done | Auth router + `main.py` registration |
 | 1.8 | ✅ Done | `RequestLoggingMiddleware` — `X-Request-ID` + latency logs |
 | 1.9 | ✅ Done | `TripEditEvent` + `EditType` model, migration 003 `trip_edit_events` |
-| 1.10 | ⬜ Pending | Rate limit middleware stub — see `docs/steps/step1.md` |
-| 1.11 | ✅ Partial | pytest harness + auth unit/API tests; middleware header asserts deferred to after 1.10 |
-| 1.12 | ⬜ Pending | P1 DB smoke script |
+| 1.10 | ✅ Done | `RateLimitMiddleware` — config-driven limits, fail-open, planner 10/min |
+| 1.11 | ✅ Done | pytest harness + auth/core/middleware tests (37 passing) |
+| 1.12 | ✅ Done | `scripts/test_p1_smoke.py` — PostGIS, soft-delete, TripEditEvent CASCADE |
 
 ---
 
@@ -43,7 +43,7 @@ P0 complete. P1 in progress — TripEditEvent (1.9) done; rate limit middleware 
 
 | Module | Exports / notes |
 |--------|-----------------|
-| `src/config.py` | `get_settings()` — all env vars incl. Google OAuth + JWT TTL |
+| `src/config.py` | `get_settings()` — env vars incl. Google OAuth, JWT TTL, rate limit settings |
 | `src/core/observability/logging.py` | `configure_logging()`, `get_logger()` |
 | `src/core/observability/tracing.py` | `get_tracer()`, `flush_tracer()` |
 | `src/core/llm/client.py` | `chat_completion()`, `chat_with_tools()` — **only** litellm import |
@@ -56,7 +56,8 @@ P0 complete. P1 in progress — TripEditEvent (1.9) done; rate limit middleware 
 | `src/core/security/jwt.py` | `TokenPayload`, `create_access_token()`, `verify_token()` |
 | `src/core/security/permissions.py` | `require_auth`, `optional_auth`, `get_current_user_id` |
 | `src/core/middleware/logging.py` | `RequestLoggingMiddleware` — `X-Request-ID`, structlog context, latency |
-| `src/main.py` | `create_app()`, lifespan, logging middleware, global handlers, health + auth router |
+| `src/core/middleware/rate_limit.py` | `RateLimitMiddleware`, `InMemoryRateLimiter`, `RateLimiterBackend` protocol |
+| `src/main.py` | `create_app()`, lifespan, logging + rate limit middleware, global handlers, health + auth router |
 | `alembic/env.py` | Async Alembic + `include_object` filter + all model imports |
 | `alembic/versions/001_enable_postgis.py` | PostGIS + uuid-ossp extensions |
 | `alembic/versions/20260717_*_create_all_tables.py` | Migration 002 — 6 core tables |
@@ -72,15 +73,15 @@ P0 complete. P1 in progress — TripEditEvent (1.9) done; rate limit middleware 
 | `src/trips/models.py` | `TripStatus`, `Trip`, `TripPlace`, `EditType`, `TripEditEvent` |
 | `src/evaluation/models.py` | `TripEvaluation` |
 
-**Tests:** `tests/core/test_exceptions.py`, `test_jwt.py`, `test_permissions.py`; `tests/auth/test_*.py` — run `pytest tests/ -v` (DB `wandr_test`)
+**Tests:** `tests/core/test_*.py`, `tests/auth/test_*.py` — run `python -m pytest tests/ -v` (DB `wandr_test`)
 
-**Scripts:** `scripts/test_db_conn.py` (DB smoke test)
+**Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`
 
 ---
 
 ## Stubs only (do not assume implemented)
 
-All other `src/**/*.py` files (destinations/places/trips/evaluation except `models.py`, planner, geo, search, travel_engine, `src/core/middleware/rate_limit.py`; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic.
+All other `src/**/*.py` files (destinations/places/trips/evaluation except `models.py`, planner, geo, search, travel_engine; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic.
 
 ---
 
@@ -102,7 +103,9 @@ All other `src/**/*.py` files (destinations/places/trips/evaluation except `mode
 docker compose up -d          # Postgres :5433, Qdrant :6335
 uvicorn src.main:app --reload
 python scripts/test_db_conn.py
+python scripts/test_p1_smoke.py
 alembic upgrade head          # run migrations (deploy/CLI only — not at app startup)
+python -m pytest tests/ -v
 ```
 
 - `DATABASE_URL=postgresql+asyncpg://wandr:wandr@localhost:5433/wandr` (port **5433**, not 5432)

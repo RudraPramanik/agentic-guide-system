@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     GOOGLE_TOKEN_URL: str = "https://oauth2.googleapis.com/token"
     GOOGLE_USERINFO_URL: str = "https://www.googleapis.com/oauth2/v3/userinfo"
 
+    # Rate limiting (in-memory backend; Redis at P6 via REDIS_URL)
+    RATE_LIMIT_DEFAULT_REQUESTS: int = 60
+    RATE_LIMIT_DEFAULT_WINDOW_SECONDS: int = 60
+    RATE_LIMIT_PLANNER_REQUESTS: int = 10
+    RATE_LIMIT_PLANNER_WINDOW_SECONDS: int = 60
+    RATE_LIMIT_PLANNER_PATH: str = "/api/v1/planner/generate"
+
 
 @lru_cache
 def get_settings() -> Settings:

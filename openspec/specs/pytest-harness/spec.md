@@ -31,3 +31,17 @@ The harness SHALL provide `auth_token` and `auth_headers` fixtures that mint a v
 #### Scenario: Headers usable
 - **WHEN** `auth_headers` is applied to a request
 - **THEN** the Authorization Bearer value verifies via `verify_token`
+
+### Requirement: Middleware header and failure-path tests
+
+After step 1.10, the harness SHALL include tests asserting `X-Request-ID` and `X-RateLimit-*` headers on health responses, plus fail-open and 429 failure tests using mocked rate limiter backends.
+
+#### Scenario: Fail-open test
+
+- **WHEN** rate limiter backend is mocked to raise
+- **THEN** health request returns 200 not 500
+
+#### Scenario: Rate limit headers present
+
+- **WHEN** client GETs `/api/v1/health`
+- **THEN** response includes `x-ratelimit-limit` and `x-ratelimit-remaining` headers

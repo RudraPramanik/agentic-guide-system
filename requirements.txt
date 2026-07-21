@@ -15,3 +15,4 @@ httpx==0.28.1   # async HTTP client — step 1.7b (used for OAuth, Nominatim, OS
 pytest==9.1.0              # test runner — step 1.11
 pytest-asyncio==1.4.0      # async test support — step 1.11
 pytest-mock==3.15.1        # mock fixtures — step 1.11
+shapely==2.1.2   # geometry construction for PostGIS seed/test scripts — step 1.12

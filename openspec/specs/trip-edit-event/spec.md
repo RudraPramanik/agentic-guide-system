@@ -30,3 +30,12 @@ The system SHALL define index `ix_trip_edit_events_trip_created` on `(trip_id, c
 
 - **WHEN** migration 003 is applied
 - **THEN** index exists on `trip_edit_events(trip_id, created_at)`
+
+### Requirement: P1 smoke script verifies TripEditEvent CASCADE
+
+The P1 smoke script SHALL insert a `TripEditEvent`, verify read-back, delete the parent trip, confirm CASCADE removal, and roll back the transaction.
+
+#### Scenario: Smoke test covers edit events
+
+- **WHEN** `python scripts/test_p1_smoke.py` runs after step 1.12
+- **THEN** output includes a passed TripEditEvent section
