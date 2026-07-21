@@ -1880,6 +1880,16 @@ Expected: all columns listed — id, trip_id, edit_type, day_number, place_id, p
   docker exec wandr_postgres psql -U wandr -d wandr -c "SELECT typname FROM pg_type WHERE typname = 'edit_type';"
 
 Expected: one row with typname = edit_type.
+
+─── AMENDMENTS (post-implementation) ───
+- `tests/conftest.py` already registers all models via `import src.trips.models  # noqa: F401`
+  — no explicit TripEditEvent import needed if that line exists.
+- Idempotent migration proof: run `alembic upgrade head` a second time — expected no-op
+  (no new "Running upgrade" lines).
+
+─── PACKAGE POLICY ───
+- Do NOT bulk-upgrade FastAPI, SQLAlchemy, litellm, etc. during P1 finish.
+- Only `shapely` may be added at step 1.12 (pytest packages from 1.11 if not already present).
 ```
 
 ---
@@ -1894,137 +1904,80 @@ Blueprint (step 6.4): rate limiter on /planner/generate, 10 req/min per IP, retu
 Building it now (not P6) because the middleware chain is assembled here.
 This is step 1.10. No package installs.
 
+─── ADD TO src/config.py ───
+All limits via get_settings() — no hardcoded module constants (AGENT.md).
+
+  # Rate limiting (in-memory backend; Redis at P6 via REDIS_URL)
+  RATE_LIMIT_DEFAULT_REQUESTS: int = 60
+  RATE_LIMIT_DEFAULT_WINDOW_SECONDS: int = 60
+  RATE_LIMIT_PLANNER_REQUESTS: int = 10
+  RATE_LIMIT_PLANNER_WINDOW_SECONDS: int = 60
+  RATE_LIMIT_PLANNER_PATH: str = "/api/v1/planner/generate"
+
+Also add the same keys to `.env.example`.
+
 ─── IMPLEMENT src/core/middleware/rate_limit.py ───
 
-  import time
-  import asyncio
-  import structlog
-  from collections import defaultdict
-  from starlette.middleware.base import BaseHTTPMiddleware
-  from starlette.requests import Request
-  from starlette.responses import Response, JSONResponse
-  from src.core.responses import ErrorResponse
+  from typing import Protocol
 
-  log = structlog.get_logger()
-
-  # Default: 60 requests per 60 seconds
-  DEFAULT_LIMIT = 60
-  DEFAULT_WINDOW = 60
-
-  # Per-route overrides: path_prefix → (limit, window_seconds)
-  ROUTE_LIMITS: dict[str, tuple[int, int]] = {
-      "/api/v1/planner/generate": (10, 60),  # expensive — 10/min
-  }
-
+  class RateLimiterBackend(Protocol):
+      """Extension point for P6 RedisRateLimiter when REDIS_URL is set."""
+      async def is_allowed(self, key: str, limit: int, window: int) -> tuple[bool, int]: ...
 
   class InMemoryRateLimiter:
       """
       Sliding window rate limiter backed by in-memory dict.
       Safe for single-process async use. NOT shared across workers.
-      For multi-worker prod: replace with RedisRateLimiter (P6 concern via REDIS_URL).
+      For multi-worker prod: replace with RedisRateLimiter (P6 via REDIS_URL).
+      After each is_allowed call, drop empty keys from _windows (memory bound for long dev runs).
       """
 
-      def __init__(self) -> None:
-          self._windows: dict[str, list[float]] = defaultdict(list)
-          self._lock = asyncio.Lock()
+  def get_rate_limiter() -> RateLimiterBackend:
+      """Process-wide backend — swappable in tests and at P6."""
 
-      async def is_allowed(self, key: str, limit: int, window: int) -> tuple[bool, int]:
-          """
-          Returns (allowed, remaining_requests).
-          Sliding window: only counts requests within the last `window` seconds.
-          """
-          async with self._lock:
-              now = time.monotonic()
-              cutoff = now - window
-              self._windows[key] = [t for t in self._windows[key] if t > cutoff]
-              count = len(self._windows[key])
-              if count >= limit:
-                  return False, 0
-              self._windows[key].append(now)
-              return True, limit - count - 1
-
-
-  _limiter = InMemoryRateLimiter()
-
+  def _resolve_limits(path: str) -> tuple[int, int]:
+      """Read default or planner limits from get_settings()."""
 
   class RateLimitMiddleware(BaseHTTPMiddleware):
-
       async def dispatch(self, request: Request, call_next) -> Response:
           # Client identity: X-Forwarded-For (behind proxy) or direct client host
-          forwarded = request.headers.get("X-Forwarded-For", "")
-          client_ip = forwarded.split(",")[0].strip() or (
-              request.client.host if request.client else "unknown"
-          )
-
-          # Route-specific limit lookup
-          path = request.url.path
-          limit, window = DEFAULT_LIMIT, DEFAULT_WINDOW
-          for prefix, (rl, rw) in ROUTE_LIMITS.items():
-              if path.startswith(prefix):
-                  limit, window = rl, rw
-                  break
-
-          key = f"{client_ip}:{path}"
-
-          try:
-              allowed, remaining = await _limiter.is_allowed(key, limit, window)
-          except Exception as exc:
-              # Rate limiter failure MUST fail open — never block a user because of a limiter bug
-              log.warning("rate_limiter.error", error=str(exc))
-              allowed, remaining = True, -1
-
-          if not allowed:
-              return JSONResponse(
-                  status_code=429,
-                  headers={
-                      "Retry-After": str(window),
-                      "X-RateLimit-Limit": str(limit),
-                      "X-RateLimit-Remaining": "0",
-                  },
-                  content=ErrorResponse(
-                      code="rate_limit_exceeded",
-                      message=f"Too many requests. Retry after {window} seconds.",
-                  ).model_dump(),
-              )
-
-          response = await call_next(request)
-          response.headers["X-RateLimit-Limit"] = str(limit)
-          if remaining >= 0:
-              response.headers["X-RateLimit-Remaining"] = str(remaining)
-          return response
+          # key = f"{client_ip}:{path}"
+          # try: allowed, remaining = await get_rate_limiter().is_allowed(...)
+          # except Exception: fail open — log warning, allow request (never 500 from limiter bug)
+          # if not allowed: 429 + Retry-After + X-RateLimit-* + ErrorResponse
+          # else: call_next, set X-RateLimit-Limit and X-RateLimit-Remaining on response
 
 ─── UPDATE src/main.py ───
-Register RateLimitMiddleware AFTER RequestLoggingMiddleware in create_app():
+Register RateLimitMiddleware BEFORE RequestLoggingMiddleware (logging outermost):
+
   from src.core.middleware.rate_limit import RateLimitMiddleware
   app.add_middleware(RateLimitMiddleware)
   app.add_middleware(RequestLoggingMiddleware)
 
-Note on order: Starlette wraps in LIFO. add_middleware(RateLimitMiddleware) then
-add_middleware(RequestLoggingMiddleware) means RequestLoggingMiddleware is outermost
-(receives request first). Adjust the order to match this.
+Note on order: Starlette wraps in LIFO. RateLimit added first = inner; logging added last = outermost.
 
 ─── RULES ───
 - Rate limiter errors MUST fail open (allow the request) — never let a limiter bug block users.
 - Retry-After header is required by RFC 6585 when returning 429.
-- The in-memory limiter is NOT shared across workers. Acceptable for dev and single-worker prod.
-  Multi-worker prod uses Redis — that's a P6 concern (REDIS_URL env var).
+- Limits from get_settings() only — no DEFAULT_LIMIT / ROUTE_LIMITS module constants.
+- The in-memory limiter is NOT shared across workers. Multi-worker prod uses Redis (P6, REDIS_URL).
 
 ─── VALIDATION ───
 Start server and check rate limit headers appear on health endpoint:
   curl -si http://localhost:8000/api/v1/health | Select-String -Pattern "x-ratelimit" -CaseSensitive:$false
-  # Linux/macOS: ... | grep -i "x-ratelimit"
 
 Expected:
   x-ratelimit-limit: 60
   x-ratelimit-remaining: 59
 
-Verify planner route has tighter limit:
+Verify planner route limit from settings:
   python -c "
-from src.core.middleware.rate_limit import ROUTE_LIMITS
-assert '/api/v1/planner/generate' in ROUTE_LIMITS
-limit, window = ROUTE_LIMITS['/api/v1/planner/generate']
-assert limit == 10, f'Expected 10, got {limit}'
-assert window == 60
+from src.config import get_settings
+from src.core.middleware.rate_limit import _resolve_limits
+s = get_settings()
+assert s.RATE_LIMIT_PLANNER_REQUESTS == 10
+limit, window = _resolve_limits(s.RATE_LIMIT_PLANNER_PATH)
+assert limit == 10 and window == 60
 print('Planner route limit:', limit, 'per', window, 'seconds')
 print('PASS')
 "
@@ -2041,8 +1994,8 @@ TASK: Install pytest, implement the test conftest, and write the first integrati
 The test harness must exist before P2 adds more domain code.
 This is step 1.11.
 
-─── INSTALL ───
-Append to requirements.txt:
+─── INSTALL (skip if already in requirements.txt from a prior partial run) ───
+Append to requirements.txt if missing:
   pytest==9.1.0              # test runner — step 1.11
   pytest-asyncio==1.4.0      # async test support — step 1.11
   pytest-mock==3.15.1        # mock fixtures — step 1.11
@@ -2064,148 +2017,79 @@ Install:
 
 ─── IMPLEMENT tests/conftest.py ───
 
-  import uuid
-  import pytest
-  from typing import AsyncGenerator
-  from httpx import AsyncClient, ASGITransport
-  from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-  from src.main import create_app
-  from src.core.database.base import Base
-  from src.core.database.session import get_db
-  from src.config import get_settings
-
-
-  def _test_db_url() -> str:
-      """Derive test DB URL by appending _test to the dev DB name."""
-      url = get_settings().DATABASE_URL
-      # Replace last path segment: /wandr → /wandr_test
-      parts = url.rsplit("/", 1)
-      return parts[0] + "/" + parts[1].split("?")[0] + "_test"
-
+  # Register all models on Base.metadata before create_all:
+  import src.auth.models  # noqa: F401
+  import src.destinations.models  # noqa: F401
+  import src.evaluation.models  # noqa: F401
+  import src.places.models  # noqa: F401
+  import src.trips.models  # noqa: F401  — includes TripEditEvent after step 1.9
 
   @pytest.fixture(scope="session")
   async def test_engine():
-      """Session-scoped engine. Creates all tables once, drops them after the session."""
-      engine = create_async_engine(_test_db_url(), echo=False)
-      async with engine.begin() as conn:
-          # Ensure PostGIS is available in test DB
-          await conn.execute(__import__("sqlalchemy").text("CREATE EXTENSION IF NOT EXISTS postgis"))
-          await conn.run_sync(Base.metadata.create_all)
-      yield engine
-      async with engine.begin() as conn:
-          await conn.run_sync(Base.metadata.drop_all)
-      await engine.dispose()
-
+      """Session-scoped engine against wandr_test; PostGIS + uuid-ossp; create_all / drop_all."""
 
   @pytest.fixture
-  async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
+  async def db_session(test_engine):
       """
-      Function-scoped session that rolls back after each test.
-      This ensures tests are isolated and order-independent.
+      Function-scoped session. Rolls back uncommitted work, then TRUNCATE CASCADE
+      all tables after each test — prevents AuthService.commit() from leaking rows.
+      Prefer this over session.begin() rollback-only isolation.
       """
-      factory = async_sessionmaker(test_engine, expire_on_commit=False)
-      async with factory() as session:
-          async with session.begin():
-              yield session
-              await session.rollback()
-
 
   @pytest.fixture
-  async def client(db_session) -> AsyncGenerator[AsyncClient, None]:
-      """
-      Async HTTP test client with the DB session overridden to use the test session.
-      """
-      app = create_app()
-
-      async def _override_get_db():
-          yield db_session
-
-      app.dependency_overrides[get_db] = _override_get_db
-
-      async with AsyncClient(
-          transport=ASGITransport(app=app),
-          base_url="http://test",
-      ) as ac:
-          yield ac
-
-      app.dependency_overrides.clear()
-
+  async def client(db_session):
+      """AsyncClient with get_db overridden; clears dependency_overrides after test."""
 
   @pytest.fixture
-  def auth_token() -> str:
-      """Returns a valid JWT for a synthetic test user."""
-      from src.core.security.jwt import create_access_token
-      return create_access_token(uuid.uuid4(), "testuser@wandr.dev")
-
-
-  @pytest.fixture
-  def auth_headers(auth_token) -> dict:
-      """Authorization headers for authenticated test requests."""
-      return {"Authorization": f"Bearer {auth_token}"}
+  def auth_token() / auth_headers:
+      """JWT fixtures via create_access_token."""
 
 ─── CREATE tests/auth/test_auth_router.py ───
+Auth and health API tests (guest me, logout, cookie auth, no register/login routes).
 
-  import pytest
-
-
-  async def test_health(client):
-      r = await client.get("/api/v1/health")
-      assert r.status_code == 200
-      data = r.json()
-      assert data["success"] is True
-      assert data["data"]["status"] == "ok"
-
-
-  async def test_auth_me_guest(client):
-      r = await client.get("/api/v1/auth/me")
-      assert r.status_code == 200
-      data = r.json()
-      assert data["success"] is True
-      assert data["data"]["is_guest"] is True
-      assert data["data"]["user"] is None
-      assert data["data"]["session_id"]  # non-empty
-
-
-  async def test_auth_logout_no_auth(client):
-      r = await client.post("/api/v1/auth/logout")
-      assert r.status_code == 200
-      assert r.json()["success"] is True
-
-
-  async def test_require_auth_rejects_no_token(client):
-      """Verify require_auth dependency returns 401 for missing token."""
-      # Use the health endpoint (no auth) as baseline, then test a protected route.
-      # Since no protected routes exist yet, test the JWT verification directly.
-      from src.core.security.jwt import verify_token
-      assert verify_token("invalid.token.here") is None
-
+─── CREATE tests/core/test_middleware.py (after step 1.10) ───
 
   async def test_x_request_id_present(client):
       r = await client.get("/api/v1/health")
       assert "x-request-id" in r.headers
 
+  async def test_x_request_id_preserved(client):
+      r = await client.get("/api/v1/health", headers={"X-Request-ID": "my-trace-id-42"})
+      assert r.headers.get("x-request-id") == "my-trace-id-42"
 
   async def test_rate_limit_headers_present(client):
       r = await client.get("/api/v1/health")
       assert "x-ratelimit-limit" in r.headers
-      assert "x-ratelimit-remaining" in r.headers
+      assert r.headers["x-ratelimit-limit"] == "60"
+
+  async def test_rate_limit_fail_open(client, mocker):
+      """Mock get_rate_limiter().is_allowed to raise — must return 200, not 500."""
+      mock_backend = MagicMock()
+      mock_backend.is_allowed = AsyncMock(side_effect=RuntimeError("limiter bug"))
+      mocker.patch.object(rate_limit_module, "get_rate_limiter", return_value=mock_backend)
+      r = await client.get("/api/v1/health")
+      assert r.status_code == 200
+
+  async def test_rate_limit_returns_429(client, mocker):
+      """Mock backend returning (False, 0) — expect 429 + Retry-After (no burst timing)."""
+      mock_backend = MagicMock()
+      mock_backend.is_allowed = AsyncMock(return_value=(False, 0))
+      mocker.patch.object(rate_limit_module, "get_rate_limiter", return_value=mock_backend)
+      r = await client.get("/api/v1/health")
+      assert r.status_code == 429
+      assert r.headers.get("retry-after") == "60"
 
 ─── PRE-STEP: Create test database ───
   docker exec wandr_postgres psql -U wandr -c "CREATE DATABASE wandr_test;"
 
 ─── VALIDATION ───
-  pytest tests/ -v
+  python -m pytest tests/ -v
 
-Expected:
-  tests/auth/test_auth_router.py::test_health PASSED
-  tests/auth/test_auth_router.py::test_auth_me_guest PASSED
-  tests/auth/test_auth_router.py::test_auth_logout_no_auth PASSED
-  tests/auth/test_auth_router.py::test_require_auth_rejects_no_token PASSED
-  tests/auth/test_auth_router.py::test_x_request_id_present PASSED
-  tests/auth/test_auth_router.py::test_rate_limit_headers_present PASSED
-  6 passed in <N>s
+Expected: all tests pass (auth + core + middleware). Zero failures before step 1.12.
 
-Zero failures. Fix any failure before step 1.12.
+─── PACKAGE POLICY ───
+- Do NOT bulk-upgrade existing pinned deps during P1 finish.
+- pytest packages only — no new runtime deps at 1.11.
 ```
 
 ---
@@ -2216,8 +2100,8 @@ Zero failures. Fix any failure before step 1.12.
 Read AGENT.md before proceeding.
 
 TASK: Write and run a comprehensive DB smoke test script that validates the entire P1
-data layer end-to-end — connection, all 7 tables, PostGIS geometry, soft-delete, and
-migration state. This catches issues that unit tests miss.
+data layer end-to-end — connection, all 7 tables, PostGIS geometry, soft-delete,
+migration state, and TripEditEvent CASCADE. This catches issues unit tests miss.
 This is step 1.12. Install shapely now (needed for PostGIS geometry construction).
 
 ─── INSTALL ───
@@ -2230,218 +2114,48 @@ Install:
 ─── CREATE scripts/test_p1_smoke.py ───
 
   """
-  P1 database smoke test — run against the dev database after completing all P1 steps.
-  Not a pytest test. Run directly: python scripts/test_p1_smoke.py
-  All DB writes are rolled back at the end. No permanent data is written.
+  P1 database smoke test — run: python scripts/test_p1_smoke.py
+  All DB writes rolled back. Not a pytest test.
+  Use ASCII [OK]/[FAIL] markers for Windows console compatibility.
   """
-  import asyncio
-  import uuid
-  from datetime import datetime, timezone
-  from sqlalchemy import text, select
-  from sqlalchemy.ext.asyncio import AsyncSession
-  from geoalchemy2.shape import from_shape
-  from shapely.geometry import Point
+  # Sections:
+  #   1. Connection + Pool
+  #   2. All 7 Tables Exist (parameterized SQL — no f-string table names in SQL)
+  #   3. PostGIS Geometry Insert + Read + ST_DWithin
+  #   4. Soft Delete Filter — use UserRepository.soft_delete(), NOT direct deleted_at assignment
+  #      (timezone-aware datetime on naive TIMESTAMP columns fails with asyncpg)
+  #   5. Migration State — alembic_version row present
+  #   6. TripEditEvent + CASCADE — insert event, delete trip, verify cascade, rollback
 
-  from src.core.database.session import get_engine, AsyncSessionLocal
-  from src.auth.models import User
-  from src.destinations.models import Destination
-  from src.places.models import Place
-  from src.trips.models import Trip, TripPlace, TripStatus, TripEditEvent, EditType
-  from src.evaluation.models import TripEvaluation
-
-  EXPECTED_TABLES = [
-      "users", "destinations", "places",
-      "trips", "trip_places", "trip_evaluations", "trip_edit_events",
-  ]
-
-
-  def _ok(msg: str) -> None:
-      print(f"  ✓ {msg}")
-
-
-  def _fail(msg: str) -> None:
-      print(f"  ✗ {msg}")
-      raise AssertionError(msg)
-
-
-  async def test_connection() -> None:
-      print("\n─── 1. Connection + Pool ───")
-      engine = get_engine()
-      async with engine.connect() as conn:
-          ver = (await conn.execute(text("SELECT version()"))).scalar()
-          _ok(f"Connected: {ver[:55]}...")
-          db = (await conn.execute(text("SELECT current_database()"))).scalar()
-          _ok(f"Database: {db}")
-
-
-  async def test_all_tables_exist() -> None:
-      print("\n─── 2. All 7 Tables Exist ───")
-      engine = get_engine()
-      async with engine.connect() as conn:
-          for table in EXPECTED_TABLES:
-              exists = (await conn.execute(
-                  text(f"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='{table}')")
-              )).scalar()
-              if exists:
-                  _ok(table)
-              else:
-                  _fail(f"Table '{table}' missing — run: alembic upgrade head")
-
-
-  async def test_postgis_geometry() -> None:
-      print("\n─── 3. PostGIS Geometry Insert + Read ───")
-      async with AsyncSessionLocal() as session:
-          # Insert a destination first (Place has FK to destinations)
-          dest = Destination(
-              name="Smoke Test City",
-              country="Testland",
-              display_name="Smoke Test City, Testland",
-              lat=27.041,
-              lng=88.263,
-          )
-          session.add(dest)
-          await session.flush()
-          _ok(f"Destination inserted: id={dest.id}")
-
-          # Insert a Place with a PostGIS POINT geometry
-          place = Place(
-              osm_id=f"smoke_{uuid.uuid4().hex[:12]}",
-              name="Tiger Hill (Smoke Test)",
-              category="viewpoint",
-              destination_id=dest.id,
-              location=from_shape(Point(88.263, 27.041), srid=4326),
-          )
-          session.add(place)
-          await session.flush()
-          _ok(f"Place with PostGIS geometry inserted: id={place.id}")
-
-          # Read back and verify
-          fetched = (await session.execute(select(Place).where(Place.id == place.id))).scalar_one()
-          assert fetched.name == "Tiger Hill (Smoke Test)"
-          _ok(f"Place read back: name={fetched.name}, category={fetched.category}")
-
-          # Spatial query — ST_DWithin radius check
-          nearby = (await session.execute(
-              text(
-                  "SELECT COUNT(*) FROM places "
-                  "WHERE ST_DWithin(location::geography, ST_MakePoint(:lng, :lat)::geography, :radius)"
-              ),
-              {"lng": 88.263, "lat": 27.041, "radius": 1000},
-          )).scalar()
-          assert nearby >= 1
-          _ok(f"ST_DWithin radius query returned {nearby} result(s)")
-
-          await session.rollback()
-          _ok("Rolled back — no permanent data written")
-
-
-  async def test_soft_delete_filter() -> None:
-      print("\n─── 4. Soft Delete Filter ───")
-      async with AsyncSessionLocal() as session:
-          user = User(
-              email=f"smoke_{uuid.uuid4().hex[:8]}@wandr.dev",
-              name="Smoke Test User",
-              is_active=True,
-          )
-          session.add(user)
-          await session.flush()
-          uid = user.id
-
-          # Soft-delete
-          user.deleted_at = datetime.now(timezone.utc)
-          await session.flush()
-
-          # Raw query should still find it
-          raw = (await session.execute(select(User).where(User.id == uid))).scalar_one_or_none()
-          assert raw is not None, "Raw query should find soft-deleted user"
-
-          # Filtered query should not find it
-          filtered = (await session.execute(
-              select(User).where(User.id == uid, User.deleted_at.is_(None))
-          )).scalar_one_or_none()
-          assert filtered is None, "Filtered query must NOT return soft-deleted user"
-
-          _ok("Soft delete filter works correctly")
-          await session.rollback()
-
-
-  async def test_migration_state() -> None:
-      print("\n─── 5. Migration State ───")
-      engine = get_engine()
-      async with engine.connect() as conn:
-          rev = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-          assert rev is not None, "No migrations applied — run: alembic upgrade head"
-          _ok(f"Current alembic revision: {rev}")
-
-
-  async def main() -> None:
-      print("=" * 52)
-      print("  Wandr P1 — Database Smoke Test")
-      print("=" * 52)
-      try:
-          await test_connection()
-          await test_all_tables_exist()
-          await test_postgis_geometry()
-          await test_soft_delete_filter()
-          await test_migration_state()
-
-          print("\n" + "=" * 52)
-          print("  ALL P1 SMOKE TESTS PASSED ✓")
-          print("  Ready to start P2.")
-          print("=" * 52 + "\n")
-      except AssertionError as e:
-          print(f"\n✗ SMOKE TEST FAILED: {e}")
-          raise SystemExit(1)
-      except Exception as e:
-          print(f"\n✗ UNEXPECTED ERROR: {type(e).__name__}: {e}")
-          import traceback; traceback.print_exc()
-          raise SystemExit(1)
-
-
-  if __name__ == "__main__":
-      asyncio.run(main())
+  async def test_trip_edit_events():
+      # Insert Destination, Place, Trip, TripEditEvent(edit_type=REORDER, payload={...})
+      # Verify read-back; await session.delete(trip); assert edit event gone; rollback
 
 ─── VALIDATION ───
-Run:
+Run (ensure project root is on PYTHONPATH if another repo shadows src/):
   python scripts/test_p1_smoke.py
 
-Expected output:
-  ====================================================
-    Wandr P1 — Database Smoke Test
-  ====================================================
-
-  ─── 1. Connection + Pool ───
-    ✓ Connected: PostgreSQL 16.x ...
-    ✓ Database: wandr
-
-  ─── 2. All 7 Tables Exist ───
-    ✓ users
-    ✓ destinations
-    ✓ places
-    ✓ trips
-    ✓ trip_places
-    ✓ trip_evaluations
-    ✓ trip_edit_events
-
-  ─── 3. PostGIS Geometry Insert + Read ───
-    ✓ Destination inserted
-    ✓ Place with PostGIS geometry inserted
-    ✓ Place read back: name=Tiger Hill (Smoke Test), category=viewpoint
-    ✓ ST_DWithin radius query returned 1 result(s)
-    ✓ Rolled back — no permanent data written
-
-  ─── 4. Soft Delete Filter ───
-    ✓ Soft delete filter works correctly
-
-  ─── 5. Migration State ───
-    ✓ Current alembic revision: <rev_id>
-
-  ====================================================
-    ALL P1 SMOKE TESTS PASSED ✓
-    Ready to start P2.
-  ====================================================
+Expected output includes:
+  --- 1. Connection + Pool ---
+    [OK] Connected: PostgreSQL 16.x ...
+    [OK] Database: wandr
+  --- 2. All 7 Tables Exist ---
+    [OK] users ... [OK] trip_edit_events
+  --- 3. PostGIS Geometry Insert + Read ---
+    [OK] ST_DWithin radius query returned 1 result(s)
+  --- 4. Soft Delete Filter ---
+    [OK] Soft delete filter works correctly
+  --- 5. Migration State ---
+    [OK] Current alembic revision: <rev_id>
+  --- 6. TripEditEvent + CASCADE ---
+    [OK] Trip CASCADE removed TripEditEvent
+  ALL P1 SMOKE TESTS PASSED
 
 Do NOT proceed to P2 if any test fails.
+
+─── PACKAGE POLICY ───
+- shapely is the only new production dependency for P1 finish (pytest from 1.11 if missing).
+- Do NOT bulk-upgrade FastAPI, SQLAlchemy, litellm, etc. during this step.
 ```
 
 ---
@@ -2521,12 +2235,15 @@ curl -s http://localhost:8000/api/v1/auth/me | python -m json.tool
 # Expected: is_guest: true, session_id present, user: null
 
 # ── Pytest suite (requires wandr_test database — step 1.11) ──
-pytest tests/ -v
-# Expected: 6 passed, 0 failed
+python -m pytest tests/ -v
+# Expected: all passed (auth + core + middleware), 0 failed
+
+# ── Rate limit config (step 1.10) ──
+python -c "from src.config import get_settings; from src.core.middleware.rate_limit import _resolve_limits; s=get_settings(); l,w=_resolve_limits(s.RATE_LIMIT_PLANNER_PATH); assert l==10; print('PASS')"
 
 # ── DB smoke test ──
 python scripts/test_p1_smoke.py
-# Expected: ALL P1 SMOKE TESTS PASSED
+# Expected: ALL P1 SMOKE TESTS PASSED (sections 1–6)
 
 # ── Import guards ──
 # PowerShell:
