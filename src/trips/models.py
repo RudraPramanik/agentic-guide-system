@@ -83,3 +83,45 @@ class TripPlace(Base, UUIDMixin, TimestampMixin):
             f"<TripPlace trip={self.trip_id} day={self.day_number} "
             f"order={self.order_in_day}>"
         )
+
+
+class EditType(str, enum.Enum):
+    REORDER = "reorder"
+    REMOVE_STOP = "remove_stop"
+    ADD_STOP = "add_stop"
+    REOPTIMIZE_DAY = "reoptimize_day"
+
+
+class TripEditEvent(Base, UUIDMixin, TimestampMixin):
+    """
+    Append-only audit record for every user-initiated trip edit.
+    Used by evaluation.service.record_edit() to flag user_edited=True
+    on the linked TripEvaluation. Never soft-deleted.
+    """
+
+    __tablename__ = "trip_edit_events"
+
+    trip_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("trips.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    edit_type: Mapped[EditType] = mapped_column(
+        SAEnum(EditType, name="edit_type"),
+        nullable=False,
+    )
+    day_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    place_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("places.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+
+    __table_args__ = (
+        Index("ix_trip_edit_events_trip_created", "trip_id", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<TripEditEvent id={self.id} trip={self.trip_id} type={self.edit_type}>"

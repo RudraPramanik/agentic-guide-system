@@ -4,13 +4,13 @@
 > Deep reference: `docs/app/system.md` (architecture), `docs/app/lld.md` (patterns).
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-18 · **Phase:** P1 · **Next step:** 1.9
+**Last updated:** 2026-07-21 · **Phase:** P1 · **Next step:** 1.10
 
 ---
 
 ## Current state (one line)
 
-P0 complete. P1 in progress — JWT, auth, pytest harness, and request-logging middleware done; TripEditEvent (1.9) not started.
+P0 complete. P1 in progress — TripEditEvent (1.9) done; rate limit middleware (1.10) next.
 
 ---
 
@@ -32,7 +32,8 @@ P0 complete. P1 in progress — JWT, auth, pytest harness, and request-logging m
 | 1.7b | ✅ Done | `UserRepository` + `AuthService` (Google OAuth, upsert commits) |
 | 1.7c | ✅ Done | Auth router + `main.py` registration |
 | 1.8 | ✅ Done | `RequestLoggingMiddleware` — `X-Request-ID` + latency logs |
-| 1.9–1.10 | ⬜ Pending | TripEditEvent, rate limit — see `docs/steps/step1.md` |
+| 1.9 | ✅ Done | `TripEditEvent` + `EditType` model, migration 003 `trip_edit_events` |
+| 1.10 | ⬜ Pending | Rate limit middleware stub — see `docs/steps/step1.md` |
 | 1.11 | ✅ Partial | pytest harness + auth unit/API tests; middleware header asserts deferred to after 1.10 |
 | 1.12 | ⬜ Pending | P1 DB smoke script |
 
@@ -59,6 +60,7 @@ P0 complete. P1 in progress — JWT, auth, pytest harness, and request-logging m
 | `alembic/env.py` | Async Alembic + `include_object` filter + all model imports |
 | `alembic/versions/001_enable_postgis.py` | PostGIS + uuid-ossp extensions |
 | `alembic/versions/20260717_*_create_all_tables.py` | Migration 002 — 6 core tables |
+| `alembic/versions/20260721_*_add_trip_edit_events.py` | Migration 003 — `trip_edit_events` + `edit_type` enum |
 | `src/auth/models.py` | `User` |
 | `src/auth/schemas.py` | `UserOut`, `AuthMeResponse`, `TokenResponse`, `GoogleCallbackParams` |
 | `src/auth/exceptions.py` | `GoogleOAuthError`, `InvalidTokenError`, `AccountInactiveError` |
@@ -67,7 +69,7 @@ P0 complete. P1 in progress — JWT, auth, pytest harness, and request-logging m
 | `src/auth/router.py` | `/api/v1/auth/google|callback|me|logout` |
 | `src/destinations/models.py` | `Destination` |
 | `src/places/models.py` | `Place` (Geometry POINT SRID 4326) |
-| `src/trips/models.py` | `TripStatus`, `Trip`, `TripPlace` |
+| `src/trips/models.py` | `TripStatus`, `Trip`, `TripPlace`, `EditType`, `TripEditEvent` |
 | `src/evaluation/models.py` | `TripEvaluation` |
 
 **Tests:** `tests/core/test_exceptions.py`, `test_jwt.py`, `test_permissions.py`; `tests/auth/test_*.py` — run `pytest tests/ -v` (DB `wandr_test`)
