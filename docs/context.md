@@ -6,13 +6,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-22 · **Phase:** P2 in progress · **Next step:** P2.6a
+**Last updated:** 2026-07-22 · **Phase:** P2 in progress · **Next step:** P2.4
 
 ---
 
 ## Current state (one line)
 
-P2.3 done — `PlaceRepository` (atomic upsert, geography radius, paginated list); OSRM / destinations service still stubs — next is P2.6a destination schemas/exceptions.
+P2.6a+2.6b done — destination schemas/exceptions + atomic upsert repo + cache-aside search service; next is P2.4 seed script.
 
 ---
 
@@ -41,6 +41,8 @@ P2.3 done — `PlaceRepository` (atomic upsert, geography radius, paginated list
 | 2.1 | ✅ Done | `geo/schemas` + `geo/geocoder` — Nominatim gateway, dict cache, 1 req/sec throttle |
 | 2.2 | ✅ Done | `geo/overpass` — Overpass POI scraper, category map, dedupe, `[]` on failure |
 | 2.3 | ✅ Done | `places/repository` — atomic OSM upsert, geography radius, list/count by destination |
+| 2.6a | ✅ Done | destinations schemas + `DestinationNotFoundError` |
+| 2.6b | ✅ Done | `DestinationRepository` atomic upsert + `DestinationService` cache-aside search |
 
 ---
 
@@ -74,6 +76,10 @@ P2.3 done — `PlaceRepository` (atomic upsert, geography radius, paginated list
 | `src/auth/service.py` | `AuthService` — upsert, Google exchange/userinfo |
 | `src/auth/router.py` | `/api/v1/auth/google|callback|me|logout` |
 | `src/destinations/models.py` | `Destination` |
+| `src/destinations/schemas.py` | `DestinationOut`, `DestinationSearchQuery`, `DestinationReadinessOut` |
+| `src/destinations/exceptions.py` | `DestinationNotFoundError` (404) |
+| `src/destinations/repository.py` | `DestinationRepository` — atomic geocode upsert, ILIKE search |
+| `src/destinations/service.py` | `DestinationService` — cache-aside search (DB → geocode → upsert) |
 | `src/places/models.py` | `Place` (Geometry POINT SRID 4326) |
 | `src/places/repository.py` | `PlaceRepository` — `upsert_from_poi`, `find_within_radius`, `list_by_destination`, `count_by_destination` |
 | `src/trips/models.py` | `TripStatus`, `Trip`, `TripPlace`, `EditType`, `TripEditEvent` |
@@ -92,7 +98,7 @@ P2.3 done — `PlaceRepository` (atomic upsert, geography radius, paginated list
 
 ## Stubs only (do not assume implemented)
 
-All other `src/**/*.py` files (destinations except `models.py`; places except `models.py` + `repository.py`; trips/evaluation except `models.py`; `geo/osrm.py`; planner, search, travel_engine; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic.
+All other `src/**/*.py` files (destinations except `models.py` + schemas/exceptions/repository/service; places except `models.py` + `repository.py`; trips/evaluation except `models.py`; `geo/osrm.py`; planner, search, travel_engine; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic.
 
 ---
 
