@@ -5,13 +5,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-22 · **Phase:** P1 complete · **Next step:** P2.1
+**Last updated:** 2026-07-22 · **Phase:** P2 in progress · **Next step:** P2.2
 
 ---
 
 ## Current state (one line)
 
-P1 complete — DB foundation, auth, middleware chain, pytest harness, P1 smoke validated. P2 Cursor prompts finalized in `docs/steps/step2.md` (v2 hardened); geo/destinations/places services still stubs — implement from P2.1.
+P2.1 done — Nominatim geocoder + geo DTOs (`GeocodedPlace`, `RawPOI`, `RouteResult`); Overpass/OSRM/destinations/places services still stubs — next is P2.2 overpass gateway.
 
 ---
 
@@ -37,6 +37,7 @@ P1 complete — DB foundation, auth, middleware chain, pytest harness, P1 smoke 
 | 1.10 | ✅ Done | `RateLimitMiddleware` — config-driven limits, fail-open, planner 10/min |
 | 1.11 | ✅ Done | pytest harness + auth/core/middleware tests (37 passing) |
 | 1.12 | ✅ Done | `scripts/test_p1_smoke.py` — PostGIS, soft-delete, TripEditEvent CASCADE |
+| 2.1 | ✅ Done | `geo/schemas` + `geo/geocoder` — Nominatim gateway, dict cache, 1 req/sec throttle |
 
 ---
 
@@ -44,7 +45,7 @@ P1 complete — DB foundation, auth, middleware chain, pytest harness, P1 smoke 
 
 | Module | Exports / notes |
 |--------|-----------------|
-| `src/config.py` | `get_settings()` — env vars incl. Google OAuth, JWT TTL, rate limit settings |
+| `src/config.py` | `get_settings()` — env vars incl. Google OAuth, JWT TTL, rate limit, `NOMINATIM_BASE_URL`, `OVERPASS_API_URL` |
 | `src/core/observability/logging.py` | `configure_logging()`, `get_logger()` |
 | `src/core/observability/tracing.py` | `get_tracer()`, `flush_tracer()` |
 | `src/core/llm/client.py` | `chat_completion()`, `chat_with_tools()` — **only** litellm import |
@@ -73,16 +74,20 @@ P1 complete — DB foundation, auth, middleware chain, pytest harness, P1 smoke 
 | `src/places/models.py` | `Place` (Geometry POINT SRID 4326) |
 | `src/trips/models.py` | `TripStatus`, `Trip`, `TripPlace`, `EditType`, `TripEditEvent` |
 | `src/evaluation/models.py` | `TripEvaluation` |
+| `src/geo/schemas.py` | `GeocodedPlace`, `RawPOI`, `RouteResult` |
+| `src/geo/geocoder.py` | `geocode()` — Nominatim gateway; process-local dict cache + 1 req/sec throttle |
 
 **Tests:** `tests/core/test_*.py`, `tests/auth/test_*.py` — run `python -m pytest tests/ -v` (DB `wandr_test`)
 
-**Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`
+**Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_geocoder.py`
+
+**TODO (P6):** geocoder cache + Nominatim throttle are per-process; back with Redis when `REDIS_URL` is wired for the rate limiter.
 
 ---
 
 ## Stubs only (do not assume implemented)
 
-All other `src/**/*.py` files (destinations/places/trips/evaluation except `models.py`, planner, geo, search, travel_engine; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic.
+All other `src/**/*.py` files (destinations/places/trips/evaluation except `models.py`; `geo/overpass.py`, `geo/osrm.py`; planner, search, travel_engine; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic.
 
 ---
 
@@ -105,6 +110,7 @@ docker compose up -d          # Postgres :5433, Qdrant :6335
 uvicorn src.main:app --reload
 python scripts/test_db_conn.py
 python scripts/test_p1_smoke.py
+python scripts/test_geocoder.py "Darjeeling"   # needs PYTHONPATH=project root if imports fail
 alembic upgrade head          # run migrations (deploy/CLI only — not at app startup)
 python -m pytest tests/ -v
 ```
@@ -112,6 +118,7 @@ python -m pytest tests/ -v
 - `DATABASE_URL=postgresql+asyncpg://wandr:wandr@localhost:5433/wandr` (port **5433**, not 5432)
 - `QDRANT_URL=http://localhost:6335`
 - `.env` must have a **bare** `DATABASE_URL` value — no comment prefix on the same line
+- Geo: `NOMINATIM_BASE_URL`, `OVERPASS_API_URL`, `NOMINATIM_USER_AGENT` via `get_settings()`
 
 ---
 

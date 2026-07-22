@@ -50,6 +50,8 @@ class Settings(BaseSettings):
 
     # Geo
     NOMINATIM_USER_AGENT: str
+    NOMINATIM_BASE_URL: str = "https://nominatim.openstreetmap.org"
+    OVERPASS_API_URL: str = "https://overpass-api.de/api/interpreter"
     OSRM_BASE_URL: str = "https://router.project-osrm.org"
 
     # Auth / JWT
