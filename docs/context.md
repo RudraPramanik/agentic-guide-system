@@ -6,13 +6,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-22 · **Phase:** P2 in progress · **Next step:** P2.3
+**Last updated:** 2026-07-22 · **Phase:** P2 in progress · **Next step:** P2.6a
 
 ---
 
 ## Current state (one line)
 
-P2.2 done — Overpass POI gateway (`fetch_pois` → `RawPOI`); place repo / OSRM / destinations still stubs — next is P2.3 `places/repository`.
+P2.3 done — `PlaceRepository` (atomic upsert, geography radius, paginated list); OSRM / destinations service still stubs — next is P2.6a destination schemas/exceptions.
 
 ---
 
@@ -40,6 +40,7 @@ P2.2 done — Overpass POI gateway (`fetch_pois` → `RawPOI`); place repo / OSR
 | 1.12 | ✅ Done | `scripts/test_p1_smoke.py` — PostGIS, soft-delete, TripEditEvent CASCADE |
 | 2.1 | ✅ Done | `geo/schemas` + `geo/geocoder` — Nominatim gateway, dict cache, 1 req/sec throttle |
 | 2.2 | ✅ Done | `geo/overpass` — Overpass POI scraper, category map, dedupe, `[]` on failure |
+| 2.3 | ✅ Done | `places/repository` — atomic OSM upsert, geography radius, list/count by destination |
 
 ---
 
@@ -74,6 +75,7 @@ P2.2 done — Overpass POI gateway (`fetch_pois` → `RawPOI`); place repo / OSR
 | `src/auth/router.py` | `/api/v1/auth/google|callback|me|logout` |
 | `src/destinations/models.py` | `Destination` |
 | `src/places/models.py` | `Place` (Geometry POINT SRID 4326) |
+| `src/places/repository.py` | `PlaceRepository` — `upsert_from_poi`, `find_within_radius`, `list_by_destination`, `count_by_destination` |
 | `src/trips/models.py` | `TripStatus`, `Trip`, `TripPlace`, `EditType`, `TripEditEvent` |
 | `src/evaluation/models.py` | `TripEvaluation` |
 | `src/geo/schemas.py` | `GeocodedPlace`, `RawPOI`, `RouteResult` |
@@ -90,7 +92,7 @@ P2.2 done — Overpass POI gateway (`fetch_pois` → `RawPOI`); place repo / OSR
 
 ## Stubs only (do not assume implemented)
 
-All other `src/**/*.py` files (destinations/places/trips/evaluation except `models.py`; `geo/osrm.py`; planner, search, travel_engine; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic.
+All other `src/**/*.py` files (destinations except `models.py`; places except `models.py` + `repository.py`; trips/evaluation except `models.py`; `geo/osrm.py`; planner, search, travel_engine; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic.
 
 ---
 
