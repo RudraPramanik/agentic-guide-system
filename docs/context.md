@@ -2,6 +2,7 @@
 
 > **Read this first every session.** Then `AGENT.md` (rules), then the current step in `docs/steps/step2.md` (or blueprint).
 > Deep reference: `docs/app/system.md` (architecture), `docs/app/lld.md` (patterns).
+> P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
 **Last updated:** 2026-07-22 · **Phase:** P1 complete · **Next step:** P2.1
