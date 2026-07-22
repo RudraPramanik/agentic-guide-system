@@ -2,16 +2,17 @@
 
 > **Read this first every session.** Then `AGENT.md` (rules), then the current step in `docs/steps/step2.md` (or blueprint).
 > Deep reference: `docs/app/system.md` (architecture), `docs/app/lld.md` (patterns).
+> Junior map (layers / files / imports): `docs/app/documentation.md` → `docs/manual/` (refresh on phase end or every 4–5 steps — not every step).
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-22 · **Phase:** P2 in progress · **Next step:** P2.2
+**Last updated:** 2026-07-22 · **Phase:** P2 in progress · **Next step:** P2.3
 
 ---
 
 ## Current state (one line)
 
-P2.1 done — Nominatim geocoder + geo DTOs (`GeocodedPlace`, `RawPOI`, `RouteResult`); Overpass/OSRM/destinations/places services still stubs — next is P2.2 overpass gateway.
+P2.2 done — Overpass POI gateway (`fetch_pois` → `RawPOI`); place repo / OSRM / destinations still stubs — next is P2.3 `places/repository`.
 
 ---
 
@@ -38,6 +39,7 @@ P2.1 done — Nominatim geocoder + geo DTOs (`GeocodedPlace`, `RawPOI`, `RouteRe
 | 1.11 | ✅ Done | pytest harness + auth/core/middleware tests (37 passing) |
 | 1.12 | ✅ Done | `scripts/test_p1_smoke.py` — PostGIS, soft-delete, TripEditEvent CASCADE |
 | 2.1 | ✅ Done | `geo/schemas` + `geo/geocoder` — Nominatim gateway, dict cache, 1 req/sec throttle |
+| 2.2 | ✅ Done | `geo/overpass` — Overpass POI scraper, category map, dedupe, `[]` on failure |
 
 ---
 
@@ -76,10 +78,11 @@ P2.1 done — Nominatim geocoder + geo DTOs (`GeocodedPlace`, `RawPOI`, `RouteRe
 | `src/evaluation/models.py` | `TripEvaluation` |
 | `src/geo/schemas.py` | `GeocodedPlace`, `RawPOI`, `RouteResult` |
 | `src/geo/geocoder.py` | `geocode()` — Nominatim gateway; process-local dict cache + 1 req/sec throttle |
+| `src/geo/overpass.py` | `fetch_pois()` — Overpass gateway; form `data=` POST; 5xx/timeout retry; `[]` fallback |
 
 **Tests:** `tests/core/test_*.py`, `tests/auth/test_*.py` — run `python -m pytest tests/ -v` (DB `wandr_test`)
 
-**Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_geocoder.py`
+**Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`
 
 **TODO (P6):** geocoder cache + Nominatim throttle are per-process; back with Redis when `REDIS_URL` is wired for the rate limiter.
 
@@ -87,7 +90,7 @@ P2.1 done — Nominatim geocoder + geo DTOs (`GeocodedPlace`, `RawPOI`, `RouteRe
 
 ## Stubs only (do not assume implemented)
 
-All other `src/**/*.py` files (destinations/places/trips/evaluation except `models.py`; `geo/overpass.py`, `geo/osrm.py`; planner, search, travel_engine; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic.
+All other `src/**/*.py` files (destinations/places/trips/evaluation except `models.py`; `geo/osrm.py`; planner, search, travel_engine; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic.
 
 ---
 
@@ -111,6 +114,7 @@ uvicorn src.main:app --reload
 python scripts/test_db_conn.py
 python scripts/test_p1_smoke.py
 python scripts/test_geocoder.py "Darjeeling"   # needs PYTHONPATH=project root if imports fail
+python scripts/test_overpass.py 27.041 88.263 30   # public Overpass may 504; override OVERPASS_API_URL if needed
 alembic upgrade head          # run migrations (deploy/CLI only — not at app startup)
 python -m pytest tests/ -v
 ```
@@ -119,6 +123,7 @@ python -m pytest tests/ -v
 - `QDRANT_URL=http://localhost:6335`
 - `.env` must have a **bare** `DATABASE_URL` value — no comment prefix on the same line
 - Geo: `NOMINATIM_BASE_URL`, `OVERPASS_API_URL`, `NOMINATIM_USER_AGENT` via `get_settings()`
+- Overpass: `read=90s` + retry on 5xx (amendment vs step `read=30`); failure → `[]`
 
 ---
 
@@ -138,3 +143,5 @@ See `AGENT.md` for full list. Non-negotiable:
 ## After completing a step
 
 Update this file: bump **Last updated**, set **Next step**, mark step ✅ in Progress, add row to Implemented modules if new real code landed. See `.cursorrules`.
+
+Refresh the **developer manual** (`docs/app/documentation.md` + `docs/manual/`) only when a full phase ends **or** every 4–5 validated steps since its “Through step” marker — see `docs/manual/06-maintenance.md`.

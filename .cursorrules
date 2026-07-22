@@ -37,6 +37,18 @@ Do not implement from memory. Do not assume stub files contain logic.
 
 **Who updates:** The agent that completes the step, in the same PR/session as the code change.
 
+## docs/app/documentation.md + docs/manual/ — maintenance rules
+
+**Purpose:** Junior-oriented map of layers, modules, imports, and how-to-change recipes. Complements `docs/context.md`; does not replace it.
+
+**Update when:** A full phase completes **or** every 4–5 validated steps since the index “Through step” marker (whichever first). Do **not** rewrite the manual on every single step.
+
+**Do update on cadence:** Index `Last refreshed` / `Through step`; module map real-vs-stub vs context; new wiring diagrams; new how-to recipes if a pattern shipped.
+
+**Do not:** Duplicate AGENT.md, step prompts, or the blueprint; document stub files as if they had public APIs.
+
+**Who updates:** The agent/developer hitting the cadence (or when explicitly asked). Details: `docs/manual/06-maintenance.md`.
+
 ## Code rules
 
 Follow `AGENT.md` completely. When instructions conflict with the blueprint, ask the user; if unclear, prefer blueprint + efficiency.
