@@ -1,16 +1,16 @@
 # Wandr — AI Agent Context
 
-> **Read this first every session.** Then `AGENT.md` (rules), then the current step in `docs/steps/step1.md` (or blueprint).
+> **Read this first every session.** Then `AGENT.md` (rules), then the current step in `docs/steps/step2.md` (or blueprint).
 > Deep reference: `docs/app/system.md` (architecture), `docs/app/lld.md` (patterns).
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-21 · **Phase:** P1 complete · **Next step:** P2.1
+**Last updated:** 2026-07-22 · **Phase:** P1 complete · **Next step:** P2.1
 
 ---
 
 ## Current state (one line)
 
-P1 complete — DB foundation, auth, middleware chain (logging + rate limit), pytest harness, P1 smoke script validated.
+P1 complete — DB foundation, auth, middleware chain, pytest harness, P1 smoke validated. P2 Cursor prompts finalized in `docs/steps/step2.md` (v2 hardened); geo/destinations/places services still stubs — implement from P2.1.
 
 ---
 
