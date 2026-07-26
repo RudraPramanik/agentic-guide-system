@@ -4,7 +4,7 @@
 > **Not for:** End-user / traveler product docs.  
 > **Agents:** Still start every session with [`docs/context.md`](../context.md) — this manual is complementary navigation.
 
-**Last refreshed:** 2026-07-26 · **Through step:** P2.4
+**Last refreshed:** 2026-07-26 · **Through step:** P2.8
 
 ---
 
@@ -34,7 +34,7 @@ It does **not** replace:
 5. [`05-how-to-change.md`](../manual/05-how-to-change.md) — recipes when you open a ticket  
 6. [`06-maintenance.md`](../manual/06-maintenance.md) — when this manual gets refreshed  
 
-Then skim [`docs/context.md`](../context.md) so you know **P2.5** is next and what is still a stub.
+Then skim [`docs/context.md`](../context.md) so you know **P2.9** is next and what is still a stub.
 
 ---
 
@@ -44,20 +44,21 @@ Then skim [`docs/context.md`](../context.md) so you know **P2.5** is next and wh
 |---|------|----------|
 | 1 | [Orientation](../manual/01-orientation.md) | Doc layers, who reads what |
 | 2 | [Layers & AI boundary](../manual/02-layers.md) | Router→Service→Repo, geo, LLM |
-| 3 | [Module map](../manual/03-module-map.md) | Packages/files through P2.4 + stubs |
+| 3 | [Module map](../manual/03-module-map.md) | Packages/files through P2.8 + stubs |
 | 4 | [Imports & wiring](../manual/04-imports-and-wiring.md) | Mermaid + import tables |
-| 5 | [How to change](../manual/05-how-to-change.md) | Env, endpoints, geo, migrations, tests |
+| 5 | [How to change](../manual/05-how-to-change.md) | Env, endpoints, geo, readiness, migrations, tests |
 | 6 | [Maintenance](../manual/06-maintenance.md) | Refresh cadence (phase or every 4–5 steps) |
 
 ---
 
-## Snapshot (through P2.4)
+## Snapshot (through P2.8)
 
-- **Running app:** FastAPI (`src/main.py`) — health + Google auth routes  
+- **Running app:** FastAPI (`src/main.py`) — health + auth + destinations + places routes  
 - **Data:** Postgres/PostGIS, Alembic migrations 001–003, domain models  
-- **Geo (real):** Nominatim `geocode()`, Overpass `fetch_pois()`  
-- **Persistence (real):** `PlaceRepository` + `DestinationRepository` atomic upserts, `DestinationService` cache-aside search  
-- **Seeding (real):** `scripts/seed_destination.py` — Darjeeling loads ~65 places end to end  
-- **Not built yet:** destinations/places routers, OSRM, readiness, planner, search, travel_engine logic  
+- **Geo (real):** Nominatim `geocode()`, Overpass `fetch_pois()`, OSRM `get_route()`  
+- **Catalog HTTP:** destinations search + readiness; places list/get (paginated)  
+- **Readiness:** pure `compute_readiness` (P2 always `search_available=False` → unenriched Darjeeling ≈ `tier=limited`)  
+- **Seeding:** `scripts/seed_destination.py` — use `--radius 50` if you need ~100+ places for limited-band readiness  
+- **Not built yet:** P2 pytest modules (2.9), P2 smoke (2.10), planner, search, travel_engine logic  
 
 Truth for “is this implemented?” → always [`docs/context.md`](../context.md).

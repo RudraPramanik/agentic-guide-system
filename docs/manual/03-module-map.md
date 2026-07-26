@@ -1,8 +1,8 @@
-# 03 — Module map (through P2.4)
+# 03 — Module map (through P2.8)
 
 **Up:** [Developer Manual index](../app/documentation.md) · **Prev:** [02-layers](02-layers.md)
 
-Source of truth for “real vs stub”: [`docs/context.md`](../context.md). This page is a navigable snapshot as of **P2.4**.
+Source of truth for “real vs stub”: [`docs/context.md`](../context.md). This page is a navigable snapshot as of **P2.8**.
 
 ---
 
@@ -10,21 +10,21 @@ Source of truth for “real vs stub”: [`docs/context.md`](../context.md). This
 
 ```text
 src/
-├── main.py                 # App factory ✅
+├── main.py                 # App factory ✅ (auth + destinations + places)
 ├── config.py               # Settings ✅
 ├── auth/                   # Google OAuth + JWT cookie flow ✅ (deps.py stub)
-├── geo/                    # schemas, geocoder, overpass ✅ · osrm ❌ stub
+├── geo/                    # schemas, geocoder, overpass, osrm ✅
 ├── core/                   # shared infrastructure ✅
 │   ├── database/           # base, session, BaseRepository ✅
 │   ├── security/           # jwt, permissions ✅
-│   ├── middleware/         # logging, rate_limit ✅
+│   ├── middleware/         # logging, rate_limit (path table) ✅
 │   ├── observability/      # logging, tracing ✅
 │   ├── llm/                # litellm gateway ✅
 │   ├── pagination.py ✅
 │   ├── responses.py ✅
 │   └── exceptions.py ✅
-├── destinations/           # models, schemas, exceptions, repo, service ✅ · router/readiness ❌ stubs
-├── places/                 # models, repository ✅ · schemas/service/router ❌ stubs
+├── destinations/           # models…router + readiness ✅
+├── places/                 # models…router ✅
 ├── trips/                  # models ✅ · rest ❌ stubs
 ├── evaluation/             # models ✅ · rest ❌ stubs
 ├── planner/                # ❌ stubs (LangGraph later)
@@ -33,7 +33,7 @@ src/
 
 alembic/                    # migrations 001–003 ✅
 scripts/                    # smoke + geo CLIs + seed_destination ✅
-tests/                      # core + auth ✅
+tests/                      # core + auth ✅ · P2 modules in 2.9
 ```
 
 ---
@@ -44,8 +44,8 @@ tests/                      # core + auth ✅
 
 | Path | Exports / role |
 |------|----------------|
-| `src/main.py` | `create_app()`, lifespan, middleware, handlers, health + auth router |
-| `src/config.py` | `get_settings()` — DB, OAuth, JWT, rate limit, Nominatim/Overpass URLs |
+| `src/main.py` | `create_app()`, lifespan, middleware, handlers, health + auth + destinations + places |
+| `src/config.py` | `get_settings()` — DB, OAuth, JWT, rate limits (incl. destinations search), geo URLs |
 
 ### Core
 
@@ -63,7 +63,7 @@ tests/                      # core + auth ✅
 | `src/core/security/jwt.py` | `TokenPayload`, `create_access_token()`, `verify_token()` |
 | `src/core/security/permissions.py` | `require_auth`, `optional_auth`, `get_current_user_id` |
 | `src/core/middleware/logging.py` | `RequestLoggingMiddleware` |
-| `src/core/middleware/rate_limit.py` | `RateLimitMiddleware`, `InMemoryRateLimiter` |
+| `src/core/middleware/rate_limit.py` | `RateLimitMiddleware`, path table (planner 10/min, destinations/search 20/min) |
 
 ### Auth
 
@@ -76,17 +76,22 @@ tests/                      # core + auth ✅
 | `src/auth/service.py` | `AuthService` — Google exchange, upsert |
 | `src/auth/router.py` | `/api/v1/auth/google\|callback\|me\|logout` |
 
-### Destinations & places (P2.3 / P2.6a / P2.6b)
+### Destinations & places
 
 | Path | Exports / role |
 |------|----------------|
 | `src/destinations/models.py` | `Destination` |
 | `src/destinations/schemas.py` | `DestinationOut`, `DestinationSearchQuery`, `DestinationReadinessOut` |
 | `src/destinations/exceptions.py` | `DestinationNotFoundError` (404) |
-| `src/destinations/repository.py` | `DestinationRepository` — atomic `upsert_from_geocoded`, ILIKE `search_by_name` |
-| `src/destinations/service.py` | `DestinationService` — cache-aside search (DB → geocode → upsert → commit) |
+| `src/destinations/repository.py` | `DestinationRepository` — atomic upsert, ILIKE search |
+| `src/destinations/service.py` | `DestinationService` — cache-aside search + `get_readiness` |
+| `src/destinations/readiness.py` | `compute_readiness`, `ReadinessResult` — pure, no I/O |
+| `src/destinations/router.py` | `/api/v1/destinations/search`, `/{id}/readiness` |
 | `src/places/models.py` | `Place` (PostGIS POINT) |
-| `src/places/repository.py` | `PlaceRepository` — `upsert_from_poi`, `find_within_radius` (geography/meters), list/count |
+| `src/places/schemas.py` | `PlaceOut` — lat/lng via `to_shape` |
+| `src/places/repository.py` | `PlaceRepository` — upsert, geography radius, list/count |
+| `src/places/service.py` | `PlaceService` — list/get; mandatory destination existence check |
+| `src/places/router.py` | `/api/v1/places`, `/api/v1/places/{id}` |
 
 ### Domain models only (no services yet)
 
@@ -102,6 +107,7 @@ tests/                      # core + auth ✅
 | `src/geo/schemas.py` | `GeocodedPlace`, `RawPOI`, `RouteResult` |
 | `src/geo/geocoder.py` | `geocode()` |
 | `src/geo/overpass.py` | `fetch_pois()` |
+| `src/geo/osrm.py` | `get_route()` — OSRM + haversine × 1.4 fallback |
 
 ### Migrations & tooling
 
@@ -115,21 +121,16 @@ tests/                      # core + auth ✅
 | `scripts/test_p1_smoke.py` | P1 smoke |
 | `scripts/test_geocoder.py` | Live Nominatim CLI |
 | `scripts/test_overpass.py` | Live Overpass CLI |
-| `scripts/seed_destination.py` | Seed CLI — `seed_destination()` pipeline + importable `seed_places()` loop |
-| `tests/core/`, `tests/auth/` | pytest suite |
+| `scripts/seed_destination.py` | Seed CLI — `seed_destination()` + importable `seed_places()` |
+| `tests/core/`, `tests/auth/` | pytest suite (P2 modules → step 2.9) |
 
 ---
 
 ## Stubs only (no public API — do not invent imports)
 
-Treat these as **placeholders** until `context.md` moves them to Implemented:
-
 | Area | Notes |
 |------|-------|
-| `src/geo/osrm.py` | Routing gateway — step 2.5 |
 | `src/auth/dependencies.py` | Unused placeholder |
-| `src/destinations/router.py`, `readiness.py` | Steps 2.6c / 2.8 |
-| `src/places/schemas.py`, `service.py`, `router.py` | Steps 2.7a / 2.7b |
 | `src/trips/*` except `models.py` | Trip APIs later |
 | `src/evaluation/*` except `models.py` | Eval recording later |
 | `src/planner/**` | LangGraph agent — later phases |

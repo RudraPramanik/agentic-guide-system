@@ -120,9 +120,11 @@ def create_app() -> FastAPI:
     # ── Routers — registered here as phases complete ──
     from src.auth.router import router as auth_router
     from src.destinations.router import router as destinations_router
+    from src.places.router import router as places_router
 
     app.include_router(auth_router)
     app.include_router(destinations_router)
+    app.include_router(places_router)
 
     return app
 

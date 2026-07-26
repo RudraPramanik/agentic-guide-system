@@ -62,5 +62,6 @@ Prefer **links and tables** over prose.
 |-----------|--------------|---------|
 | 2026-07-22 | P2.2 | Manual v1 written |
 | 2026-07-26 | P2.4 | Cadence — 2.3, 2.6a, 2.6b, 2.4 landed since the P2.2 marker |
+| 2026-07-26 | P2.8 | Cadence — 2.5→2.8 (OSRM, destinations/places HTTP, readiness) |
 
-Next natural refresh: when **P2** completes (2.5 → 2.10), or after ~4 more validated steps.
+Next natural refresh: when **P2** completes (2.9–2.10), or after ~4 more validated steps.

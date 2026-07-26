@@ -30,5 +30,5 @@ async def get_destination_readiness(
     destination_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse[DestinationReadinessOut]:
-    """Readiness score for a destination (full formula lands in step 2.8)."""
+    """Readiness score for a destination (pure compute_readiness via service)."""
     return ApiResponse(data=await DestinationService(db).get_readiness(destination_id))

@@ -6,13 +6,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-26 · **Phase:** P2 in progress · **Next step:** P2.6c′
+**Last updated:** 2026-07-26 · **Phase:** P2 in progress · **Next step:** P2.9
 
 ---
 
 ## Current state (one line)
 
-P2.5+2.6c done — OSRM `get_route` + destinations HTTP search (browser/Swagger verified); next is P2.6c′ path-specific search rate limit.
+P2.7b+2.8 done — places HTTP list/get + pure readiness scoring (`tier=limited` for seeded Darjeeling); next is P2.9 pytest coverage.
 
 ---
 
@@ -46,6 +46,10 @@ P2.5+2.6c done — OSRM `get_route` + destinations HTTP search (browser/Swagger 
 | 2.4 | ✅ Done | `scripts/seed_destination.py` — geocode → Overpass → per-POI upsert (savepoint per POI), sets `place_count`, commits |
 | 2.5 | ✅ Done | `geo/osrm` — OSRM driving route + haversine × 1.4 fallback |
 | 2.6c | ✅ Done | destinations router search + readiness stub; registered in `main.py` |
+| 2.6c′ | ✅ Done | path-table rate limits; destinations/search 20/min/IP |
+| 2.7a | ✅ Done | `PlaceOut` + `PlaceService` (mandatory destination existence → 404) |
+| 2.7b | ✅ Done | places router list/get; registered in `main.py` |
+| 2.8 | ✅ Done | pure `compute_readiness` + real `DestinationService.get_readiness` |
 
 ---
 
@@ -53,7 +57,7 @@ P2.5+2.6c done — OSRM `get_route` + destinations HTTP search (browser/Swagger 
 
 | Module | Exports / notes |
 |--------|-----------------|
-| `src/config.py` | `get_settings()` — env vars incl. Google OAuth, JWT TTL, rate limit, `NOMINATIM_BASE_URL`, `OVERPASS_API_URL` |
+| `src/config.py` | `get_settings()` — env vars incl. Google OAuth, JWT TTL, rate limits (incl. destinations search), `NOMINATIM_BASE_URL`, `OVERPASS_API_URL` |
 | `src/core/observability/logging.py` | `configure_logging()`, `get_logger()` |
 | `src/core/observability/tracing.py` | `get_tracer()`, `flush_tracer()` |
 | `src/core/llm/client.py` | `chat_completion()`, `chat_with_tools()` — **only** litellm import |
@@ -66,8 +70,8 @@ P2.5+2.6c done — OSRM `get_route` + destinations HTTP search (browser/Swagger 
 | `src/core/security/jwt.py` | `TokenPayload`, `create_access_token()`, `verify_token()` |
 | `src/core/security/permissions.py` | `require_auth`, `optional_auth`, `get_current_user_id` |
 | `src/core/middleware/logging.py` | `RequestLoggingMiddleware` — `X-Request-ID`, structlog context, latency |
-| `src/core/middleware/rate_limit.py` | `RateLimitMiddleware`, `InMemoryRateLimiter`, `RateLimiterBackend` protocol |
-| `src/main.py` | `create_app()`, lifespan, middleware, handlers, health + auth + destinations routers |
+| `src/core/middleware/rate_limit.py` | `RateLimitMiddleware`, `_route_limit_table`, exact-match path limits (planner 10/min, destinations/search 20/min) |
+| `src/main.py` | `create_app()`, lifespan, middleware, handlers, health + auth + destinations + places routers |
 | `alembic/env.py` | Async Alembic + `include_object` filter + all model imports |
 | `alembic/versions/001_enable_postgis.py` | PostGIS + uuid-ossp extensions |
 | `alembic/versions/20260717_*_create_all_tables.py` | Migration 002 — 6 core tables |
@@ -82,10 +86,14 @@ P2.5+2.6c done — OSRM `get_route` + destinations HTTP search (browser/Swagger 
 | `src/destinations/schemas.py` | `DestinationOut`, `DestinationSearchQuery`, `DestinationReadinessOut` |
 | `src/destinations/exceptions.py` | `DestinationNotFoundError` (404) |
 | `src/destinations/repository.py` | `DestinationRepository` — atomic geocode upsert, ILIKE search |
-| `src/destinations/service.py` | `DestinationService` — cache-aside search; interim `get_readiness` stub (full math in 2.8) |
+| `src/destinations/service.py` | `DestinationService` — cache-aside search; `get_readiness` via `compute_readiness` |
+| `src/destinations/readiness.py` | `compute_readiness`, `ReadinessResult`, `PLACE_TARGET` — pure, no I/O |
 | `src/destinations/router.py` | `/api/v1/destinations/search`, `/{id}/readiness` |
 | `src/places/models.py` | `Place` (Geometry POINT SRID 4326) |
+| `src/places/schemas.py` | `PlaceOut` — lat/lng from geometry via `to_shape` |
 | `src/places/repository.py` | `PlaceRepository` — `upsert_from_poi`, `find_within_radius`, `list_by_destination`, `count_by_destination` |
+| `src/places/service.py` | `PlaceService` — list/get; unknown destination → `DestinationNotFoundError` |
+| `src/places/router.py` | `/api/v1/places`, `/api/v1/places/{id}` |
 | `src/trips/models.py` | `TripStatus`, `Trip`, `TripPlace`, `EditType`, `TripEditEvent` |
 | `src/evaluation/models.py` | `TripEvaluation` |
 | `src/geo/schemas.py` | `GeocodedPlace`, `RawPOI`, `RouteResult` |
@@ -103,7 +111,7 @@ P2.5+2.6c done — OSRM `get_route` + destinations HTTP search (browser/Swagger 
 
 ## Stubs only (do not assume implemented)
 
-All other `src/**/*.py` files (destinations `readiness.py`; places except `models.py` + `repository.py`; trips/evaluation except `models.py`; planner, search, travel_engine; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic. Note: `DestinationService.get_readiness` is an **interim stub** until 2.8; destinations search rate limit (20/min) lands in **2.6c′**.
+All other `src/**/*.py` files (trips/evaluation except `models.py`; planner, search, travel_engine; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic. Note: places HTTP + readiness scoring landed in **2.7b / 2.8**; P2 pytest modules land in **2.9**.
 
 ---
 
@@ -116,8 +124,10 @@ All other `src/**/*.py` files (destinations `readiness.py`; places except `model
 | GET | `/api/v1/auth/callback` | None (OAuth redirect) |
 | GET | `/api/v1/auth/me` | Optional (guest or cookie/Bearer) |
 | POST | `/api/v1/auth/logout` | None |
-| GET | `/api/v1/destinations/search?q=` | None (public catalog) |
-| GET | `/api/v1/destinations/{id}/readiness` | None (stub score until 2.8) |
+| GET | `/api/v1/destinations/search?q=` | None (public catalog; rate limit 20/min/IP) |
+| GET | `/api/v1/destinations/{id}/readiness` | None (pure formula; P2 `search_available=False`) |
+| GET | `/api/v1/places?destination_id=` | None (paginated; unknown destination → 404) |
+| GET | `/api/v1/places/{id}` | None |
 
 ---
 

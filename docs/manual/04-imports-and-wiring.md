@@ -17,6 +17,8 @@ flowchart TD
   M --> MW1[RequestLoggingMiddleware]
   M --> MW2[RateLimitMiddleware]
   M --> AR[auth/router]
+  M --> DR[destinations/router]
+  M --> PR[places/router]
   M --> H["GET /api/v1/health"]
 ```
 
@@ -27,7 +29,7 @@ flowchart TD
 | `src/main.py` | `ping_db`, `dispose_engine` | DB health + shutdown |
 | `src/main.py` | `WandrError`, `ApiResponse`, `ErrorResponse` | Global handlers |
 | `src/main.py` | `RequestLoggingMiddleware`, `RateLimitMiddleware` | Cross-cutting |
-| `src/main.py` | `auth.router` | Mount auth routes |
+| `src/main.py` | `auth.router`, `destinations.router`, `places.router` | Mount HTTP routes |
 
 ---
 
@@ -84,8 +86,7 @@ flowchart TD
 | `geo/overpass.py` | `get_settings`, `get_logger`, `RawPOI` | Config, logs, DTO |
 | `geo/schemas.py` | pydantic only | No FastAPI / SQLAlchemy |
 | `scripts/seed_destination.py`, `destinations/service.py` | `geocode` / `fetch_pois` only | Never raw OverpassQL or Nominatim URLs outside `geo/` |
-
-`geo/osrm.py` is a **stub** — nothing should import it yet.
+| Callers needing driving times | `geo/osrm.get_route` | Haversine × 1.4 fallback; never raises httpx |
 
 ---
 
@@ -119,19 +120,34 @@ failure-tolerance contract against it directly.
 
 ---
 
-## Destination search chain (P2.6b)
+## Destination search + readiness (P2.6c / 2.8)
 
 ```mermaid
 flowchart LR
-  S[destinations/service.py DestinationService] --> R[destinations/repository.py]
+  R[destinations/router.py] --> S[destinations/service.py]
+  S --> REP[destinations/repository.py]
   S --> G[geo/geocoder.py geocode]
-  S --> EX[destinations/exceptions.py DestinationNotFoundError]
-  R --> BR[core/database/base_repository.py]
-  R --> DM[destinations/models.py]
+  S --> RD[destinations/readiness.py compute_readiness]
+  S --> EX[DestinationNotFoundError]
+  REP --> BR[core/database/base_repository.py]
 ```
 
 DB hit returns early and never calls Nominatim; only a miss geocodes, upserts atomically, and
-commits. No router mounts this yet — that is step 2.6c.
+commits. Readiness is pure math over denormalized counters — P2 always passes `search_available=False`.
+
+---
+
+## Places HTTP (P2.7b)
+
+```mermaid
+flowchart LR
+  PR[places/router.py] --> PS[places/service.py]
+  PS --> PREP[places/repository.py]
+  PS --> DREP[destinations/repository.py]
+  PS --> SCH[places/schemas.py PlaceOut]
+```
+
+List verifies the destination exists first (404, never empty page). Router never touches repositories.
 
 ---
 
@@ -158,6 +174,7 @@ commits. No router mounts this yet — that is step 2.6c.
 
 ## What is *not* wired yet
 
-No import edges from `main.py` into destinations/places/trips routers — those routers are still stubs, so `DestinationService` and the place/destination repositories are reachable only from scripts and tests today. Planner / search / travel_engine have no callers.
+Planner / search / travel_engine have no callers. Trip/evaluation packages are models-only.
+P2 pytest modules and `scripts/test_p2_smoke.py` land in steps 2.9–2.10.
 
 Next: [05 — How to change](05-how-to-change.md)

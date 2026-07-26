@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_PLANNER_REQUESTS: int = 10
     RATE_LIMIT_PLANNER_WINDOW_SECONDS: int = 60
     RATE_LIMIT_PLANNER_PATH: str = "/api/v1/planner/generate"
+    RATE_LIMIT_DESTINATIONS_SEARCH_REQUESTS: int = 20
+    RATE_LIMIT_DESTINATIONS_SEARCH_WINDOW_SECONDS: int = 60
+    RATE_LIMIT_DESTINATIONS_SEARCH_PATH: str = "/api/v1/destinations/search"
 
 
 @lru_cache

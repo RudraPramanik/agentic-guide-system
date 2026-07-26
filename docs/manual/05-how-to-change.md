@@ -40,13 +40,23 @@ Assume domain package already has (or you create) router → service → reposit
 5. Validate with `scripts/test_geocoder.py` / `scripts/test_overpass.py`  
 6. If public Overpass is down, override `OVERPASS_API_URL` (see context.md)  
 
-OSRM: wait for step 2.5 — `geo/osrm.py` is still a stub.
+OSRM: use `src/geo/osrm.py` → `get_route()` (never call OSRM HTTP outside `geo/`).
+
+---
+
+## I want to understand destination readiness
+
+1. Pure formula lives in `src/destinations/readiness.py` (`compute_readiness`) — no DB/HTTP  
+2. Service loads the destination, sets `search_available=False` in P2, maps to `DestinationReadinessOut`  
+3. HTTP: `GET /api/v1/destinations/{id}/readiness`  
+4. Unenriched seed with enough places (≥ ~75 for `limited`, ~100 saturates place component) → `tier=limited`, score ≈ 0.4  
+5. Enrichment / Qdrant indexing (P3) flips enrichment/index inputs; do not call Qdrant from readiness in P2  
 
 ---
 
 ## I want to seed a destination (or write another batch script)
 
-1. Run it: `python scripts/seed_destination.py --destination "Darjeeling" --radius 30` (idempotent)  
+1. Run it: `python scripts/seed_destination.py --destination "Darjeeling" --radius 30` (idempotent); use `--radius 50` if you need ~100+ places for readiness `limited` band  
 2. Read `scripts/seed_destination.py` as the batch template: geo gateway → repositories → single commit at the end  
 3. Wrap each item in `async with session.begin_nested()` so one bad row rolls back to its savepoint instead of aborting the whole transaction  
 4. Log skips (`log.warning("seed.poi_failed", ...)`) and keep going — only a fatal precondition (geocode miss) exits non-zero  

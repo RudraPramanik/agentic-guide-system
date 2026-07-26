@@ -63,17 +63,36 @@ def get_rate_limiter() -> RateLimiterBackend:
     return _limiter
 
 
-def _resolve_limits(path: str) -> tuple[int, int]:
+def _route_limit_table() -> list[tuple[str, int, int]]:
+    """
+    Ordered (path, limit, window) table, most specific first. Built from settings so
+    nothing is hardcoded outside get_settings() (AGENT.md rule).
+    """
     settings = get_settings()
-    if path.startswith(settings.RATE_LIMIT_PLANNER_PATH):
-        return (
+    return [
+        (
+            settings.RATE_LIMIT_PLANNER_PATH,
             settings.RATE_LIMIT_PLANNER_REQUESTS,
             settings.RATE_LIMIT_PLANNER_WINDOW_SECONDS,
-        )
-    return (
-        settings.RATE_LIMIT_DEFAULT_REQUESTS,
-        settings.RATE_LIMIT_DEFAULT_WINDOW_SECONDS,
-    )
+        ),
+        (
+            settings.RATE_LIMIT_DESTINATIONS_SEARCH_PATH,
+            settings.RATE_LIMIT_DESTINATIONS_SEARCH_REQUESTS,
+            settings.RATE_LIMIT_DESTINATIONS_SEARCH_WINDOW_SECONDS,
+        ),
+    ]
+
+
+def _resolve_limits(path: str) -> tuple[int, int]:
+    """
+    Exact-match lookup against the route table; falls back to the global default
+    (RATE_LIMIT_DEFAULT_REQUESTS / _WINDOW_SECONDS) if no specific rule matches.
+    """
+    for route_path, limit, window in _route_limit_table():
+        if path == route_path:
+            return limit, window
+    settings = get_settings()
+    return settings.RATE_LIMIT_DEFAULT_REQUESTS, settings.RATE_LIMIT_DEFAULT_WINDOW_SECONDS
 
 
 def _client_ip(request: Request) -> str:
