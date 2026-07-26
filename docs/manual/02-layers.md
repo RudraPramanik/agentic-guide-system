@@ -17,7 +17,7 @@ Middleware (outer → inner as registered)
   RateLimitMiddleware        ← per-IP limits (fail-open)
   │
   ▼
-Router  (e.g. src/auth/router.py, /api/v1/health)
+Router  (e.g. auth / destinations / places routers, /api/v1/health)
   │  returns ApiResponse[T] or PaginatedResponse[T]
   ▼
 Service (e.g. AuthService)
@@ -56,16 +56,16 @@ Postgres / PostGIS
 
 ## Geo gateway layer
 
-External map providers are **unstable and rate-limited**. All Nominatim / Overpass / (future) OSRM traffic stays in `src/geo/`:
+External map providers are **unstable and rate-limited**. All Nominatim / Overpass / OSRM traffic stays in `src/geo/`:
 
 | File | Status | Public entry | Failure behavior |
 |------|--------|--------------|------------------|
 | `geo/schemas.py` | Real | DTOs: `GeocodedPlace`, `RawPOI`, `RouteResult` | — |
 | `geo/geocoder.py` | Real | `geocode(query)` | returns `None` |
 | `geo/overpass.py` | Real | `fetch_pois(lat, lng, radius_km)` | returns `[]` |
-| `geo/osrm.py` | **Stub** | — | not implemented |
+| `geo/osrm.py` | Real | `get_route(waypoints)` | haversine × 1.4 fallback; never raises httpx |
 
-**Why a gateway?** Callers never build OverpassQL or Nominatim URLs. Resilience (timeouts, tenacity, fallbacks) lives in one place. See `openspec/specs/geo-geocoder/` and `openspec/specs/geo-overpass/`.
+**Why a gateway?** Callers never build OverpassQL or Nominatim URLs. Resilience (timeouts, tenacity, fallbacks) lives in one place. See `openspec/specs/geo-geocoder/`, `geo-overpass/`, and `geo-osrm/`.
 
 ---
 
@@ -102,7 +102,7 @@ Today the LLM client exists; the **planner LangGraph loop is still a stub**. Don
 1. Lifespan (logging config, DB ping, tracer flush)  
 2. Middleware registration  
 3. Global exception handlers → `ErrorResponse`  
-4. Router includes (`auth` today; more later)  
+4. Router includes (`auth`, `destinations`, `places`)  
 5. `GET /api/v1/health`
 
 Next: [03 — Module map](03-module-map.md)

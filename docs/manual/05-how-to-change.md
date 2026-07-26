@@ -49,18 +49,18 @@ OSRM: use `src/geo/osrm.py` → `get_route()` (never call OSRM HTTP outside `geo
 1. Pure formula lives in `src/destinations/readiness.py` (`compute_readiness`) — no DB/HTTP  
 2. Service loads the destination, sets `search_available=False` in P2, maps to `DestinationReadinessOut`  
 3. HTTP: `GET /api/v1/destinations/{id}/readiness`  
-4. Unenriched seed with enough places (≥ ~75 for `limited`, ~100 saturates place component) → `tier=limited`, score ≈ 0.4  
+4. **Volume vs score:** `place_count >= 50` is a seed/Overpass volume floor only. Unenriched limited-band (`tier=limited`, `score >= 0.35`) needs `place_count >= 88` minimum; prefer `>= 100` for exact score `0.4`. `compute_readiness(50, 0, 0, False)` is **sparse** (`score=0.2`)  
 5. Enrichment / Qdrant indexing (P3) flips enrichment/index inputs; do not call Qdrant from readiness in P2  
 
 ---
 
 ## I want to seed a destination (or write another batch script)
 
-1. Run it: `python scripts/seed_destination.py --destination "Darjeeling" --radius 30` (idempotent); use `--radius 50` if you need ~100+ places for readiness `limited` band  
+1. Run it: `python scripts/seed_destination.py --destination "Darjeeling" --radius 30` (idempotent); use `--radius 50` if you need ~100+ places for readiness `limited` band (volume ≥50 alone is not enough)  
 2. Read `scripts/seed_destination.py` as the batch template: geo gateway → repositories → single commit at the end  
 3. Wrap each item in `async with session.begin_nested()` so one bad row rolls back to its savepoint instead of aborting the whole transaction  
 4. Log skips (`log.warning("seed.poi_failed", ...)`) and keep going — only a fatal precondition (geocode miss) exits non-zero  
-5. Keep the per-item loop in a plain importable function so tests can drive it without the CLI  
+5. Keep the per-item loop in a plain importable function (`seed_places` / `seed_destination_into`) so tests can inject a session without the CLI  
 6. Scripts commit; repositories only flush  
 
 **Wrong:** calling httpx/Overpass directly from a script, or letting one failed row abort the batch.
@@ -104,8 +104,11 @@ python scripts/test_geocoder.py "Darjeeling"
 python scripts/test_overpass.py 27.041 88.263 30
 python scripts/seed_destination.py --destination "Darjeeling" --radius 30
 python -m pytest tests/ -v
+python scripts/test_p2_smoke.py   # network + commits seed data to the development DB
 uvicorn src.main:app --reload
 ```
+
+Focused P2 packages: `python -m pytest tests/geo tests/destinations tests/places tests/scripts -v`.
 
 DB URL uses port **5433** locally — see `docs/context.md`.
 

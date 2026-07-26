@@ -6,13 +6,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-26 · **Phase:** P2 in progress · **Next step:** P2.9
+**Last updated:** 2026-07-26 · **Phase:** P2 complete · **Next step:** P3.1
 
 ---
 
 ## Current state (one line)
 
-P2.7b+2.8 done — places HTTP list/get + pure readiness scoring (`tier=limited` for seeded Darjeeling); next is P2.9 pytest coverage.
+P2 complete — geo/places/destinations verified with pytest + `scripts/test_p2_smoke.py`; next is P3.1.
 
 ---
 
@@ -50,6 +50,8 @@ P2.7b+2.8 done — places HTTP list/get + pure readiness scoring (`tier=limited`
 | 2.7a | ✅ Done | `PlaceOut` + `PlaceService` (mandatory destination existence → 404) |
 | 2.7b | ✅ Done | places router list/get; registered in `main.py` |
 | 2.8 | ✅ Done | pure `compute_readiness` + real `DestinationService.get_readiness` |
+| 2.9 | ✅ Done | P2 pytest: geo/readiness/repos/routers/seed (68 tests total) |
+| 2.10 | ✅ Done | `scripts/test_p2_smoke.py` live P2 proof |
 
 ---
 
@@ -101,17 +103,17 @@ P2.7b+2.8 done — places HTTP list/get + pure readiness scoring (`tier=limited`
 | `src/geo/overpass.py` | `fetch_pois()` — Overpass gateway; form `data=` POST; 5xx/timeout retry; `[]` fallback |
 | `src/geo/osrm.py` | `get_route()` — OSRM gateway; haversine × 1.4 fallback; never raises httpx |
 
-**Tests:** `tests/core/test_*.py`, `tests/auth/test_*.py` — run `python -m pytest tests/ -v` (DB `wandr_test`)
+**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/scripts/` — run `python -m pytest tests/ -v` (DB `wandr_test`)
 
-**Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py` (`seed_places()` / `seed_destination()` importable for tests)
+**Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py` (`seed_places()` / `seed_destination_into()` / `seed_destination()` importable for tests)
 
-**TODO (P6):** geocoder cache + Nominatim throttle are per-process; back with Redis when `REDIS_URL` is wired for the rate limiter.
+**Known limitations / TODO (P6):** geocoder cache + Nominatim throttle are per-process; rate limiter is in-memory — back both with Redis when `REDIS_URL` is wired.
 
 ---
 
 ## Stubs only (do not assume implemented)
 
-All other `src/**/*.py` files (trips/evaluation except `models.py`; planner, search, travel_engine; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic. Note: places HTTP + readiness scoring landed in **2.7b / 2.8**; P2 pytest modules land in **2.9**.
+All other `src/**/*.py` files (trips/evaluation except `models.py`; planner, search, travel_engine; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic. Note: places HTTP + readiness scoring landed in **2.7b / 2.8**; P2 pytest + smoke landed in **2.9 / 2.10**.
 
 ---
 
@@ -143,6 +145,7 @@ python scripts/test_p1_smoke.py
 python scripts/test_geocoder.py "Darjeeling"   # needs PYTHONPATH=project root if imports fail
 python scripts/test_overpass.py 27.041 88.263 30   # public Overpass may 504; override OVERPASS_API_URL if needed
 python scripts/seed_destination.py --destination "Darjeeling" --radius 30   # idempotent; exit 1 only on geocode miss
+python scripts/test_p2_smoke.py   # network + commits seed data to dev DB
 alembic upgrade head          # run migrations (deploy/CLI only — not at app startup)
 python -m pytest tests/ -v
 ```

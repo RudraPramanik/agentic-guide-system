@@ -1,8 +1,8 @@
-# 03 — Module map (through P2.8)
+# 03 — Module map (through P2.10)
 
 **Up:** [Developer Manual index](../app/documentation.md) · **Prev:** [02-layers](02-layers.md)
 
-Source of truth for “real vs stub”: [`docs/context.md`](../context.md). This page is a navigable snapshot as of **P2.8**.
+Source of truth for “real vs stub”: [`docs/context.md`](../context.md). This page is a navigable snapshot as of **P2.10**.
 
 ---
 
@@ -32,8 +32,8 @@ src/
 └── travel_engine/          # ❌ stubs (pure Python later)
 
 alembic/                    # migrations 001–003 ✅
-scripts/                    # smoke + geo CLIs + seed_destination ✅
-tests/                      # core + auth ✅ · P2 modules in 2.9
+scripts/                    # P1/P2 smoke + geo CLIs + seed_destination ✅
+tests/                      # core + auth + geo + destinations + places + scripts ✅
 ```
 
 ---
@@ -119,10 +119,12 @@ tests/                      # core + auth ✅ · P2 modules in 2.9
 | `alembic/versions/20260721_*_add_trip_edit_events.py` | `trip_edit_events` |
 | `scripts/test_db_conn.py` | DB ping |
 | `scripts/test_p1_smoke.py` | P1 smoke |
+| `scripts/test_p2_smoke.py` | Live P2 proof (network + commits seed data) |
 | `scripts/test_geocoder.py` | Live Nominatim CLI |
 | `scripts/test_overpass.py` | Live Overpass CLI |
-| `scripts/seed_destination.py` | Seed CLI — `seed_destination()` + importable `seed_places()` |
-| `tests/core/`, `tests/auth/` | pytest suite (P2 modules → step 2.9) |
+| `scripts/seed_destination.py` | Seed CLI — `seed_destination()`, `seed_destination_into()`, `seed_places()` |
+| `tests/core/`, `tests/auth/` | P0/P1 pytest |
+| `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/scripts/` | P2 pytest (mocked geo; DB via `wandr_test`) |
 
 ---
 

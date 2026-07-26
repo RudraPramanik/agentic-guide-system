@@ -1,10 +1,10 @@
 # Wandr P2 Guide — Geo Foundation
 
-> **Audience:** engineers implementing P2, and anyone explaining Wandr’s backend in interviews.  
-> **Phase:** P2 — first external I/O + PostGIS spatial APIs after P1’s DB/auth foundation.  
+> **Audience:** engineers implementing or explaining P2, and anyone covering Wandr’s backend in interviews.  
+> **Phase:** P2 — **complete** (geo foundation after P1’s DB/auth). Next: **P3.1** enrich + Qdrant.  
 > **Build prompts:** [`docs/steps/step2.md`](../steps/step2.md) (v2 hardened) · **Checkpoint:** [`docs/context.md`](../context.md) · **Guardrails:** [`AGENT.md`](../../AGENT.md)
 
-This guide is **knowledge**, not a Cursor paste prompt. For implementation, follow `step2.md` in order.
+This guide is **knowledge**, not a Cursor paste prompt. For historical build order, see `step2.md`; for “what’s next,” see `context.md`.
 
 ---
 
@@ -13,13 +13,13 @@ This guide is **knowledge**, not a Cursor paste prompt. For implementation, foll
 | Phase | Focus | P2 dependency |
 |-------|--------|----------------|
 | P0 | Scaffold, config, LLM gateway, FastAPI | Already done |
-| P1 | Models, BaseRepository, auth, middleware, pytest | **Prerequisite** |
-| **P2** | **Geo gateways, seed POIs, destinations/places APIs, readiness** | **You are here** |
-| P3 | Enrich + Qdrant index | Needs seeded places |
+| P1 | Models, BaseRepository, auth, middleware, pytest | Prerequisite |
+| **P2** | **Geo gateways, seed POIs, destinations/places APIs, readiness, pytest + smoke** | **Complete** |
+| P3 | Enrich + Qdrant index | Needs seeded places — **next (P3.1)** |
 | P4–P5 | travel_engine + agent tools | Needs OSRM + places + readiness |
 | P6–P7 | Planner SSE API, trips, edits | Needs all of the above |
 
-**P2 product outcome:** you can geocode a city, scrape POIs, store them in PostGIS, list them via HTTP, and report how “ready” a destination is for planning — still without LLM trip generation.
+**P2 product outcome (shipped):** you can geocode a city, scrape POIs, store them in PostGIS, list them via HTTP, and report how “ready” a destination is for planning — still without LLM trip generation.
 
 ```
 User / CLI
@@ -49,17 +49,17 @@ User / CLI
 | pytest + `wandr_test` | Mocked geo tests + API tests |
 | `httpx`, `tenacity`, `shapely`, `geoalchemy2` | Already in `requirements.txt` |
 
-### Still stubs until P2 code lands
+### Shipped in P2 (real — do not treat as stubs)
 
-`src/geo/*`, `src/destinations/{repository,service,router,schemas,readiness}`, `src/places/{repository,service,router,schemas}` — one-line placeholders today. **Do not invent APIs from memory;** implement from `step2.md`.
+`src/geo/*`, `src/destinations/{repository,service,router,schemas,readiness}`, `src/places/{repository,service,router,schemas}`, P2 pytest under `tests/geo|destinations|places|scripts`, and `scripts/test_p2_smoke.py` are implemented. Truth for “is this built?” → [`docs/context.md`](../context.md). Still stubs: planner, search, travel_engine, trips/evaluation beyond models.
 
-### Live endpoints after P2 (target)
+### Live endpoints (P2)
 
 | Method | Path | Notes |
 |--------|------|-------|
-| GET | `/api/v1/destinations/search?q=` | DB-first; Nominatim on miss |
-| GET | `/api/v1/destinations/{id}/readiness` | Score + tier |
-| GET | `/api/v1/places?destination_id=` | Paginated |
+| GET | `/api/v1/destinations/search?q=` | DB-first; Nominatim on miss; rate limit 20/min/IP |
+| GET | `/api/v1/destinations/{id}/readiness` | Score + tier (`search_available=False` in P2) |
+| GET | `/api/v1/places?destination_id=` | Paginated; unknown destination → 404 |
 | GET | `/api/v1/places/{id}` | Single place |
 
 ---
@@ -128,7 +128,11 @@ score         = 0.4*place_score + 0.35*enriched_pct + 0.25*indexed_pct
 tier          = ready ≥0.7 | limited ≥0.3 | sparse <0.3
 ```
 
-**After seed only (no enrich/index):** ~144 places → score ≈ **0.4**, tier **`limited`**. Blueprint’s “ready after seed” is amended — `ready` needs P3.
+**Volume vs limited-band (unenriched, `search_available=False`):**
+- `place_count >= 50` — seed/Overpass **volume** floor only
+- `compute_readiness(50, 0, 0, False)` → **sparse**, `score=0.2` (not limited)
+- Limited-band / `score >= 0.35` needs `place_count >= 88` minimum; prefer `>= 100` for exact score `0.4`
+- ~144 places → score ≈ **0.4**, tier **`limited`**. `ready` needs P3 enrichment + indexing.
 
 ### 3.7 Canonical build order
 
@@ -195,7 +199,7 @@ Use these as **spoken answers**. Tie each to Wandr when possible.
 ### Product / readiness
 
 **Q: What does destination readiness mean?**  
-**A:** A 0–1 score from place coverage, enrichment %, and index %. Planner can warn below a threshold but still generate. After seed-only, tier is `limited`; `ready` needs enrichment + indexing (P3).
+**A:** A 0–1 score from place coverage, enrichment %, and index %. Planner can warn below a threshold but still generate. After seed-only, you need enough places for limited-band (`>= ~88`, prefer `>= 100`); `place_count=50` alone is still **sparse**. `ready` needs enrichment + indexing (P3).
 
 **Q: Why seed from Overpass instead of a static CSV?**  
 **A:** Real destinations need live OSM coverage; seed is re-runnable via upsert. Partial POI failures log and continue so one bad element doesn’t abort the city.
@@ -220,7 +224,7 @@ Use these as **spoken answers**. Tie each to Wandr when possible.
 | OSRM fail | Haversine × 1.4 |
 | Point order | `(lng, lat)` |
 | Radius units | `geography` + meters |
-| P2 readiness | `limited` after seed |
+| P2 readiness | Volume ≥50 ≠ limited; limited needs ≥88 (prefer ≥100 places) |
 | Build order | See §3.7 / `step2.md` |
 | Async cache | Dict of values, not `lru_cache` on `async def` |
 

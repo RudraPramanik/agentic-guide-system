@@ -15,10 +15,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database.session import AsyncSessionLocal, dispose_engine
 from src.core.observability.logging import configure_logging, get_logger
+from src.destinations.models import Destination
 from src.destinations.repository import DestinationRepository
 from src.geo.geocoder import geocode
 from src.geo.overpass import fetch_pois
-from src.geo.schemas import RawPOI
+from src.geo.schemas import GeocodedPlace, RawPOI
 from src.places.repository import PlaceRepository
 
 DEFAULT_RADIUS_KM = 30.0
@@ -56,6 +57,50 @@ async def seed_places(
     return success
 
 
+async def seed_destination_into(
+    session: AsyncSession,
+    destination_name: str,
+    radius_km: float,
+) -> tuple[Destination, int, int]:
+    """Run geocode → upsert → fetch → seed_places → update counters on *session*.
+
+    Does not open a session and does not commit. Caller owns transaction lifecycle.
+    Raises ValueError when geocode returns None (maps to CLI exit 1).
+    Returns (destination, success_count, poi_list_length).
+    """
+    geocoded = await geocode(destination_name)
+    if geocoded is None:
+        raise ValueError(f"Geocode failed for {destination_name!r}")
+
+    return await _seed_from_geocoded(session, geocoded, radius_km)
+
+
+async def _seed_from_geocoded(
+    session: AsyncSession,
+    geocoded: GeocodedPlace,
+    radius_km: float,
+) -> tuple[Destination, int, int]:
+    dest_repo = DestinationRepository(session)
+    dest = await dest_repo.upsert_from_geocoded(geocoded)
+
+    pois = await fetch_pois(dest.lat, dest.lng, radius_km)
+    if not pois:
+        log.warning(
+            "seed.no_pois",
+            destination=dest.name,
+            destination_id=str(dest.id),
+            radius_km=radius_km,
+        )
+        print(
+            f"WARNING: Overpass returned no POIs for {dest.name} "
+            f"within {radius_km}km - saving destination with place_count=0"
+        )
+
+    success = await seed_places(session, dest.id, pois)
+    dest = await dest_repo.update(dest.id, {"place_count": success})
+    return dest, success, len(pois)
+
+
 async def seed_destination(destination_name: str, radius_km: float) -> int:
     """Run the full seed pipeline. Returns a process exit code."""
     geocoded = await geocode(destination_name)
@@ -68,29 +113,12 @@ async def seed_destination(destination_name: str, radius_km: float) -> int:
         return 1
 
     async with AsyncSessionLocal() as session:
-        dest_repo = DestinationRepository(session)
-        dest = await dest_repo.upsert_from_geocoded(geocoded)
-        dest_id = dest.id
-        dest_name = dest.name
-
-        pois = await fetch_pois(dest.lat, dest.lng, radius_km)
-        if not pois:
-            log.warning(
-                "seed.no_pois",
-                destination=dest_name,
-                destination_id=str(dest_id),
-                radius_km=radius_km,
-            )
-            print(
-                f"WARNING: Overpass returned no POIs for {dest_name} "
-                f"within {radius_km}km - saving destination with place_count=0"
-            )
-
-        success = await seed_places(session, dest_id, pois)
-        await dest_repo.update(dest_id, {"place_count": success})
+        dest, success, poi_total = await _seed_from_geocoded(
+            session, geocoded, radius_km
+        )
         await session.commit()
 
-    print(f"Seeded {success}/{len(pois)} places for {dest_name} (id={dest_id})")
+    print(f"Seeded {success}/{poi_total} places for {dest.name} (id={dest.id})")
     return 0
 
 

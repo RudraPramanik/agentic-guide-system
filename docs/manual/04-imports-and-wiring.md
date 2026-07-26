@@ -115,8 +115,11 @@ Contract worth knowing before you touch it: each POI upsert runs inside `session
 (a SAVEPOINT), so one failing row is rolled back and skipped while the rest of the batch and the
 final commit still succeed. A bare `try/except` would leave the Postgres transaction aborted.
 
-`seed_places(session, destination_id, pois) -> int` is importable on purpose — step 2.9 tests the
-failure-tolerance contract against it directly.
+`seed_places(session, destination_id, pois) -> int` and
+`seed_destination_into(session, name, radius_km)` are importable on purpose —
+pytest drives failure boundaries without the CLI owning the session. The CLI
+wrapper (`seed_destination`) still opens `AsyncSessionLocal`, commits, and
+returns exit codes.
 
 ---
 
@@ -175,6 +178,14 @@ List verifies the destination exists first (404, never empty page). Router never
 ## What is *not* wired yet
 
 Planner / search / travel_engine have no callers. Trip/evaluation packages are models-only.
-P2 pytest modules and `scripts/test_p2_smoke.py` land in steps 2.9–2.10.
+
+## P2 verification wiring
+
+| Path | Role |
+|------|------|
+| `tests/geo/` | Mocked Nominatim / Overpass / OSRM gateway tests |
+| `tests/destinations/`, `tests/places/` | Readiness, repository, and HTTP router tests |
+| `tests/scripts/test_seed_destination.py` | Seed failure boundaries via `seed_destination_into` / `seed_places` |
+| `scripts/test_p2_smoke.py` | Live fail-fast proof (network + commits to the development database) |
 
 Next: [05 — How to change](05-how-to-change.md)

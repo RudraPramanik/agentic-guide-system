@@ -1470,10 +1470,13 @@ After seeding Darjeeling:
 
   curl -s "http://localhost:8000/api/v1/destinations/{DESTINATION_ID}/readiness" | python -m json.tool
 
-Expected (P2, pre-enrichment):
+Expected (P2, pre-enrichment) — split floors:
+  Overpass/seed volume may be >= 50, but limited-band scoring needs a formula-true floor.
+  With search_available=False and zero enrichment: place_count=50 → score=0.2 (sparse);
+  place_count>=100 → score=0.4 (limited). Prefer asserting:
+  place_count >= 100
   score >= 0.35 and < 0.7
   tier: "limited"
-  place_count >= 50
   enriched_pct: 0.0
   indexed_pct: 0.0
 
@@ -1494,106 +1497,86 @@ print('PASS', r.score, r.tier)
 
 ---
 
-## Step 2.9 — P2 pytest coverage (expanded in v2)
+## Step 2.9 — P2 pytest coverage (expanded in v2 / verification closeout)
 
 ```
 Read AGENT.md before proceeding.
 
-TASK: Add pytest tests for geo gateways (mocked), readiness math, atomic upserts under
-races, and new API routes — including the previously-missing seed partial-failure test.
-This is step 2.9. No new package installs.
+TASK: Add pytest tests for geo gateways (mocked), readiness math, destination upsert
+idempotency AND a true concurrent race, and new API routes — including the seed
+partial-failure test. This is step 2.9. No new package installs.
 
 ─── CREATE tests/geo/test_geocoder.py ───
+  - Autouse fixture: call _clear_cache_for_tests() before each test
   - test_geocode_success (mock _fetch_nominatim)
-  - test_geocode_failure_returns_none (mock ConnectError)
-  - ★ NEW test_geocode_cache_hit_on_repeated_call — asserts a second call to geocode() with
-    the same query does NOT invoke _fetch_nominatim again, AND that the coroutine can be
-    awaited twice without RuntimeError (regression test for the v1 lru_cache bug).
-  - ★ NEW test_geocode_caches_none_result_too — mock _fetch_nominatim to return [] once;
-    assert two calls only invoke _fetch_nominatim once (a confirmed miss is also cached).
+  - test_geocode_failure_returns_none (mock ConnectError; allow up to 3 tenacity attempts)
+  - ★ NEW test_geocode_cache_hit_on_repeated_call — second call does NOT invoke
+    _fetch_nominatim again; coroutine can be awaited twice without RuntimeError
+  - ★ NEW test_geocode_caches_none_result_too — empty [] result is cached; fetch once
 
 ─── CREATE tests/geo/test_overpass.py ───
-  - test_fetch_pois_deduplicates (mock _post_overpass fixture JSON)
+  - test_fetch_pois_deduplicates (mock _post_overpass; last-wins by osm_id)
+  - test_fetch_pois_skips_unnamed_and_maps_way_center
+  - test_fetch_pois_radius_uses_meters — radius_km=30 → OverpassQL around=30000
   - test_fetch_pois_failure_returns_empty
 
 ─── CREATE tests/geo/test_osrm.py ───
+  - test_get_route_success_converts_units_and_uses_lng_lat_url_order
   - test_get_route_fallback_when_osrm_none
+  - test_get_route_rejects_fewer_than_two_waypoints (ValueError)
 
 ─── CREATE tests/destinations/test_readiness.py ───
   - test_compute_readiness_sparse (0 places)
-  - test_compute_readiness_limited (144 places, 0 enriched)
-  - test_compute_readiness_ready (144 places, 100 enriched, 100 indexed, search_available=True)
+  - ★ NEW test_compute_readiness_place_count_50_is_sparse — (50,0,0,False) → sparse, score=0.2
+    (proves place_count>=50 alone is NOT a limited-band gate)
+  - test_compute_readiness_limited (144, 0, 0, False) → limited, score in [0.35, 0.45]
+  - test_compute_readiness_ready (144, 100, 100, True)
 
 ─── CREATE tests/destinations/test_destinations_repository.py ★ NEW ───
-  - test_upsert_from_geocoded_is_idempotent — call upsert_from_geocoded twice with the same
-    osm_place_id in the same db_session, assert same destination id, no exception raised.
-  - test_upsert_from_geocoded_does_not_reset_counters — seed a destination with place_count=50,
-    call upsert_from_geocoded again with the same osm_place_id, assert place_count is still 50
-    (regression test for the "ON CONFLICT SET must not touch counters" rule).
+  - test_upsert_from_geocoded_is_idempotent — SAME db_session, twice; same id (idempotency,
+    NOT a race)
+  - test_upsert_from_geocoded_does_not_reset_counters — place_count/enriched/indexed preserved
+  - ★ NEW test_upsert_from_geocoded_concurrent_race — TWO AsyncSessions from test_engine;
+    asyncio.gather workers that each upsert + commit; assert same id, one row, no IntegrityError.
+    Bound the gather with a timeout. Committing inside each worker is required.
 
 ─── CREATE tests/destinations/test_destinations_router.py ───
-  - test_search_returns_list (mock DestinationService or seed fixture)
+  - test_search_returns_list — GET /api/v1/destinations/search?q=...
   - test_search_not_found_404 (mock geocode None)
-  - test_readiness_endpoint (seed destination in db_session)
-  - ★ NEW test_search_rate_limit_is_path_specific — mock get_rate_limiter().is_allowed to
-    return (False, 0) only when called with a key containing the destinations/search path;
-    assert /destinations/search gets 429 while /api/v1/health on the same client remains 200.
+  - test_readiness_endpoint — seed destination with place_count >= 100 (formula-true limited)
+  - ★ NEW test_search_rate_limit_is_path_specific — deny only keys containing
+    "/api/v1/destinations/search"; assert that path gets 429 while /api/v1/health stays 200
 
 ─── CREATE tests/places/test_places_router.py ───
   - test_list_places_paginated (insert destination + places in db_session)
   - test_get_place_404
-  - ★ NEW test_list_places_unknown_destination_404 — call with a random UUID, assert 404
-    with code "not_found", NOT a 200 with an empty items array (regression test for the
-    previously-optional existence check).
+  - ★ NEW test_list_places_unknown_destination_404 — random UUID → 404 code "not_found",
+    NOT 200 with empty items
 
 ─── CREATE tests/places/test_places_repository.py ★ NEW ───
-  - test_find_within_radius_respects_geography_units — insert a place ~3km from a query
-    point; assert it IS found with radius_km=5 and IS NOT found with radius_km=1. This is
-    the regression test for the locked geography-cast decision: a bug that reverted to
-    plain-geometry degree units would make this test fail obviously (either everything
-    matches, or nothing does).
+  - test_find_within_radius_respects_geography_units — place ~3km from query point;
+    found at radius_km=5, not found at radius_km=1
 
-─── CREATE tests/scripts/test_seed_destination.py ★ NEW (fills the v1 gap) ───
+─── CREATE tests/scripts/test_seed_destination.py ★ NEW ───
+  seed_places() already exists. Also expose a session-injected pipeline helper that does
+  NOT open AsyncSessionLocal or commit (CLI wrapper keeps session ownership + commit).
 
-  """
-  Tests the seed script's per-POI failure-tolerance contract directly, without touching
-  the network. This is the missing test flagged in v1 review — the blueprint's hard rule
-  ("single POI failure -> log + continue, never abort the batch") had zero coverage.
-  """
-
-  async def test_seed_survives_partial_poi_failure(db_session, mocker):
-      """
-      Arrange: 3 POIs, the middle one's upsert_from_poi raises.
-      Act: run the seed script's per-POI loop (import and call the actual loop function,
-           refactored out of __main__ if necessary so it's testable in isolation —
-           e.g. `async def seed_places(session, dest_id, pois) -> int` returning success count).
-      Assert: success count == 2 (not 3, not 0 — the batch didn't abort, and the bad one
-              didn't silently count as success).
-      """
-
-  async def test_seed_continues_when_overpass_returns_empty(db_session, mocker):
-      """
-      Mock fetch_pois to return []. Assert the destination is still created/updated with
-      place_count == 0, and the script does not raise or exit non-zero for this case
-      (only a geocode failure should exit non-zero, per the failure boundary table).
-      """
+  - test_seed_survives_partial_poi_failure(db_session, mocker) — 3 POIs, middle upsert fails;
+    success count == 2
+  - test_seed_continues_when_overpass_returns_empty(db_session, mocker) — call the
+    session-injected helper with mocked geocode success + fetch_pois []; assert place_count==0
+    on db_session (do NOT call seed_destination() which opens the DEV database)
+  - test_seed_geocode_failure_exits_1 — CLI-facing wrapper returns 1 on geocode None
 
 ─── RULES ───
 - Mock external HTTP in unit tests — do not hit Nominatim/Overpass/OSRM in CI.
-- Use existing db_session fixture from tests/conftest.py.
+- Use existing db_session / test_engine fixtures from tests/conftest.py.
 - Tests that need places: insert Destination + Place rows with from_shape(Point(lng, lat)).
-- If the seed script's per-POI loop isn't already an importable function, refactor it out
-  of the `if __name__ == "__main__":` block now — untestable inline loops are not acceptable
-  for a batch operation with a hard resilience contract attached to it.
+- Full HTTP paths only: /api/v1/destinations/search, /api/v1/places, etc.
 
 ─── VALIDATION ───
   python -m pytest tests/geo tests/destinations tests/places tests/scripts -v
-
-Expected: all new tests pass, including the four ★ NEW regression tests above.
-
   python -m pytest tests/ -v
-
-Expected: full suite green (P1 + P2).
 ```
 
 ---
@@ -1610,20 +1593,25 @@ This is step 2.10. No new package installs.
 
   """
   P2 smoke test — run: python scripts/test_p2_smoke.py
-  Hits real Nominatim + Overpass (network required). Uses dev DB; commits seed data.
-  ASCII [OK]/[FAIL] markers for Windows.
+  Hits real Nominatim + Overpass + OSRM (network required). Uses dev DB; commits seed data.
+  ASCII [OK]/[FAIL] markers for Windows. Fail-fast: first failure exits non-zero.
   """
-  Sections:
-    1. Geocoder — geocode("Darjeeling") not None; second call is a cache hit (cache_stats())
-    2. Overpass — fetch_pois count >= 50
-    3. Seed — run seed logic or subprocess seed_destination.py
-    4. DB — destination row place_count >= 50
-    5. HTTP — ASGITransport calls to /destinations/search, /places, /readiness
-    6. Readiness — tier limited, score in [0.35, 0.45] for unenriched Darjeeling
-    7. ★ NEW Rate limit — confirm /destinations/search response carries x-ratelimit-limit: 20
-    8. ★ NEW Radius sanity — find_within_radius(dest.lat, dest.lng, radius_km=radius) returns
-       a place count roughly consistent with the seeded place_count (catches a silent
-       geography/geometry unit regression in production-like conditions, not just unit tests)
+  Sections (use FULL /api/v1/... paths):
+    1. Geocoder — _clear_cache_for_tests(); geocode("Darjeeling"); second call increments hits
+    2. Overpass — fetch_pois count >= 50  (volume floor only)
+    3. Seed — run seed pipeline; persist destination
+    4. DB — destination place_count >= 50  (volume floor)
+    5. HTTP — ASGITransport:
+         /api/v1/destinations/search?q=Darjeeling
+         /api/v1/places?destination_id=...&page=2&size=10
+         /api/v1/destinations/{id}/readiness
+    6. Readiness — ONLY if place_count >= 100: tier limited AND score in [0.35, 0.45].
+         If place_count < 100, FAIL with observed count (do not claim limited from >=50).
+    7. Rate limit — search response carries x-ratelimit-limit: 20
+    8. OSRM — get_route([(27.04,88.26),(27.03,88.27)]); distance_km > 0 (real or fallback)
+    9. Radius — find_within_radius(dest.lat, dest.lng, radius_km=30, limit=max(place_count, 100))
+         must return a count equal to place_count (or all seeded places found)
+    Idempotency: reapply the already-fetched POI list (no second Overpass call); place count stable.
 
 ─── VALIDATION ───
   python scripts/test_p2_smoke.py
@@ -1634,11 +1622,10 @@ Expected final line:
 ─── UPDATE docs/context.md ───
   - Last updated: today
   - Next step: P3.1
-  - Mark P2 steps ✅ in Progress table
-  - Add implemented modules rows (geo, places, destinations services)
-  - Update Live endpoints table
-  - Add a "Known Limitations" entry: geocoder cache/throttle is per-process; Redis upgrade
-    path deferred to P6 (do not let this silently disappear from the record)
+  - Mark P2.9 and P2.10 ✅ in Progress table
+  - Record P2 test modules + scripts/test_p2_smoke.py
+  - Do NOT re-add module/endpoint rows already present after P2.7b/P2.8
+  - Keep Known Limitations / TODO(P6): geocoder cache/throttle is per-process
 
 ─── FAILURE BOUNDARY ───
 Network down → smoke script exits non-zero with clear section header — not ambiguous PASS.
@@ -1650,7 +1637,7 @@ Network down → smoke script exits non-zero with clear section header — not a
 
 Run this entire block before starting P3. Every item must pass.
 
-On **Windows PowerShell**, use `Select-String` instead of `grep`.
+On **Windows PowerShell**, use `Select-String` instead of `grep`, and `curl.exe` (PowerShell's `curl` is an alias for `Invoke-WebRequest`).
 
 ```bash
 # ── Prerequisites ──
@@ -1667,37 +1654,36 @@ python scripts/seed_destination.py --destination "Darjeeling" --radius 30
 # ── OSRM ──
 python -c "import asyncio; from src.geo.osrm import get_route; asyncio.run(get_route([(27.04,88.26),(27.03,88.27)]))"
 
-# ── Server ──
+# ── Server (SEPARATE terminal — leave this running) ──
+# Terminal A:
 uvicorn src.main:app --reload --port 8000
+# Then in Terminal B run the curl.exe / API checks below.
 
 # ── API (replace DESTINATION_ID from seed output) ──
-curl -s "http://localhost:8000/api/v1/destinations/search?q=Darjeeling" | python -m json.tool
-curl -s "http://localhost:8000/api/v1/destinations/{DESTINATION_ID}/readiness" | python -m json.tool
-curl -s "http://localhost:8000/api/v1/places?destination_id={DESTINATION_ID}&page=2&size=10" | python -m json.tool
+curl.exe -s "http://localhost:8000/api/v1/destinations/search?q=Darjeeling" | python -m json.tool
+curl.exe -s "http://localhost:8000/api/v1/destinations/{DESTINATION_ID}/readiness" | python -m json.tool
+curl.exe -s "http://localhost:8000/api/v1/places?destination_id={DESTINATION_ID}&page=2&size=10" | python -m json.tool
 
 # ── v2: destination-specific rate limit is active ──
-curl -si "http://localhost:8000/api/v1/destinations/search?q=Darjeeling" | Select-String -Pattern "x-ratelimit-limit" -CaseSensitive:$false
+curl.exe -si "http://localhost:8000/api/v1/destinations/search?q=Darjeeling" | Select-String -Pattern "x-ratelimit-limit" -CaseSensitive:$false
 # Expected: x-ratelimit-limit: 20
 
 # ── v2: unknown destination on /places is a 404, not an empty page ──
-curl -s "http://localhost:8000/api/v1/places?destination_id=00000000-0000-0000-0000-000000000001&page=1" -w "\n%{http_code}"
+curl.exe -s "http://localhost:8000/api/v1/places?destination_id=00000000-0000-0000-0000-000000000001&page=1" -w "\n%{http_code}"
 # Expected: 404
 
 # ── Tests ──
 python -m pytest tests/ -v
 
-# ── P2 smoke ──
+# ── P2 smoke (does NOT need the uvicorn terminal — uses in-process ASGI) ──
 python scripts/test_p2_smoke.py
 
 # ── Import guards ──
-# PowerShell — httpx only in geo/, auth/service, main lifespan:
 Get-ChildItem -Path src -Recurse -Filter *.py | Select-String "import httpx" | Where-Object { $_.Path -notmatch "(geo\\|auth\\service|main\.py)" }
 
-# ── v2: no lru_cache on async defs anywhere in geo/ (regression guard for the fixed bug) ──
 Get-ChildItem -Path src\geo -Recurse -Filter *.py | Select-String "lru_cache"
 # Expected: zero results
 
-# ── v2: no lookup-then-create pattern for unique-key upserts — every upsert is on_conflict_do_update ──
 Get-ChildItem -Path src -Recurse -Filter *.py | Select-String "on_conflict_do_update"
 # Expected: at least 2 matches — Place.upsert_from_poi AND Destination.upsert_from_geocoded
 
@@ -1708,16 +1694,17 @@ echo "P2 COMPLETE — proceed to P3"
 
 | Check | Expected |
 |-------|----------|
-| `GET /destinations/search?q=Darjeeling` | Geocoded result in `data[]` |
-| `GET /destinations/{id}/readiness` | `tier=limited`, `score≈0.4`, `place_count>=50` |
-| `GET /places?destination_id=...&page=2` | `PaginatedResponse` with `has_next=true` |
-| `GET /places?destination_id=<unknown-uuid>` | **404**, not an empty page (v2 locked) |
-| Seed script | `Seeded n/n places` idempotent; survives one bad POI (v2 tested) |
+| `GET /api/v1/destinations/search?q=Darjeeling` | Geocoded result in `data[]` |
+| Seed / Overpass volume | `place_count >= 50` |
+| `GET /api/v1/destinations/{id}/readiness` | `tier=limited`, `score≈0.4` when `place_count >= 100` (NOT from `>= 50` alone) |
+| `GET /api/v1/places?destination_id=...&page=2` | `PaginatedResponse` with `has_next=true` |
+| `GET /api/v1/places?destination_id=<unknown-uuid>` | **404**, not an empty page (v2 locked) |
+| Seed script | Idempotent; survives one bad POI (v2 tested) |
 | Geocoder failure | Returns `None`, not 500; repeated cache-hit calls do not raise (v2 fixed) |
 | OSRM failure | `fallback_used=true` |
-| Concurrent destination upsert | No `IntegrityError`, both calls return the same row (v2 fixed) |
-| Radius search | Correct at `geography`-cast meter units, verified against a known-distance fixture (v2 locked) |
-| `/destinations/search` rate limit | `20/min/IP`, distinct from the `60/min` default (v2 new) |
-| pytest | All pass, including the seed-partial-failure and geocoder-cache regression tests (v2 new) |
+| Concurrent destination upsert | Separate sessions + commit; no `IntegrityError`; same row (v2 fixed) |
+| Radius search | Geography meters; smoke uses `limit >= place_count` (v2 locked) |
+| `/api/v1/destinations/search` rate limit | `20/min/IP`, distinct from the `60/min` default (v2 new) |
+| pytest | All pass, including seed-partial-failure, geocoder-cache, and place_count=50→sparse (v2) |
 
-**Amendment vs blueprint 2.8:** Blueprint says `tier=ready` after seed; with the documented formula, `ready` requires enrichment (P3). P2 acceptance uses `tier=limited`.
+**Amendment vs blueprint 2.8:** Blueprint says `tier=ready` after seed; with the documented formula, `ready` requires enrichment (P3). P2 acceptance uses `tier=limited` only when place_count is formula-true (`>= 100` unenriched).
