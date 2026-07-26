@@ -56,11 +56,11 @@ Prefer **links and tables** over prose.
 
 ---
 
-## Explicit refresh now
+## Refresh log
 
-This v1 was written at **P2.2**. Next natural refresh candidates:
+| Refreshed | Through step | Trigger |
+|-----------|--------------|---------|
+| 2026-07-22 | P2.2 | Manual v1 written |
+| 2026-07-26 | P2.4 | Cadence — 2.3, 2.6a, 2.6b, 2.4 landed since the P2.2 marker |
 
-- After **P2.3–P2.7** (~places repo + destinations + seed), or  
-- When **P2** phase completes  
-
-Whichever hits the cadence rule first.
+Next natural refresh: when **P2** completes (2.5 → 2.10), or after ~4 more validated steps.

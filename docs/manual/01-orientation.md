@@ -6,7 +6,7 @@
 
 ## What Wandr is (one paragraph)
 
-Wandr is a **FastAPI modular monolith** that will generate multi-day travel itineraries. Structure (places, routes, times) comes from **code**; narrative prose will come from an **LLM** later. Today (through P2.2) you mostly have: app scaffold, auth, database models, and geo gateways that talk to OpenStreetMap services.
+Wandr is a **FastAPI modular monolith** that will generate multi-day travel itineraries. Structure (places, routes, times) comes from **code**; narrative prose will come from an **LLM** later. Today (through P2.4) you mostly have: app scaffold, auth, database models, geo gateways that talk to OpenStreetMap services, destination/place repositories with atomic upserts, and a CLI that seeds a destination's POIs.
 
 ---
 

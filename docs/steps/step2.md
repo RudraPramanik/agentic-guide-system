@@ -896,8 +896,11 @@ This is step 2.4. No new package installs.
     1. geocode(destination_name) → GeocodedPlace | exit 1 with message if None
     2. dest = await DestinationRepository(session).upsert_from_geocoded(geocoded)  # atomic
     3. fetch_pois(dest.lat, dest.lng, radius_km)
-    4. For each POI (enumerate):
-         try: await PlaceRepository(session).upsert_from_poi(poi, dest.id)
+    4. For each POI (enumerate) — extract this loop as an importable
+       `async def seed_places(session, destination_id, pois) -> int` (step 2.9 tests it directly):
+         try:
+             async with session.begin_nested():        # SAVEPOINT per POI — see rule below
+                 await PlaceRepository(session).upsert_from_poi(poi, dest.id)
          except Exception as e: log.warning("seed.poi_failed", osm_id=poi.osm_id, error=str(e)); continue
          if (i+1) % 10 == 0: print progress
     5. Update destination.place_count = success_count (enriched_count/indexed_count unchanged —
@@ -908,6 +911,10 @@ This is step 2.4. No new package installs.
 
 ─── RULES ───
 - Single POI failure → log + continue. Never abort full seed for one bad record.
+- Each POI upsert runs inside `async with session.begin_nested()` (SAVEPOINT). A plain
+  try/except is NOT enough: a DB-level error aborts the whole Postgres transaction, so every
+  subsequent POI would then fail too and the final commit would raise. The savepoint rolls
+  back only the failed row and keeps the batch alive — this is what makes "log + continue" real.
 - geocode None → exit code 1, human-readable error (do not commit).
 - Overpass [] → commit destination with place_count=0, print warning.
 - Script calls geo/ and repositories — not httpx directly.
@@ -938,10 +945,14 @@ Expected: same destination id, no duplicate places (count stable).
   Expected: non-zero exit, no commit (or destination not created)
 
 ✅ Failure path 2 — a single bad POI must not abort the whole seed (mocked, no network needed;
-   this is the test that was MISSING in v1 — see Step 2.9 for the pytest version of this):
+   this is the test that was MISSING in v1 — see Step 2.9 for the pytest version of this).
+   NOTE (v2.1): `patch.object` replaces an *instance method*, so the replacement must accept
+   `self` as its first parameter. Without it, `poi` binds to the repository instance and every
+   POI fails — the snippet reports 0 successes and the assertion misleadingly looks like a
+   product bug rather than a test bug.
   python -c "
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 from src.geo.schemas import RawPOI
 from src.places.repository import PlaceRepository
 
@@ -953,7 +964,7 @@ async def main():
     pois = [good_poi, bad_poi, good_poi]
     call_count = {'n': 0}
 
-    async def flaky_upsert(poi, dest_id):
+    async def flaky_upsert(self, poi, dest_id):
         call_count['n'] += 1
         if poi.osm_id == 'node/2':
             raise RuntimeError('simulated DB error on this POI')
@@ -971,6 +982,47 @@ async def main():
     assert success == 2, f'expected 2 successes out of 3 (1 simulated failure), got {success}'
     assert call_count['n'] == 3
     print('PASS — batch survives a single POI failure, continues to completion')
+
+asyncio.run(main())
+"
+
+✅ Failure path 3 — same contract against the REAL seed loop and a real transaction (this is
+   the one that actually proves the savepoint rule; the mocked snippet above only proves the
+   try/except shape). Requires Postgres:
+  python -c "
+import asyncio
+from unittest.mock import patch
+from scripts.seed_destination import seed_places
+from src.core.database.session import AsyncSessionLocal
+from src.destinations.models import Destination
+from src.geo.schemas import RawPOI
+from src.places.repository import PlaceRepository
+
+original = PlaceRepository.upsert_from_poi
+
+async def flaky(self, poi, dest_id):
+    if poi.osm_id == 'node/999999902':
+        raise RuntimeError('simulated DB error')
+    return await original(self, poi, dest_id)
+
+async def main():
+    async with AsyncSessionLocal() as session:
+        dest = Destination(name='Seed Loop Test', country='IN', display_name='Seed Loop Test, IN',
+                           osm_place_id='node/seed-loop-test', lat=27.04, lng=88.26,
+                           place_count=0, enriched_count=0, indexed_count=0)
+        session.add(dest)
+        await session.flush()
+
+        pois = [RawPOI(osm_id=f'node/99999990{i}', name=f'P{i}', lat=27.04, lng=88.26,
+                       category='attraction', raw_tags={}) for i in (1, 2, 3)]
+
+        with patch.object(PlaceRepository, 'upsert_from_poi', new=flaky):
+            success = await seed_places(session, dest.id, pois)
+
+        assert success == 2, f'expected 2 successes, got {success}'
+        assert await PlaceRepository(session).count_by_destination(dest.id) == 2
+        await session.rollback()
+        print('PASS — bad POI rolled back to its savepoint, batch and transaction survive')
 
 asyncio.run(main())
 "

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.destinations.exceptions import DestinationNotFoundError
 from src.destinations.models import Destination
 from src.destinations.repository import DestinationRepository
+from src.destinations.schemas import DestinationReadinessOut
 from src.geo.geocoder import geocode
 
 
@@ -38,3 +39,16 @@ class DestinationService:
         if dest is None:
             raise DestinationNotFoundError(destination_id=str(destination_id))
         return dest
+
+    async def get_readiness(self, destination_id: uuid.UUID) -> DestinationReadinessOut:
+        """Interim stub until step 2.8 compute_readiness. 404 if destination missing."""
+        dest = await self.get_by_id(destination_id)
+        return DestinationReadinessOut(
+            destination_id=dest.id,
+            score=0.0,
+            tier="sparse",
+            place_count=dest.place_count,
+            enriched_pct=0.0,
+            indexed_pct=0.0,
+            message="Full readiness scoring lands in step 2.8",
+        )

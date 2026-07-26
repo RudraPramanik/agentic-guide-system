@@ -6,13 +6,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-22 · **Phase:** P2 in progress · **Next step:** P2.4
+**Last updated:** 2026-07-26 · **Phase:** P2 in progress · **Next step:** P2.6c′
 
 ---
 
 ## Current state (one line)
 
-P2.6a+2.6b done — destination schemas/exceptions + atomic upsert repo + cache-aside search service; next is P2.4 seed script.
+P2.5+2.6c done — OSRM `get_route` + destinations HTTP search (browser/Swagger verified); next is P2.6c′ path-specific search rate limit.
 
 ---
 
@@ -43,6 +43,9 @@ P2.6a+2.6b done — destination schemas/exceptions + atomic upsert repo + cache-
 | 2.3 | ✅ Done | `places/repository` — atomic OSM upsert, geography radius, list/count by destination |
 | 2.6a | ✅ Done | destinations schemas + `DestinationNotFoundError` |
 | 2.6b | ✅ Done | `DestinationRepository` atomic upsert + `DestinationService` cache-aside search |
+| 2.4 | ✅ Done | `scripts/seed_destination.py` — geocode → Overpass → per-POI upsert (savepoint per POI), sets `place_count`, commits |
+| 2.5 | ✅ Done | `geo/osrm` — OSRM driving route + haversine × 1.4 fallback |
+| 2.6c | ✅ Done | destinations router search + readiness stub; registered in `main.py` |
 
 ---
 
@@ -64,7 +67,7 @@ P2.6a+2.6b done — destination schemas/exceptions + atomic upsert repo + cache-
 | `src/core/security/permissions.py` | `require_auth`, `optional_auth`, `get_current_user_id` |
 | `src/core/middleware/logging.py` | `RequestLoggingMiddleware` — `X-Request-ID`, structlog context, latency |
 | `src/core/middleware/rate_limit.py` | `RateLimitMiddleware`, `InMemoryRateLimiter`, `RateLimiterBackend` protocol |
-| `src/main.py` | `create_app()`, lifespan, logging + rate limit middleware, global handlers, health + auth router |
+| `src/main.py` | `create_app()`, lifespan, middleware, handlers, health + auth + destinations routers |
 | `alembic/env.py` | Async Alembic + `include_object` filter + all model imports |
 | `alembic/versions/001_enable_postgis.py` | PostGIS + uuid-ossp extensions |
 | `alembic/versions/20260717_*_create_all_tables.py` | Migration 002 — 6 core tables |
@@ -79,7 +82,8 @@ P2.6a+2.6b done — destination schemas/exceptions + atomic upsert repo + cache-
 | `src/destinations/schemas.py` | `DestinationOut`, `DestinationSearchQuery`, `DestinationReadinessOut` |
 | `src/destinations/exceptions.py` | `DestinationNotFoundError` (404) |
 | `src/destinations/repository.py` | `DestinationRepository` — atomic geocode upsert, ILIKE search |
-| `src/destinations/service.py` | `DestinationService` — cache-aside search (DB → geocode → upsert) |
+| `src/destinations/service.py` | `DestinationService` — cache-aside search; interim `get_readiness` stub (full math in 2.8) |
+| `src/destinations/router.py` | `/api/v1/destinations/search`, `/{id}/readiness` |
 | `src/places/models.py` | `Place` (Geometry POINT SRID 4326) |
 | `src/places/repository.py` | `PlaceRepository` — `upsert_from_poi`, `find_within_radius`, `list_by_destination`, `count_by_destination` |
 | `src/trips/models.py` | `TripStatus`, `Trip`, `TripPlace`, `EditType`, `TripEditEvent` |
@@ -87,10 +91,11 @@ P2.6a+2.6b done — destination schemas/exceptions + atomic upsert repo + cache-
 | `src/geo/schemas.py` | `GeocodedPlace`, `RawPOI`, `RouteResult` |
 | `src/geo/geocoder.py` | `geocode()` — Nominatim gateway; process-local dict cache + 1 req/sec throttle |
 | `src/geo/overpass.py` | `fetch_pois()` — Overpass gateway; form `data=` POST; 5xx/timeout retry; `[]` fallback |
+| `src/geo/osrm.py` | `get_route()` — OSRM gateway; haversine × 1.4 fallback; never raises httpx |
 
 **Tests:** `tests/core/test_*.py`, `tests/auth/test_*.py` — run `python -m pytest tests/ -v` (DB `wandr_test`)
 
-**Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`
+**Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py` (`seed_places()` / `seed_destination()` importable for tests)
 
 **TODO (P6):** geocoder cache + Nominatim throttle are per-process; back with Redis when `REDIS_URL` is wired for the rate limiter.
 
@@ -98,7 +103,7 @@ P2.6a+2.6b done — destination schemas/exceptions + atomic upsert repo + cache-
 
 ## Stubs only (do not assume implemented)
 
-All other `src/**/*.py` files (destinations except `models.py` + schemas/exceptions/repository/service; places except `models.py` + `repository.py`; trips/evaluation except `models.py`; `geo/osrm.py`; planner, search, travel_engine; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic.
+All other `src/**/*.py` files (destinations `readiness.py`; places except `models.py` + `repository.py`; trips/evaluation except `models.py`; planner, search, travel_engine; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic. Note: `DestinationService.get_readiness` is an **interim stub** until 2.8; destinations search rate limit (20/min) lands in **2.6c′**.
 
 ---
 
@@ -111,6 +116,8 @@ All other `src/**/*.py` files (destinations except `models.py` + schemas/excepti
 | GET | `/api/v1/auth/callback` | None (OAuth redirect) |
 | GET | `/api/v1/auth/me` | Optional (guest or cookie/Bearer) |
 | POST | `/api/v1/auth/logout` | None |
+| GET | `/api/v1/destinations/search?q=` | None (public catalog) |
+| GET | `/api/v1/destinations/{id}/readiness` | None (stub score until 2.8) |
 
 ---
 
@@ -119,10 +126,13 @@ All other `src/**/*.py` files (destinations except `models.py` + schemas/excepti
 ```bash
 docker compose up -d          # Postgres :5433, Qdrant :6335
 uvicorn src.main:app --reload
+# or: python -m uvicorn src.main:app --reload --port 8000
+# browser: http://localhost:8000/docs  and  /api/v1/destinations/search?q=Darjeeling
 python scripts/test_db_conn.py
 python scripts/test_p1_smoke.py
 python scripts/test_geocoder.py "Darjeeling"   # needs PYTHONPATH=project root if imports fail
 python scripts/test_overpass.py 27.041 88.263 30   # public Overpass may 504; override OVERPASS_API_URL if needed
+python scripts/seed_destination.py --destination "Darjeeling" --radius 30   # idempotent; exit 1 only on geocode miss
 alembic upgrade head          # run migrations (deploy/CLI only — not at app startup)
 python -m pytest tests/ -v
 ```

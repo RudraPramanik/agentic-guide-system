@@ -83,9 +83,55 @@ flowchart TD
 | `geo/geocoder.py` | `get_settings`, `get_logger`, `GeocodedPlace` | Config, logs, DTO |
 | `geo/overpass.py` | `get_settings`, `get_logger`, `RawPOI` | Config, logs, DTO |
 | `geo/schemas.py` | pydantic only | No FastAPI / SQLAlchemy |
-| Future seed / places | will call `geocode` / `fetch_pois` only | Never raw OverpassQL outside `geo/` |
+| `scripts/seed_destination.py`, `destinations/service.py` | `geocode` / `fetch_pois` only | Never raw OverpassQL or Nominatim URLs outside `geo/` |
 
 `geo/osrm.py` is a **stub** — nothing should import it yet.
+
+---
+
+## Seed pipeline (P2.4)
+
+```mermaid
+flowchart TD
+  CLI[scripts/seed_destination.py] --> G[geo/geocoder.py geocode]
+  CLI --> O[geo/overpass.py fetch_pois]
+  CLI --> DR[destinations/repository.py upsert_from_geocoded]
+  CLI --> PR[places/repository.py upsert_from_poi]
+  CLI --> SES[core/database/session AsyncSessionLocal]
+  DR --> BR[core/database/base_repository.py]
+  PR --> BR
+  CLI --> COMMIT[(session.commit)]
+```
+
+| From | Imports | Why |
+|------|---------|-----|
+| `scripts/seed_destination.py` | `geocode`, `fetch_pois` | Only sanctioned outbound geo path |
+| `scripts/seed_destination.py` | `DestinationRepository`, `PlaceRepository` | Atomic upserts (`ON CONFLICT`) |
+| `scripts/seed_destination.py` | `AsyncSessionLocal`, `dispose_engine` | Owns the session; scripts commit |
+| `scripts/seed_destination.py` | `configure_logging`, `get_logger` | `seed.poi_failed` / `seed.no_pois` warnings |
+
+Contract worth knowing before you touch it: each POI upsert runs inside `session.begin_nested()`
+(a SAVEPOINT), so one failing row is rolled back and skipped while the rest of the batch and the
+final commit still succeed. A bare `try/except` would leave the Postgres transaction aborted.
+
+`seed_places(session, destination_id, pois) -> int` is importable on purpose — step 2.9 tests the
+failure-tolerance contract against it directly.
+
+---
+
+## Destination search chain (P2.6b)
+
+```mermaid
+flowchart LR
+  S[destinations/service.py DestinationService] --> R[destinations/repository.py]
+  S --> G[geo/geocoder.py geocode]
+  S --> EX[destinations/exceptions.py DestinationNotFoundError]
+  R --> BR[core/database/base_repository.py]
+  R --> DM[destinations/models.py]
+```
+
+DB hit returns early and never calls Nominatim; only a miss geocodes, upserts atomically, and
+commits. No router mounts this yet — that is step 2.6c.
 
 ---
 
@@ -112,6 +158,6 @@ flowchart TD
 
 ## What is *not* wired yet
 
-No import edges from `main.py` into destinations/places/trips routers — those packages are models-only or stubs. Planner / search / travel_engine have no callers.
+No import edges from `main.py` into destinations/places/trips routers — those routers are still stubs, so `DestinationService` and the place/destination repositories are reachable only from scripts and tests today. Planner / search / travel_engine have no callers.
 
 Next: [05 — How to change](05-how-to-change.md)

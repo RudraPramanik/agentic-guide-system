@@ -44,6 +44,19 @@ OSRM: wait for step 2.5 — `geo/osrm.py` is still a stub.
 
 ---
 
+## I want to seed a destination (or write another batch script)
+
+1. Run it: `python scripts/seed_destination.py --destination "Darjeeling" --radius 30` (idempotent)  
+2. Read `scripts/seed_destination.py` as the batch template: geo gateway → repositories → single commit at the end  
+3. Wrap each item in `async with session.begin_nested()` so one bad row rolls back to its savepoint instead of aborting the whole transaction  
+4. Log skips (`log.warning("seed.poi_failed", ...)`) and keep going — only a fatal precondition (geocode miss) exits non-zero  
+5. Keep the per-item loop in a plain importable function so tests can drive it without the CLI  
+6. Scripts commit; repositories only flush  
+
+**Wrong:** calling httpx/Overpass directly from a script, or letting one failed row abort the batch.
+
+---
+
 ## I want a new database table / column
 
 1. Edit or add SQLAlchemy model under the right package (`models.py`) using mixins from `core/database/base.py`  
@@ -79,6 +92,7 @@ python scripts/test_db_conn.py
 python scripts/test_p1_smoke.py
 python scripts/test_geocoder.py "Darjeeling"
 python scripts/test_overpass.py 27.041 88.263 30
+python scripts/seed_destination.py --destination "Darjeeling" --radius 30
 python -m pytest tests/ -v
 uvicorn src.main:app --reload
 ```

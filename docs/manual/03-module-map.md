@@ -1,8 +1,8 @@
-# 03 — Module map (through P2.2)
+# 03 — Module map (through P2.4)
 
 **Up:** [Developer Manual index](../app/documentation.md) · **Prev:** [02-layers](02-layers.md)
 
-Source of truth for “real vs stub”: [`docs/context.md`](../context.md). This page is a navigable snapshot as of **P2.2**.
+Source of truth for “real vs stub”: [`docs/context.md`](../context.md). This page is a navigable snapshot as of **P2.4**.
 
 ---
 
@@ -23,8 +23,8 @@ src/
 │   ├── pagination.py ✅
 │   ├── responses.py ✅
 │   └── exceptions.py ✅
-├── destinations/           # models ✅ · service/repo/router ❌ stubs
-├── places/                 # models ✅ · repo/service/router ❌ stubs
+├── destinations/           # models, schemas, exceptions, repo, service ✅ · router/readiness ❌ stubs
+├── places/                 # models, repository ✅ · schemas/service/router ❌ stubs
 ├── trips/                  # models ✅ · rest ❌ stubs
 ├── evaluation/             # models ✅ · rest ❌ stubs
 ├── planner/                # ❌ stubs (LangGraph later)
@@ -32,7 +32,7 @@ src/
 └── travel_engine/          # ❌ stubs (pure Python later)
 
 alembic/                    # migrations 001–003 ✅
-scripts/                    # smoke + geo CLIs ✅
+scripts/                    # smoke + geo CLIs + seed_destination ✅
 tests/                      # core + auth ✅
 ```
 
@@ -76,12 +76,22 @@ tests/                      # core + auth ✅
 | `src/auth/service.py` | `AuthService` — Google exchange, upsert |
 | `src/auth/router.py` | `/api/v1/auth/google\|callback\|me\|logout` |
 
+### Destinations & places (P2.3 / P2.6a / P2.6b)
+
+| Path | Exports / role |
+|------|----------------|
+| `src/destinations/models.py` | `Destination` |
+| `src/destinations/schemas.py` | `DestinationOut`, `DestinationSearchQuery`, `DestinationReadinessOut` |
+| `src/destinations/exceptions.py` | `DestinationNotFoundError` (404) |
+| `src/destinations/repository.py` | `DestinationRepository` — atomic `upsert_from_geocoded`, ILIKE `search_by_name` |
+| `src/destinations/service.py` | `DestinationService` — cache-aside search (DB → geocode → upsert → commit) |
+| `src/places/models.py` | `Place` (PostGIS POINT) |
+| `src/places/repository.py` | `PlaceRepository` — `upsert_from_poi`, `find_within_radius` (geography/meters), list/count |
+
 ### Domain models only (no services yet)
 
 | Path | Model |
 |------|-------|
-| `src/destinations/models.py` | `Destination` |
-| `src/places/models.py` | `Place` (PostGIS POINT) |
 | `src/trips/models.py` | `Trip`, `TripPlace`, `TripEditEvent`, enums |
 | `src/evaluation/models.py` | `TripEvaluation` |
 
@@ -105,6 +115,7 @@ tests/                      # core + auth ✅
 | `scripts/test_p1_smoke.py` | P1 smoke |
 | `scripts/test_geocoder.py` | Live Nominatim CLI |
 | `scripts/test_overpass.py` | Live Overpass CLI |
+| `scripts/seed_destination.py` | Seed CLI — `seed_destination()` pipeline + importable `seed_places()` loop |
 | `tests/core/`, `tests/auth/` | pytest suite |
 
 ---
@@ -117,8 +128,8 @@ Treat these as **placeholders** until `context.md` moves them to Implemented:
 |------|-------|
 | `src/geo/osrm.py` | Routing gateway — step 2.5 |
 | `src/auth/dependencies.py` | Unused placeholder |
-| `src/destinations/*` except `models.py` | Repo/service/router later (2.6+) |
-| `src/places/*` except `models.py` | Repo next (2.3) |
+| `src/destinations/router.py`, `readiness.py` | Steps 2.6c / 2.8 |
+| `src/places/schemas.py`, `service.py`, `router.py` | Steps 2.7a / 2.7b |
 | `src/trips/*` except `models.py` | Trip APIs later |
 | `src/evaluation/*` except `models.py` | Eval recording later |
 | `src/planner/**` | LangGraph agent — later phases |
