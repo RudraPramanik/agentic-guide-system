@@ -16,3 +16,5 @@ pytest==9.1.0              # test runner — step 1.11
 pytest-asyncio==1.4.0      # async test support — step 1.11
 pytest-mock==3.15.1        # mock fixtures — step 1.11
 shapely==2.1.2   # geometry construction for PostGIS seed/test scripts — step 1.12
+qdrant-client==1.15.1     # vector search for P3 semantic retrieval — AsyncQdrantClient used throughout
+sentence-transformers==5.1.2   # embeddings for place knowledge layer

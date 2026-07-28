@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -63,19 +64,37 @@ async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
 
 @pytest.fixture
 async def client(db_session) -> AsyncGenerator[AsyncClient, None]:
-    """Async HTTP test client with get_db overridden to the test session."""
-    app = create_app()
+    """Async HTTP test client with get_db overridden to the test session.
 
-    async def _override_get_db():
-        yield db_session
+    Lifespan Qdrant/embedding ensure is mocked — unit tests must not download models
+    or require a live Qdrant collection.
+    """
+    with (
+        patch(
+            "src.search.client.ensure_places_collection",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "src.search.embeddings.ensure_embedding_model_loaded",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "src.search.client.close_qdrant_client",
+            new_callable=AsyncMock,
+        ),
+    ):
+        app = create_app()
 
-    app.dependency_overrides[get_db] = _override_get_db
+        async def _override_get_db():
+            yield db_session
 
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
+        app.dependency_overrides[get_db] = _override_get_db
 
-    app.dependency_overrides.clear()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+
+        app.dependency_overrides.clear()
 
 
 @pytest.fixture

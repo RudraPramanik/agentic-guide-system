@@ -28,22 +28,17 @@ async def lifespan(app: FastAPI):
         log.critical("DB unreachable", error=str(exc))
         raise SystemExit(1) from exc
 
-    import httpx
+    from src.search.client import close_qdrant_client, ensure_places_collection
+    from src.search.embeddings import ensure_embedding_model_loaded
 
-    qdrant_health_url = f"{settings.QDRANT_URL.rstrip('/')}/healthz"
-    try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(5.0, connect=5.0, read=5.0),
-        ) as client:
-            response = await client.get(qdrant_health_url)
-            response.raise_for_status()
-    except Exception:
-        log.warning("Qdrant unreachable - search degraded")
+    await ensure_places_collection()
+    await ensure_embedding_model_loaded()
 
     yield
 
     flush_tracer()
     log.info("wandr.shutdown")
+    await close_qdrant_client()
     await dispose_engine()
 
 

@@ -12,6 +12,7 @@ from src.destinations.readiness import compute_readiness
 from src.destinations.repository import DestinationRepository
 from src.destinations.schemas import DestinationReadinessOut
 from src.geo.geocoder import geocode
+from src.search.client import is_qdrant_available
 
 
 class DestinationService:
@@ -42,9 +43,9 @@ class DestinationService:
         return dest
 
     async def get_readiness(self, destination_id: uuid.UUID) -> DestinationReadinessOut:
-        """Compute readiness from denormalized counters. P2: search_available=False."""
+        """Compute readiness from denormalized counters + live Qdrant availability."""
         dest = await self.get_by_id(destination_id)
-        search_available = False  # P2: Qdrant wired in P3
+        search_available = is_qdrant_available()
         result = compute_readiness(
             dest.place_count,
             dest.enriched_count,

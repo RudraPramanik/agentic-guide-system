@@ -18,6 +18,7 @@ class Place(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     name: Mapped[str] = mapped_column(String(512), nullable=False)
     category: Mapped[str] = mapped_column(String(100), nullable=False)
     tags: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    enriched_tags: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # PostGIS POINT — SRID 4326 = WGS84 (standard GPS coordinates)

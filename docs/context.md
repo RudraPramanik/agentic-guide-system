@@ -1,18 +1,18 @@
 # Wandr — AI Agent Context
 
-> **Read this first every session.** Then `AGENT.md` (rules), then the current step in `docs/steps/step2.md` (or blueprint).
+> **Read this first every session.** Then `AGENT.md` (rules), then the current step in `docs/steps/step3.md` (or blueprint).
 > Deep reference: `docs/app/system.md` (architecture), `docs/app/lld.md` (patterns).
 > Junior map (layers / files / imports): `docs/app/documentation.md` → `docs/manual/` (refresh on phase end or every 4–5 steps — not every step).
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-26 · **Phase:** P2 complete · **Next step:** P3.1
+**Last updated:** 2026-07-28 · **Phase:** P3 complete · **Next step:** P4.1
 
 ---
 
 ## Current state (one line)
 
-P2 complete — geo/places/destinations verified with pytest + `scripts/test_p2_smoke.py`; next is P3.1.
+P3 complete — place enrichment + Qdrant semantic index + readiness search flag; pytest 92 passing; next is P4.
 
 ---
 
@@ -52,6 +52,13 @@ P2 complete — geo/places/destinations verified with pytest + `scripts/test_p2_
 | 2.8 | ✅ Done | pure `compute_readiness` + real `DestinationService.get_readiness` |
 | 2.9 | ✅ Done | P2 pytest: geo/readiness/repos/routers/seed (68 tests total) |
 | 2.10 | ✅ Done | `scripts/test_p2_smoke.py` live P2 proof |
+| 3.0 | ✅ Done | Migration `places.enriched_tags` JSONB list (distinct from OSM `tags`) |
+| 3.1 | ✅ Done | `search/client.py` AsyncQdrantClient + fail-soft `ensure_places_collection` |
+| 3.2 | ✅ Done | `search/embeddings.py` lifespan MiniLM load + `to_thread` encode |
+| 3.3 | ✅ Done | `PlaceService.enrich_place` + `PLACE_TAG_VOCAB` constants |
+| 3.4 | ✅ Done | `search/places_index.py` batch upsert + destination-scoped search |
+| 3.5 | ✅ Done | `scripts/enrich_places.py` + `scripts/index_places.py` |
+| 3.6 | ✅ Done | Readiness uses live `is_qdrant_available()` |
 
 ---
 
@@ -59,7 +66,7 @@ P2 complete — geo/places/destinations verified with pytest + `scripts/test_p2_
 
 | Module | Exports / notes |
 |--------|-----------------|
-| `src/config.py` | `get_settings()` — env vars incl. Google OAuth, JWT TTL, rate limits (incl. destinations search), `NOMINATIM_BASE_URL`, `OVERPASS_API_URL` |
+| `src/config.py` | `get_settings()` — Qdrant/embeddings/enrich concurrency, OAuth, JWT, rate limits, geo |
 | `src/core/observability/logging.py` | `configure_logging()`, `get_logger()` |
 | `src/core/observability/tracing.py` | `get_tracer()`, `flush_tracer()` |
 | `src/core/llm/client.py` | `chat_completion()`, `chat_with_tools()` — **only** litellm import |
@@ -71,49 +78,38 @@ P2 complete — geo/places/destinations verified with pytest + `scripts/test_p2_
 | `src/core/database/base_repository.py` | `BaseRepository[ModelT, IDT]` — soft-delete, paginate, flush-only writes |
 | `src/core/security/jwt.py` | `TokenPayload`, `create_access_token()`, `verify_token()` |
 | `src/core/security/permissions.py` | `require_auth`, `optional_auth`, `get_current_user_id` |
-| `src/core/middleware/logging.py` | `RequestLoggingMiddleware` — `X-Request-ID`, structlog context, latency |
-| `src/core/middleware/rate_limit.py` | `RateLimitMiddleware`, `_route_limit_table`, exact-match path limits (planner 10/min, destinations/search 20/min) |
-| `src/main.py` | `create_app()`, lifespan, middleware, handlers, health + auth + destinations + places routers |
-| `alembic/env.py` | Async Alembic + `include_object` filter + all model imports |
-| `alembic/versions/001_enable_postgis.py` | PostGIS + uuid-ossp extensions |
+| `src/core/middleware/logging.py` | `RequestLoggingMiddleware` |
+| `src/core/middleware/rate_limit.py` | `RateLimitMiddleware`, path limits |
+| `src/main.py` | lifespan: DB ping + Qdrant ensure + embedding load; routers |
+| `alembic/env.py` | Async Alembic + model imports |
+| `alembic/versions/001_enable_postgis.py` | PostGIS + uuid-ossp |
 | `alembic/versions/20260717_*_create_all_tables.py` | Migration 002 — 6 core tables |
-| `alembic/versions/20260721_*_add_trip_edit_events.py` | Migration 003 — `trip_edit_events` + `edit_type` enum |
-| `src/auth/models.py` | `User` |
-| `src/auth/schemas.py` | `UserOut`, `AuthMeResponse`, `TokenResponse`, `GoogleCallbackParams` |
-| `src/auth/exceptions.py` | `GoogleOAuthError`, `InvalidTokenError`, `AccountInactiveError` |
-| `src/auth/repository.py` | `UserRepository` |
-| `src/auth/service.py` | `AuthService` — upsert, Google exchange/userinfo |
-| `src/auth/router.py` | `/api/v1/auth/google|callback|me|logout` |
-| `src/destinations/models.py` | `Destination` |
-| `src/destinations/schemas.py` | `DestinationOut`, `DestinationSearchQuery`, `DestinationReadinessOut` |
-| `src/destinations/exceptions.py` | `DestinationNotFoundError` (404) |
-| `src/destinations/repository.py` | `DestinationRepository` — atomic geocode upsert, ILIKE search |
-| `src/destinations/service.py` | `DestinationService` — cache-aside search; `get_readiness` via `compute_readiness` |
-| `src/destinations/readiness.py` | `compute_readiness`, `ReadinessResult`, `PLACE_TARGET` — pure, no I/O |
-| `src/destinations/router.py` | `/api/v1/destinations/search`, `/{id}/readiness` |
-| `src/places/models.py` | `Place` (Geometry POINT SRID 4326) |
-| `src/places/schemas.py` | `PlaceOut` — lat/lng from geometry via `to_shape` |
-| `src/places/repository.py` | `PlaceRepository` — `upsert_from_poi`, `find_within_radius`, `list_by_destination`, `count_by_destination` |
-| `src/places/service.py` | `PlaceService` — list/get; unknown destination → `DestinationNotFoundError` |
-| `src/places/router.py` | `/api/v1/places`, `/api/v1/places/{id}` |
-| `src/trips/models.py` | `TripStatus`, `Trip`, `TripPlace`, `EditType`, `TripEditEvent` |
-| `src/evaluation/models.py` | `TripEvaluation` |
-| `src/geo/schemas.py` | `GeocodedPlace`, `RawPOI`, `RouteResult` |
-| `src/geo/geocoder.py` | `geocode()` — Nominatim gateway; process-local dict cache + 1 req/sec throttle |
-| `src/geo/overpass.py` | `fetch_pois()` — Overpass gateway; form `data=` POST; 5xx/timeout retry; `[]` fallback |
-| `src/geo/osrm.py` | `get_route()` — OSRM gateway; haversine × 1.4 fallback; never raises httpx |
+| `alembic/versions/20260721_*_add_trip_edit_events.py` | Migration 003 — `trip_edit_events` |
+| `alembic/versions/20260728_*_add_place_enriched_tags.py` | Migration 004 — `places.enriched_tags` |
+| `src/auth/*` | User model, OAuth service, JWT auth router |
+| `src/destinations/*` | search + readiness (`is_qdrant_available` live) |
+| `src/places/models.py` | `tags` (OSM) + `enriched_tags` (LLM list) + POINT |
+| `src/places/constants.py` | `PLACE_TAG_VOCAB` |
+| `src/places/service.py` | list/get + `enrich_place` |
+| `src/places/repository.py` / `router.py` / `schemas.py` | P2 places HTTP |
+| `src/search/client.py` | `AsyncQdrantClient`, `ensure_places_collection`, `is_qdrant_available` |
+| `src/search/embeddings.py` | MiniLM lifespan load; `embed_text` / `embed_batch` |
+| `src/search/places_index.py` | upsert, `search_places`, `count_indexed` |
+| `src/geo/*` | geocoder, overpass, osrm |
+| `src/trips/models.py` | Trip / TripPlace / TripEditEvent |
+| `src/evaluation/models.py` | TripEvaluation |
 
-**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/scripts/` — run `python -m pytest tests/ -v` (DB `wandr_test`)
+**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **92 passing**
 
-**Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py` (`seed_places()` / `seed_destination_into()` / `seed_destination()` importable for tests)
+**Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
 
-**Known limitations / TODO (P6):** geocoder cache + Nominatim throttle are per-process; rate limiter is in-memory — back both with Redis when `REDIS_URL` is wired.
+**Known limitations / TODO (P6):** geocoder cache + Nominatim throttle are per-process; rate limiter is in-memory — back both with Redis when `REDIS_URL` is wired. Pre-bake sentence-transformers model in Docker images (`SENTENCE_TRANSFORMERS_HOME`) so production skips cold download.
 
 ---
 
 ## Stubs only (do not assume implemented)
 
-All other `src/**/*.py` files (trips/evaluation except `models.py`; planner, search, travel_engine; `src/auth/dependencies.py`) are step 0.1 placeholders — one-line docstrings, no logic. Note: places HTTP + readiness scoring landed in **2.7b / 2.8**; P2 pytest + smoke landed in **2.9 / 2.10**.
+trips/evaluation except `models.py`; planner; travel_engine; `src/auth/dependencies.py` — still step 0.1 placeholders. Search + enrich/index scripts are **real** (P3).
 
 ---
 
@@ -127,7 +123,7 @@ All other `src/**/*.py` files (trips/evaluation except `models.py`; planner, sea
 | GET | `/api/v1/auth/me` | Optional (guest or cookie/Bearer) |
 | POST | `/api/v1/auth/logout` | None |
 | GET | `/api/v1/destinations/search?q=` | None (public catalog; rate limit 20/min/IP) |
-| GET | `/api/v1/destinations/{id}/readiness` | None (pure formula; P2 `search_available=False`) |
+| GET | `/api/v1/destinations/{id}/readiness` | None (`search_available` = live Qdrant flag) |
 | GET | `/api/v1/places?destination_id=` | None (paginated; unknown destination → 404) |
 | GET | `/api/v1/places/{id}` | None |
 
@@ -145,8 +141,10 @@ python scripts/test_p1_smoke.py
 python scripts/test_geocoder.py "Darjeeling"   # needs PYTHONPATH=project root if imports fail
 python scripts/test_overpass.py 27.041 88.263 30   # public Overpass may 504; override OVERPASS_API_URL if needed
 python scripts/seed_destination.py --destination "Darjeeling" --radius 30   # idempotent; exit 1 only on geocode miss
+python scripts/enrich_places.py --destination "Darjeeling" --limit 0   # LLM required
+python scripts/index_places.py --destination "Darjeeling" --limit 0    # Qdrant + embeddings
 python scripts/test_p2_smoke.py   # network + commits seed data to dev DB
-alembic upgrade head          # run migrations (deploy/CLI only — not at app startup)
+# alembic: local package named `alembic/` shadows CLI — run via site-packages alembic or path workaround
 python -m pytest tests/ -v
 ```
 

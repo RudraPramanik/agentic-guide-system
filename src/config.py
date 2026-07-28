@@ -23,9 +23,17 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str
 
-    # Vector search
-    QDRANT_URL: str = "http://localhost:6333"
+    # Vector search (host port 6335 — compose maps 6335:6333)
+    QDRANT_URL: str = "http://localhost:6335"
     QDRANT_API_KEY: str = ""
+    QDRANT_PLACES_COLLECTION: str = "places"
+    PLACES_EMBEDDING_DIM: int = 384
+    QDRANT_OPERATION_TIMEOUT_SECONDS: float = 5.0
+    QDRANT_OPERATION_MAX_RETRIES: int = 2
+    PLACES_EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+    # First download of MiniLM often exceeds 30s on cold cache — allow headroom locally.
+    PLACES_EMBEDDING_MODEL_LOAD_TIMEOUT_SECONDS: float = 120.0
+    ENRICH_BATCH_LLM_CONCURRENCY: int = 3
 
     # Cache
     REDIS_URL: str = ""
