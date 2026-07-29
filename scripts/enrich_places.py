@@ -10,6 +10,12 @@ import argparse
 import asyncio
 import sys
 import uuid
+from pathlib import Path
+
+# Prefer this repo over other editable installs that also expose a top-level `src`.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
