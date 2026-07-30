@@ -64,7 +64,9 @@
 ### Agent / tools (non-negotiable)
 - Agent tool calls MUST use names from `TOOL_REGISTRY` only — never invent tools.
 - Tool args MUST validate against the tool's Pydantic input schema before execution.
-- All tool execution goes through `execute_tool(name, input, ctx)` — agent node never calls impl functions directly.
+- All tool execution goes through `execute_tool(name, input, ctx)` — agent node never calls impl functions directly **and never calls `execute_tool`**; it only sets `pending_tool_calls` (real or synthesized default). `tool_executor_node` is the sole caller.
+- `ToolContext` MUST be obtained only from `config["configurable"]["tool_context"]` — never via closure, module-global, or compile-time binding (cached compiled graph is shared across concurrent requests).
+- Tools are read-only w.r.t. `TravelState`; `apply_tool_result` is the sole writer of planning state from tool outcomes.
 - `finish_plan` MUST NOT succeed until `validate_itinerary` returned `ok=True` OR `state.abort_triggered=True`.
 - LLM never outputs place IDs, coordinates, stop order, or times — those come from travel_engine + tools only.
 - Phase gating: agent node binds ONLY tools allowed for `state.agent_phase` — never expose full registry to LLM.
@@ -622,7 +624,7 @@ async def execute_tool(name: str, input: BaseModel, ctx: ToolContext) -> ToolRes
 ```
 
 ### ToolContext
-> **LOCKED (v6.1):** `AsyncSession` and `RoutingProvider` are **not** part of LangGraph `TravelState` (non-serializable; would break checkpointers). Construct `ToolContext` once per graph invocation and thread via closure / `RunnableConfig.configurable` — never embed in the TypedDict LangGraph checkpoints.
+> **LOCKED (v6.1 + critic runtime patch):** `AsyncSession` and `RoutingProvider` are **not** part of LangGraph `TravelState` (non-serializable; would break checkpointers). Construct a **fresh** `ToolContext` once per graph invocation and thread it **only** via `RunnableConfig.configurable["tool_context"]` — never embed in the TypedDict LangGraph checkpoints, and **never** via a closure or module-global (the compiled graph is a cached singleton shared across concurrent requests).
 
 ```python
 class ToolContext(BaseModel):
@@ -635,7 +637,8 @@ class ToolContext(BaseModel):
     # Fallback: one session for the generation only if measured pool pressure requires it;
     # size pool for long-held LLM-bound requests before P6 ships.
     db: AsyncSession | None = None  # optional; prefer per-tool acquire
-    state: TravelState              # read/write allowed fields only via typed helpers
+    # NO writable TravelState / mutation callbacks — tools receive a read-only state view
+    # and return ToolResult; apply_tool_result is the sole writer.
 ```
 
 **DB session lifecycle (LOCKED preference):** acquire a session only inside tools that need DB access — not one open session for the full `PLANNER_GENERATION_TIMEOUT_SECONDS` (45s) across ≤12 tool calls. Against P1 pool defaults (`pool_size=10, max_overflow=20`), long-held sessions exhaust under concurrent planner traffic.
@@ -647,7 +650,7 @@ class ToolContext(BaseModel):
 START
   → parse_preferences          # single chat_completion — NOT in tool loop
   → agent                      # chat_with_tools — picks one tool from PHASE_TOOLS[phase]
-  → tool_executor              # execute_tool — updates state, checks phase transition
+  → tool_executor              # UNCONDITIONAL — sole execute_tool caller; phase transitions
   → [plan_complete OR needs_clarification OR abort?]
         needs_clarification → END
         plan_complete       → write_narrative → record_evaluation → END
@@ -663,11 +666,15 @@ START
 
 ### nodes/agent.py
 ```python
-async def agent_node(state: TravelState, ctx: ToolContext) -> TravelState:
+async def agent_node(state: TravelState, config) -> dict:
+    """ONLY decides next tool(s). NEVER calls execute_tool."""
+    ctx = config["configurable"]["tool_context"]  # config-only; unused for decide path OK
     if state.tool_loop_count >= settings.PLANNER_MAX_TOOL_CALLS:
-        state.abort_triggered = True
-        state.agent_phase = AgentPhase.WRAP_UP
-        return state
+        return {
+            "abort_triggered": True,
+            "agent_phase": AgentPhase.WRAP_UP,
+            "pending_tool_calls": [],
+        }
 
     tools = get_tools_for_phase(state.agent_phase)
     response = await chat_with_tools(
@@ -677,35 +684,44 @@ async def agent_node(state: TravelState, ctx: ToolContext) -> TravelState:
     )
 
     if response.tool_calls:
-        state.pending_tool_calls = response.tool_calls
-    else:
-        # LOCKED nudge (v6.1): append system message, retry once with tool_choice="required".
-        # If still no tool call → execute phase default tool directly (bypass LLM for that step).
-        # Track nudge failures in tool_trace separately from normal tool_loop_count progress.
-        state.warnings.append("agent_no_tool_call")
-    return state
+        return {"pending_tool_calls": response.tool_calls}
+
+    # LOCKED nudge (v6.1): append system message, retry once with tool_choice="required".
+    # If still no tool call → SYNTHESIZE phase default as pending_tool_calls for tool_executor.
+    # Do NOT execute the default inside agent_node.
+    return {
+        "pending_tool_calls": [PendingToolCall(name=DEFAULT_TOOL_BY_PHASE[state.agent_phase], arguments_json="{}")],
+        "warnings": state.warnings + ["agent_no_tool_call_default_used"],
+    }
 ```
 
 ### nodes/tool_executor.py
 ```python
-async def tool_executor_node(state: TravelState, ctx: ToolContext) -> TravelState:
+async def tool_executor_node(state: TravelState, config) -> dict:
+    """Sole caller of execute_tool — real LLM calls and synthesized defaults."""
+    ctx = config["configurable"]["tool_context"]
+    working = dict(state)
+    new_trace = list(state.tool_trace)
     for call in state.pending_tool_calls:
         input_model = parse_tool_input(call.name, call.arguments_json)
-        result = await execute_tool(call.name, input_model, ctx)
-        apply_tool_result(state, result)
-        maybe_transition_phase(state, call.name, result)
-    state.pending_tool_calls = []
-    return state
+        result = await execute_tool(call.name, input_model, ctx, working)
+        working = apply_tool_result(working, call.name, result)
+        new_trace.append(...)
+        maybe_transition_phase(working, call.name, result)
+    working["pending_tool_calls"] = []
+    working["tool_trace"] = new_trace
+    run_stuck_detector(working)  # unconditional every cycle
+    return working
 ```
 
 ### Deterministic Fallback When Agent Misbehaves
 
 | Situation | Fallback |
 |-----------|----------|
-| No tool call | **Nudge:** append system-role ("You must call one of the available tools for this phase") → retry `chat_with_tools(..., tool_choice="required")` once. Still none → call default tool for phase (DISCOVER → `check_readiness`); record in `tool_trace` as nudge/default path |
+| No tool call | **Nudge:** append system-role ("You must call one of the available tools for this phase") → retry `chat_with_tools(..., tool_choice="required")` once. Still none → **synthesize** phase-default as `pending_tool_calls` for `tool_executor` (DISCOVER → `check_readiness`); record in `tool_trace` as nudge/default path. Agent never calls `execute_tool`. |
 | Invalid tool for phase | Ignore; return `ToolResult(precondition_failed)` to agent message history |
-| `WandrLLMError` in agent | Execute default tool chain for phase once; increment `llm_retry_count` |
-| Same phase, no state change × 3 | Auto-advance phase OR `abort_triggered` |
+| `WandrLLMError` in agent | Synthesize default pending tool for phase once; increment `llm_retry_count` |
+| Same phase, no state change × 3 | Auto-advance phase OR `abort_triggered` (stuck-detector runs every `tool_executor` cycle) |
 
 ### TravelState
 ```python
@@ -1270,7 +1286,9 @@ All endpoints: `require_auth` + ownership check → 403 on mismatch. Return `Api
 
 #### 5.6 planner/graph/state.py — TravelState
 - Full TravelState TypedDict per design section above
-- **LOCKED:** `db` / `RoutingProvider` live on `ToolContext` (configurable), **not** inside TravelState
+- **LOCKED:** `db` / `RoutingProvider` live on `ToolContext` (`config["configurable"]["tool_context"]` only — no closures), **not** inside TravelState
+- List fields (`tool_trace`, `warnings`, `errors`): nodes return full extended lists (no reducer reliance)
+- Exact `langgraph==…` pin + hello-world configurable passthrough before 5.11
 - ✅ TypedDict passes mypy/pyright check
 
 #### 5.7 planner/graph/messages.py — agent prompt
@@ -1286,13 +1304,13 @@ All endpoints: `require_auth` + ownership check → 403 on mismatch. Return `Api
 - ✅ "3 days offbeat photography" → `state.days=3, state.interests=["photography","offbeat"]`. Kill LLM → defaults applied.
 
 #### 5.9 nodes/agent.py + tool_executor.py
-- `agent_node`: ceiling check → `get_tools_for_phase` → `chat_with_tools` → set `pending_tool_calls`
-- **No-tool path (LOCKED):** system nudge → one retry with `tool_choice="required"` → else default tool for phase; record in `tool_trace`
-- `tool_executor_node`: parse input → `execute_tool` → `apply_tool_result` → `maybe_transition_phase`
+- `agent_node`: ceiling check → `get_tools_for_phase` → `chat_with_tools` → set `pending_tool_calls` only — **never** calls `execute_tool`
+- **No-tool path (LOCKED):** system nudge → one retry with `tool_choice="required"` → else **synthesize** phase-default `pending_tool_calls`; record warning; executor runs the tool
+- `tool_executor_node`: sole `execute_tool` caller → `apply_tool_result` (sole state writer) → `maybe_transition_phase` → unconditional stuck-detector
 - Tools needing DB acquire their own session (preferred) — see ToolContext lifecycle
 - Deterministic fallbacks per table above
 - ✅ DISCOVER → PLAN → VALIDATE → WRAP_UP on happy path
-- ✅ `tool_loop_count` increments on every execute_tool call
+- ✅ `tool_loop_count` increments on every execute_tool call (except `unknown_tool`)
 
 #### 5.10 nodes/write_narrative.py + record_evaluation.py
 - `write_narrative`: locked `state.schedule` + `state.route` structure — cannot be altered
@@ -1304,7 +1322,7 @@ All endpoints: `require_auth` + ownership check → 403 on mismatch. Return `Api
 - ✅ Evaluation row includes full `tool_trace` JSON
 
 #### 5.11 planner/graph/builder.py — compile graph
-- Wire: `parse_preferences → agent ↔ tool_executor` loop
+- Wire: `parse_preferences → agent → tool_executor` (agent→executor **unconditional**)
 - Conditional: `plan_complete → write_narrative → record_evaluation → END`
 - Conditional: `needs_clarification → END`
 - Else: loop back to agent
@@ -1312,15 +1330,17 @@ All endpoints: `require_auth` + ownership check → 403 on mismatch. Return `Api
 - ✅ Graph compiles; no orphan nodes
 
 #### 5.12 planner/service.py — SSE bridge
-- Map `execute_tool` hooks to emit `tool_started` / `tool_done` SSE events
-- Map phase transitions to `phase_changed` SSE event
+- Fresh `ToolContext` per invoke via `config["configurable"]`; cached compiled graph singleton
+- Emit hooks update service-level `last_known_state` outside the cancellable task
 - 🔒 Wrapped in `asyncio.wait_for(..., PLANNER_GENERATION_TIMEOUT_SECONDS)`
+- On timeout: merge `last_known_state` + `generation_timeout` → still `record_evaluation`
 
 #### 5.13 tests/planner/test_tool_loop.py
 - Happy path: `tool_loop_count ≤ 8`, `plan_complete=True`, all stops have `suggested_start_time`
 - Validation fail → REPLAN tools invoked → `replan_loop_count ≤ PLANNER_MAX_REPLAN_ATTEMPTS`
 - Max tool calls → `abort_triggered=True`, partial itinerary, evaluation recorded
 - `ask_clarification` → `needs_clarification=True`, loop exits early
+- Concurrent ctx isolation; list accumulate; timeout nonempty eval; unknown_tool → stuck-detector; no-tool via executor
 - ✅ pytest green
 
 #### 5.14 scripts/test_agent.py

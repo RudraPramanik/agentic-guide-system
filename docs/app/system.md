@@ -45,12 +45,12 @@ Domain Services          ← business logic, orchestration
 | `src/auth/` | JWT auth, user management |
 | `src/destinations/` | Destination catalog + readiness scoring |
 | `src/places/` | POI storage and enrichment |
-| `src/trips/` | Trip CRUD, edits, persistence |
-| `src/planner/` | LangGraph agent, tools, SSE streaming |
-| `src/travel_engine/` | Pure routing/scheduling/validation algorithms |
+| `src/trips/` | Trip models (+ edit events); HTTP CRUD later |
+| `src/planner/` | `OsrmRoutingProvider` + tools envelope today; LangGraph / tool bodies / SSE in P5–P6 |
+| `src/travel_engine/` | Pure routing/scheduling/validation algorithms (real, P4) |
 | `src/geo/` | External geo service gateways |
-| `src/search/` | Vector search and embeddings |
-| `src/evaluation/` | Generation quality tracking |
+| `src/search/` | Vector search and embeddings (real, P3) |
+| `src/evaluation/` | `TripEvaluation` model today; recording services later |
 | `scripts/` | Seeding, indexing, local test harnesses |
 | `tests/` | Pytest suites per domain |
 

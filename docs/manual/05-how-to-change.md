@@ -47,10 +47,21 @@ OSRM: use `src/geo/osrm.py` → `get_route()` (never call OSRM HTTP outside `geo
 ## I want to understand destination readiness
 
 1. Pure formula lives in `src/destinations/readiness.py` (`compute_readiness`) — no DB/HTTP  
-2. Service loads the destination, sets `search_available=False` in P2, maps to `DestinationReadinessOut`  
+2. Service loads the destination, passes `search_available=is_qdrant_available()` (live since P3.6), maps to `DestinationReadinessOut`  
 3. HTTP: `GET /api/v1/destinations/{id}/readiness`  
 4. **Volume vs score:** `place_count >= 50` is a seed/Overpass volume floor only. Unenriched limited-band (`tier=limited`, `score >= 0.35`) needs `place_count >= 88` minimum; prefer `>= 100` for exact score `0.4`. `compute_readiness(50, 0, 0, False)` is **sparse** (`score=0.2`)  
-5. Enrichment / Qdrant indexing (P3) flips enrichment/index inputs; do not call Qdrant from readiness in P2  
+5. Enrichment / Qdrant indexing (P3) flips enrichment/index inputs; readiness itself still stays pure — only the `search_available` flag comes from the search client  
+
+---
+
+## I want to enrich or index places (P3)
+
+1. Enrich: `python scripts/enrich_places.py --destination "Darjeeling" --limit 0` (LLM via `core/llm` only)  
+2. Index: `python scripts/index_places.py --destination "Darjeeling" --limit 0` (Qdrant + MiniLM; needs `docker compose` Qdrant on :6335)  
+3. Open `PlaceService.enrich_place` and `search/places_index.py` — do not call litellm or Qdrant HTTP outside those modules  
+4. Migration `places.enriched_tags` must be applied (004) before enrich writes  
+
+**Wrong:** importing sentence-transformers or qdrant-client from a router, or skipping savepoints on batch enrich.
 
 ---
 
@@ -93,6 +104,15 @@ OSRM: use `src/geo/osrm.py` → `get_route()` (never call OSRM HTTP outside `geo
 
 ---
 
+## I want to use travel_engine (P4)
+
+1. Import pure functions from `src/travel_engine/` only — **no** geo/DB/LLM inside that package  
+2. Inject travel times via a `RoutingProvider` (tests: Fake; app: `OsrmRoutingProvider`)  
+3. Proof offline: `python scripts/test_p4_smoke.py` (optional `OPTIONAL_LIVE_OSRM=1`)  
+4. Do **not** invent planner tool body APIs — only `ToolResult` / `execute_tool` envelope exists until P5  
+
+---
+
 ## I want to run validation / tests
 
 ```bash
@@ -103,12 +123,15 @@ python scripts/test_p1_smoke.py
 python scripts/test_geocoder.py "Darjeeling"
 python scripts/test_overpass.py 27.041 88.263 30
 python scripts/seed_destination.py --destination "Darjeeling" --radius 30
+python scripts/enrich_places.py --destination "Darjeeling" --limit 0   # LLM required
+python scripts/index_places.py --destination "Darjeeling" --limit 0    # Qdrant + embeddings
 python -m pytest tests/ -v
 python scripts/test_p2_smoke.py   # network + commits seed data to the development DB
+python scripts/test_p4_smoke.py   # offline Fake travel_engine pipeline
 uvicorn src.main:app --reload
 ```
 
-Focused P2 packages: `python -m pytest tests/geo tests/destinations tests/places tests/scripts -v`.
+Focused packages: `python -m pytest tests/geo tests/destinations tests/places tests/scripts tests/search tests/travel_engine tests/planner -v`.
 
 DB URL uses port **5433** locally — see `docs/context.md`.
 

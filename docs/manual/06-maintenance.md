@@ -64,5 +64,6 @@ Prefer **links and tables** over prose.
 | 2026-07-26 | P2.4 | Cadence — 2.3, 2.6a, 2.6b, 2.4 landed since the P2.2 marker |
 | 2026-07-26 | P2.8 | Cadence — 2.5→2.8 (OSRM, destinations/places HTTP, readiness) |
 | 2026-07-26 | P2.10 | P2 phase complete — 2.9 pytest + 2.10 smoke |
+| 2026-07-30 | P4.10 | P3+P4 catch-up — search/enrich/index + travel_engine + CORS + tools envelope + p4 smoke |
 
-Next natural refresh: when **P3** completes, or after ~4–5 validated P3 steps since this marker.
+Next natural refresh: when **P5** completes, or after ~4–5 validated P5 steps since this marker.

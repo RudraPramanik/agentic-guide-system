@@ -76,21 +76,21 @@ External map providers are **unstable and rate-limited**. All Nominatim / Overpa
 ✅  src/core/llm/client.py  →  chat_completion / chat_with_tools
 ```
 
-**Product rule (even before planner ships):**
+**Product rule (even before the planner graph ships):**
 
 - LLM may help with **narrative / language**.  
-- LLM must **not** invent place IDs, coordinates, stop order, or clock times — those come from DB, geo, and (later) `travel_engine` + tools.
+- LLM must **not** invent place IDs, coordinates, stop order, or clock times — those come from DB, geo, `travel_engine`, and planner tools.
 
-Today the LLM client exists; the **planner LangGraph loop is still a stub**. Don’t assume agent tools are wired.
+Today the LLM client exists; **`travel_engine` is real**; the **planner LangGraph loop / tool bodies are still stubs**. Don’t assume agent tools beyond the `ToolResult` / `execute_tool` envelope are wired.
 
 ---
 
-## Deterministic vs LLM (future)
+## Deterministic vs LLM
 
 | Kind of work | Where | I/O? |
 |--------------|-------|------|
-| Ranking days, travel times, validation | Future `travel_engine/` | **No** network/DB/LLM — pure Python; routing times injected |
-| Tool side effects (search, route, persist) | Future `planner/tools/` + domain services | Yes, via gateways/services |
+| Ranking days, travel times, validation | `travel_engine/` (real, P4) | **No** network/DB/LLM — pure Python; routing times injected |
+| Tool side effects (search, route, persist) | `planner/tools/` + domain services (envelope P4; bodies P5) | Yes, via gateways/services |
 | Prose for the itinerary | LLM via `core/llm` **outside** the tool loop | Yes |
 
 ---
@@ -99,8 +99,8 @@ Today the LLM client exists; the **planner LangGraph loop is still a stub**. Don
 
 `src/main.py` owns:
 
-1. Lifespan (logging config, DB ping, tracer flush)  
-2. Middleware registration  
+1. Lifespan (logging config, DB ping, Qdrant ensure, MiniLM load, tracer flush)  
+2. Middleware registration (CORS + request logging + rate limit)  
 3. Global exception handlers → `ErrorResponse`  
 4. Router includes (`auth`, `destinations`, `places`)  
 5. `GET /api/v1/health`

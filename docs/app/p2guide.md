@@ -1,7 +1,7 @@
 # Wandr P2 Guide — Geo Foundation
 
 > **Audience:** engineers implementing or explaining P2, and anyone covering Wandr’s backend in interviews.  
-> **Phase:** P2 — **complete** (geo foundation after P1’s DB/auth). Next: **P3.1** enrich + Qdrant.  
+> **Phase:** P2 — **complete** (geo foundation after P1’s DB/auth). Later phases P3–P4 are also complete; next build step: **P5.1** (planner graph/tools).  
 > **Build prompts:** [`docs/steps/step2.md`](../steps/step2.md) (v2 hardened) · **Checkpoint:** [`docs/context.md`](../context.md) · **Guardrails:** [`AGENT.md`](../../AGENT.md)
 
 This guide is **knowledge**, not a Cursor paste prompt. For historical build order, see `step2.md`; for “what’s next,” see `context.md`.
@@ -15,9 +15,10 @@ This guide is **knowledge**, not a Cursor paste prompt. For historical build ord
 | P0 | Scaffold, config, LLM gateway, FastAPI | Already done |
 | P1 | Models, BaseRepository, auth, middleware, pytest | Prerequisite |
 | **P2** | **Geo gateways, seed POIs, destinations/places APIs, readiness, pytest + smoke** | **Complete** |
-| P3 | Enrich + Qdrant index | Needs seeded places — **next (P3.1)** |
-| P4–P5 | travel_engine + agent tools | Needs OSRM + places + readiness |
-| P6–P7 | Planner SSE API, trips, edits | Needs all of the above |
+| P3 | Enrich + Qdrant index | **Complete** (needs seeded places) |
+| P4 | travel_engine + CORS + tools envelope | **Complete** |
+| P5 | Phase-gated LangGraph planner / tool bodies | **Next (P5.1)** — see `context.md` |
+| P6–P7 | Planner SSE API, trips, edits | Needs planner graph + evaluation |
 
 **P2 product outcome (shipped):** you can geocode a city, scrape POIs, store them in PostGIS, list them via HTTP, and report how “ready” a destination is for planning — still without LLM trip generation.
 
@@ -51,14 +52,14 @@ User / CLI
 
 ### Shipped in P2 (real — do not treat as stubs)
 
-`src/geo/*`, `src/destinations/{repository,service,router,schemas,readiness}`, `src/places/{repository,service,router,schemas}`, P2 pytest under `tests/geo|destinations|places|scripts`, and `scripts/test_p2_smoke.py` are implemented. Truth for “is this built?” → [`docs/context.md`](../context.md). Still stubs: planner, search, travel_engine, trips/evaluation beyond models.
+`src/geo/*`, `src/destinations/{repository,service,router,schemas,readiness}`, `src/places/{repository,service,router,schemas}`, P2 pytest under `tests/geo|destinations|places|scripts`, and `scripts/test_p2_smoke.py` are implemented. Truth for “is this built?” → [`docs/context.md`](../context.md). After P2, P3 (`search/*`, enrich/index) and P4 (`travel_engine/*`, planner envelope) also shipped — do not treat those as stubs. Still stubs for agents starting P5: planner LangGraph / tool *bodies*, trips/evaluation beyond models, `auth/dependencies.py`.
 
 ### Live endpoints (P2)
 
 | Method | Path | Notes |
 |--------|------|-------|
 | GET | `/api/v1/destinations/search?q=` | DB-first; Nominatim on miss; rate limit 20/min/IP |
-| GET | `/api/v1/destinations/{id}/readiness` | Score + tier (`search_available=False` in P2) |
+| GET | `/api/v1/destinations/{id}/readiness` | Score + tier (`search_available` was always False in P2; live Qdrant flag since P3.6) |
 | GET | `/api/v1/places?destination_id=` | Paginated; unknown destination → 404 |
 | GET | `/api/v1/places/{id}` | Single place |
 

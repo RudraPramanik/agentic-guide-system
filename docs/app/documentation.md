@@ -4,7 +4,7 @@
 > **Not for:** End-user / traveler product docs.  
 > **Agents:** Still start every session with [`docs/context.md`](../context.md) — this manual is complementary navigation.
 
-**Last refreshed:** 2026-07-26 · **Through step:** P2.10
+**Last refreshed:** 2026-07-30 · **Through step:** P4.10
 
 ---
 
@@ -34,7 +34,7 @@ It does **not** replace:
 5. [`05-how-to-change.md`](../manual/05-how-to-change.md) — recipes when you open a ticket  
 6. [`06-maintenance.md`](../manual/06-maintenance.md) — when this manual gets refreshed  
 
-Then skim [`docs/context.md`](../context.md) so you know **P3.1** is next and what is still a stub.
+Then skim [`docs/context.md`](../context.md) so you know **P5.1** is next and what is still a stub.
 
 ---
 
@@ -43,23 +43,26 @@ Then skim [`docs/context.md`](../context.md) so you know **P3.1** is next and wh
 | # | Page | Contents |
 |---|------|----------|
 | 1 | [Orientation](../manual/01-orientation.md) | Doc layers, who reads what |
-| 2 | [Layers & AI boundary](../manual/02-layers.md) | Router→Service→Repo, geo, LLM |
-| 3 | [Module map](../manual/03-module-map.md) | Packages/files through P2.10 + stubs |
+| 2 | [Layers & AI boundary](../manual/02-layers.md) | Router→Service→Repo, geo, LLM, travel_engine |
+| 3 | [Module map](../manual/03-module-map.md) | Packages/files through P4.10 + stubs |
 | 4 | [Imports & wiring](../manual/04-imports-and-wiring.md) | Mermaid + import tables |
-| 5 | [How to change](../manual/05-how-to-change.md) | Env, endpoints, geo, readiness, migrations, tests |
+| 5 | [How to change](../manual/05-how-to-change.md) | Env, endpoints, geo, enrich, readiness, migrations, tests |
 | 6 | [Maintenance](../manual/06-maintenance.md) | Refresh cadence (phase or every 4–5 steps) |
 
 ---
 
-## Snapshot (through P2.10)
+## Snapshot (through P4.10)
 
-- **Running app:** FastAPI (`src/main.py`) — health + auth + destinations + places routes  
-- **Data:** Postgres/PostGIS, Alembic migrations 001–003, domain models  
+- **Running app:** FastAPI (`src/main.py`) — health + auth + destinations + places; CORS; lifespan DB ping + Qdrant ensure + MiniLM load  
+- **Data:** Postgres/PostGIS, Alembic migrations 001–004 (`places.enriched_tags`), domain models  
 - **Geo (real):** Nominatim `geocode()`, Overpass `fetch_pois()`, OSRM `get_route()`  
 - **Catalog HTTP:** destinations search + readiness; places list/get (paginated)  
-- **Readiness:** pure `compute_readiness` (P2 always `search_available=False`; unenriched limited-band needs `place_count >= 100` preferred — `>= 50` is seed volume only)  
-- **Seeding:** `scripts/seed_destination.py` — `seed_destination` / `seed_destination_into` / `seed_places`; use `--radius 50` if you need ~100+ places for limited-band readiness  
-- **Verification:** `tests/geo|destinations|places|scripts` + `scripts/test_p2_smoke.py`  
-- **Not built yet:** planner, search, travel_engine logic (P3+)  
+- **Search / enrich (P3):** Qdrant client + MiniLM embeddings + `places_index`; `PlaceService.enrich_place`; `scripts/enrich_places.py` / `scripts/index_places.py`  
+- **Readiness:** pure `compute_readiness`; `search_available` = live `is_qdrant_available()`; unenriched limited-band still needs `place_count >= 100` preferred (`>= 50` is seed volume only)  
+- **Travel engine (P4):** pure Python selector → allocator → optimizer → schedule → validator; no network/DB/LLM  
+- **Planner envelope (P4):** `OsrmRoutingProvider`, `ToolResult`, `execute_tool` stub registry — **not** the LangGraph loop yet  
+- **Seeding:** `scripts/seed_destination.py` — use `--radius 50` if you need ~100+ places for limited-band readiness  
+- **Verification:** pytest **141** (`tests/…` incl. search / travel_engine / planner) + `scripts/test_p2_smoke.py` + `scripts/test_p4_smoke.py`  
+- **Not built yet:** planner LangGraph / tool *bodies* (P5); trips/evaluation beyond models  
 
 Truth for “is this implemented?” → always [`docs/context.md`](../context.md).

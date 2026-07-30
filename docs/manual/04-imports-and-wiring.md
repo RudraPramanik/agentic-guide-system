@@ -14,21 +14,24 @@ flowchart TD
   M --> CFG[src/config.py get_settings]
   M --> LOG[core/observability/logging]
   M --> DB[core/database/session ping_db dispose_engine]
+  M --> MW0[CORSMiddleware]
   M --> MW1[RequestLoggingMiddleware]
   M --> MW2[RateLimitMiddleware]
   M --> AR[auth/router]
   M --> DR[destinations/router]
   M --> PR[places/router]
   M --> H["GET /api/v1/health"]
+  M --> QD[search ensure + embeddings load]
 ```
 
 | From | Imports | Why |
 |------|---------|-----|
-| `src/main.py` | `get_settings` | Env / app metadata |
+| `src/main.py` | `get_settings` | Env / app metadata / CORS origins |
 | `src/main.py` | `configure_logging`, `get_logger` | Lifespan logging |
 | `src/main.py` | `ping_db`, `dispose_engine` | DB health + shutdown |
+| `src/main.py` | `ensure_places_collection`, embedding load | Qdrant + MiniLM lifespan |
 | `src/main.py` | `WandrError`, `ApiResponse`, `ErrorResponse` | Global handlers |
-| `src/main.py` | `RequestLoggingMiddleware`, `RateLimitMiddleware` | Cross-cutting |
+| `src/main.py` | `CORSMiddleware`, `RequestLoggingMiddleware`, `RateLimitMiddleware` | Cross-cutting |
 | `src/main.py` | `auth.router`, `destinations.router`, `places.router` | Mount HTTP routes |
 
 ---
@@ -136,7 +139,8 @@ flowchart LR
 ```
 
 DB hit returns early and never calls Nominatim; only a miss geocodes, upserts atomically, and
-commits. Readiness is pure math over denormalized counters — P2 always passes `search_available=False`.
+commits. Readiness is pure math over denormalized counters; `search_available` is the live
+`is_qdrant_available()` flag (P3.6), not permanently False.
 
 ---
 
@@ -151,6 +155,54 @@ flowchart LR
 ```
 
 List verifies the destination exists first (404, never empty page). Router never touches repositories.
+`PlaceService.enrich_place` (P3) writes `enriched_tags` via the LLM gateway — still Router→Service→Repo for HTTP.
+
+---
+
+## Search + enrich / index (P3)
+
+```mermaid
+flowchart TD
+  ENR[scripts/enrich_places.py] --> PS[places/service.py enrich_place]
+  PS --> LLM[core/llm/client.py]
+  PS --> PREP[places/repository.py]
+  IDX[scripts/index_places.py] --> PI[search/places_index.py]
+  PI --> EMB[search/embeddings.py]
+  PI --> QC[search/client.py AsyncQdrantClient]
+  RD[destinations/service get_readiness] --> AVAIL[search/client is_qdrant_available]
+```
+
+| From | Imports | Why |
+|------|---------|-----|
+| `search/client.py` | `get_settings`, Qdrant async client | Fail-soft collection ensure |
+| `search/embeddings.py` | sentence-transformers via lifespan | `embed_text` / `embed_batch` off event loop |
+| `search/places_index.py` | client + embeddings | Destination-scoped upsert / search |
+| Enrich/index scripts | services / search modules | Batch CLIs; savepoint per item where needed |
+
+---
+
+## Travel engine + planner envelope (P4)
+
+```mermaid
+flowchart TD
+  SEL[travel_engine/place_selector] --> ALL[day_allocator]
+  ALL --> OPT[route_optimizer]
+  OPT --> SCH[schedule_builder]
+  SCH --> VAL[trip_validator]
+  OPT --> RP[RoutingProvider protocol]
+  ORP[planner/routing_provider OsrmRoutingProvider] --> OSRM[geo/osrm get_route]
+  ORP -.->|implements| RP
+  REG[planner/tools/registry execute_tool] --> TR[planner/tools/schemas ToolResult]
+```
+
+| From | Imports | Why |
+|------|---------|-----|
+| `travel_engine/*` | each other + `protocols` / `travel_rules` only | **No** geo / DB / LLM imports |
+| `route_optimizer` | `RoutingProvider` protocol | Times injected by caller |
+| `OsrmRoutingProvider` | `geo/osrm.get_route` → `RouteLeg` | Adapter at planner boundary |
+| `execute_tool` | `ToolResult` | Envelope stub; unknown tool → `ok=False` |
+
+`scripts/test_p4_smoke.py` drives the pure pipeline with a Fake routing provider (optional live OSRM).
 
 ---
 
@@ -177,9 +229,10 @@ List verifies the destination exists first (404, never empty page). Router never
 
 ## What is *not* wired yet
 
-Planner / search / travel_engine have no callers. Trip/evaluation packages are models-only.
+Planner **LangGraph** / tool *bodies* have no callers yet (P5). Trip/evaluation packages are models-only.
+Search, travel_engine, and the planner tools **envelope** (`ToolResult` / `execute_tool` stub) **are** wired — see sections above.
 
-## P2 verification wiring
+## P2–P4 verification wiring
 
 | Path | Role |
 |------|------|
@@ -187,5 +240,8 @@ Planner / search / travel_engine have no callers. Trip/evaluation packages are m
 | `tests/destinations/`, `tests/places/` | Readiness, repository, and HTTP router tests |
 | `tests/scripts/test_seed_destination.py` | Seed failure boundaries via `seed_destination_into` / `seed_places` |
 | `scripts/test_p2_smoke.py` | Live fail-fast proof (network + commits to the development database) |
+| `tests/search/` | Qdrant / embeddings / index tests |
+| `tests/travel_engine/`, `tests/planner/` | Purity + CORS + OsrmRoutingProvider / ToolResult envelope |
+| `scripts/test_p4_smoke.py` | Offline Fake travel_engine pipeline (+ optional live OSRM) |
 
 Next: [05 — How to change](05-how-to-change.md)

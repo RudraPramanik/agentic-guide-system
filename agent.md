@@ -20,7 +20,9 @@
 ### Agent / tools (non-negotiable)
 - Agent tool calls MUST use names from `TOOL_REGISTRY` only — never invent tools.
 - Tool args MUST validate against the tool's Pydantic input schema before execution.
-- All tool execution goes through `execute_tool(name, input, ctx)` — agent node never calls impl functions directly.
+- All tool execution goes through `execute_tool(name, input, ctx)` — agent node never calls impl functions directly **and never calls `execute_tool`**; it only sets `pending_tool_calls` (real or synthesized default). `tool_executor_node` is the sole caller.
+- `ToolContext` MUST be obtained only from `config["configurable"]["tool_context"]` — never via closure, module-global, or compile-time binding (cached compiled graph is shared across concurrent requests).
+- Tools are read-only w.r.t. `TravelState`; `apply_tool_result` is the sole writer of planning state from tool outcomes.
 - `finish_plan` MUST NOT succeed until `validate_itinerary` returned `ok=True` OR `state.abort_triggered=True`.
 - LLM never outputs place IDs, coordinates, stop order, or times — those come from travel_engine + tools only.
 - Phase gating: agent node binds ONLY tools allowed for `state.agent_phase` — never expose full registry to LLM.

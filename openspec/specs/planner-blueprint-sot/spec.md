@@ -34,7 +34,7 @@ The master blueprint MUST document brute-force permutation route ordering capped
 
 ### Requirement: P5 and P6 locks embedded in master blueprint
 
-`docs/blueprint_final.md` MUST document: ToolContext (db/routing) outside LangGraph TravelState; preferred DB session-per-tool needing DB; SSE queue + background task with client disconnect cancel; `PLANNER_ABSOLUTE_MIN_PLACES` pre-graph floor; planner cache key including rounded `base_lat`/`base_lng`; guest ownership via `wandr_session` == `Trip.session_id`; explain_selection via tool_trace; agent no-tool nudge with one `tool_choice=required` retry then default tool.
+`docs/blueprint_final.md` MUST document: ToolContext (db/routing) outside LangGraph TravelState and threaded **only** via `config["configurable"]["tool_context"]` (no closures); preferred DB session-per-tool needing DB; SSE queue + background task with client disconnect cancel; `PLANNER_ABSOLUTE_MIN_PLACES` pre-graph floor; planner cache key including rounded `base_lat`/`base_lng`; guest ownership via `wandr_session` == `Trip.session_id`; explain_selection via tool_trace; agent no-tool nudge with one `tool_choice=required` retry then **synthesize** phase-default `pending_tool_calls` for `tool_executor` (agent never calls `execute_tool`).
 
 #### Scenario: Cache key includes accommodation
 - **WHEN** step 6.4 cache key description is read
@@ -59,3 +59,17 @@ The Package Install Order table in `docs/blueprint_final.md` MUST list `pytest` 
 #### Scenario: Pytest row location
 - **WHEN** the Package Install Order table is read
 - **THEN** pytest packages MUST be associated with step 1.11 (or equivalent P1 test step)
+
+### Requirement: ToolContext injection is config-only in master blueprint
+`docs/blueprint_final.md` MUST state that `ToolContext` is constructed once per graph invocation and threaded **only** via `RunnableConfig.configurable["tool_context"]`. Closures MUST NOT be an allowed alternative when the compiled graph is a cached singleton.
+
+#### Scenario: Blueprint forbids closure ToolContext
+- **WHEN** the ToolContext design block in `docs/blueprint_final.md` is read
+- **THEN** it MUST require config-based injection and MUST NOT present a compile-time closure as an allowed threading option for the cached graph
+
+### Requirement: Agent no-tool default synthesizes pending calls in master blueprint
+The master blueprint agent / fallback design MUST specify that when nudge + `tool_choice="required"` still yields no tool calls, the agent synthesizes the phase-default as `pending_tool_calls` for `tool_executor` — it MUST NOT execute the default tool inside `agent_node`.
+
+#### Scenario: Blueprint agent does not call execute_tool
+- **WHEN** the deterministic no-tool fallback table / agent_node design in `docs/blueprint_final.md` is read
+- **THEN** the default-tool path is described as pending-call synthesis for the executor, not as agent-side `execute_tool`
