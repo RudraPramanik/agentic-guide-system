@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-30 · **Phase:** P4 complete · **Next step:** P5.1 (see `docs/steps/step5.md` or blueprint)
+**Last updated:** 2026-07-30 · **Phase:** P5 in progress · **Next step:** P5.4 (see `docs/steps/step5.md`)
 
 ---
 
 ## Current state (one line)
 
-P4 complete — travel_engine + CORS + OsrmRoutingProvider + tools envelope; pytest 141 + `scripts/test_p4_smoke.py` green; next is P5 planner graph/tools.
+P5.1–5.3 done — 12-tool registry + DISCOVER/PLAN/VALIDATE/REPLAN bodies; pytest 141 green; next is 5.4 chat_with_tools verify + 5.5 phase gating.
 
 ---
 
@@ -72,6 +72,9 @@ P4 complete — travel_engine + CORS + OsrmRoutingProvider + tools envelope; pyt
 | 4.8 | ✅ Done | `OsrmRoutingProvider` + `ToolResult` / `execute_tool` skeleton |
 | 4.9 | ✅ Done | P4 pytest: travel_engine + purity + CORS + planner adapter/envelope |
 | 4.10 | ✅ Done | `scripts/test_p4_smoke.py` offline Fake pipeline (+ optional live OSRM) |
+| 5.1 | ✅ Done | `AgentPhase` / `PHASE_TOOLS` / `ToolContext` + 12-tool `TOOL_REGISTRY` + phase-gated `execute_tool` |
+| 5.2 | ✅ Done | DISCOVER tools: `check_readiness`, `search_places`, `rank_places` |
+| 5.3 | ✅ Done | PLAN/VALIDATE/control/REPLAN tools (9) + `finish_plan` precondition |
 
 ---
 
@@ -88,8 +91,10 @@ P4 complete — travel_engine + CORS + OsrmRoutingProvider + tools envelope; pyt
 | `src/travel_engine/schedule_builder.py` | `build_day_schedule`, `ScheduledStop` — naive wall-clock; morning + lunch |
 | `src/travel_engine/trip_validator.py` | `validate_trip`, `ValidationResult`, `DayPlan`, `TripItinerary` — pure CoR rules |
 | `src/planner/routing_provider.py` | `OsrmRoutingProvider` — wraps `geo/osrm.get_route` → `RouteLeg` |
-| `src/planner/tools/schemas.py` | `ToolResult` envelope |
-| `src/planner/tools/registry.py` | `execute_tool` stub — unknown → `ok=False` (full registry P5) |
+| `src/planner/tools/schemas.py` | `AgentPhase`, `PHASE_TOOLS`, `ToolResult` (+`fallback_used`), `ToolContext`, 12 input models |
+| `src/planner/tools/registry.py` | 12-tool `TOOL_REGISTRY`, phase/precondition `execute_tool`, `get_tools_for_phase` |
+| `src/planner/tools/constants.py` | `RANK_EXPLANATION_TOP_N`, `SEARCH_EXPAND_FACTOR`, search defaults |
+| `src/planner/tools/*.py` (12) | Real tool bodies → `ToolResult` only (no TravelState mutation) |
 | `src/core/observability/logging.py` | `configure_logging()`, `get_logger()` |
 | `src/core/observability/tracing.py` | `get_tracer()`, `flush_tracer()` |
 | `src/core/llm/client.py` | `chat_completion()`, `chat_with_tools()` — **only** litellm import |
@@ -132,7 +137,7 @@ P4 complete — travel_engine + CORS + OsrmRoutingProvider + tools envelope; pyt
 
 ## Stubs only (do not assume implemented)
 
-trips/evaluation except `models.py`; planner LangGraph / tool *bodies* (P5 — `ToolResult`/`execute_tool` envelope only); `src/auth/dependencies.py` — still step 0.1 placeholders. Search + enrich/index scripts are **real** (P3). `travel_engine/*` through validator is **real** (P4).
+trips/evaluation except `models.py`; planner LangGraph graph/nodes/service/HTTP (5.4+ / P6); `apply_tool_result` / phase transitions (5.5); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** 5.1–5.3 are **real**. Search + enrich/index scripts are **real** (P3). `travel_engine/*` through validator is **real** (P4).
 
 ---
 

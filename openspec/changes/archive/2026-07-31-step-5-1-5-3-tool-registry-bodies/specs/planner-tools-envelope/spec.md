@@ -1,8 +1,4 @@
-## Purpose
-
-Planner tool I/O envelope: `ToolResult` (+ `fallback_used`) and soft-fail `execute_tool` over the twelve-tool P5 registry. LangGraph nodes and HTTP planner routes remain later P5 / P6.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: ToolResult envelope and execute_tool stub
 The project SHALL provide `src/planner/tools/schemas.py` with a Pydantic `ToolResult` model containing at least: `ok: bool`, `code: str | None`, `message: str | None`, `data: dict | None`, `fallback_used: bool = False`.
