@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-30 · **Phase:** P4 in progress · **Next step:** P4.9 (pytest coverage; see `docs/steps/step4.md`)
+**Last updated:** 2026-07-30 · **Phase:** P4 complete · **Next step:** P5.1 (see `docs/steps/step5.md` or blueprint)
 
 ---
 
 ## Current state (one line)
 
-P4.0–4.8 done — travel_engine through trip_validator + OsrmRoutingProvider + ToolResult/execute_tool stub; next is P4 pytest (4.9).
+P4 complete — travel_engine + CORS + OsrmRoutingProvider + tools envelope; pytest 141 + `scripts/test_p4_smoke.py` green; next is P5 planner graph/tools.
 
 ---
 
@@ -70,6 +70,8 @@ P4.0–4.8 done — travel_engine through trip_validator + OsrmRoutingProvider +
 | 4.6 | ✅ Done | `travel_engine/schedule_builder.py` — naive HH:MM, lunch gap, morning-only slots |
 | 4.7 | ✅ Done | `travel_engine/trip_validator.py` — CoR checks + dropped_stops warning |
 | 4.8 | ✅ Done | `OsrmRoutingProvider` + `ToolResult` / `execute_tool` skeleton |
+| 4.9 | ✅ Done | P4 pytest: travel_engine + purity + CORS + planner adapter/envelope |
+| 4.10 | ✅ Done | `scripts/test_p4_smoke.py` offline Fake pipeline (+ optional live OSRM) |
 
 ---
 
@@ -120,9 +122,9 @@ P4.0–4.8 done — travel_engine through trip_validator + OsrmRoutingProvider +
 | `src/trips/models.py` | Trip / TripPlace / TripEditEvent |
 | `src/evaluation/models.py` | TripEvaluation |
 
-**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **131+** when DB up (117 prior + 8 validator + 6 provider/envelope)
+**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **141** when DB up
 
-**Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
+**Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_p4_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
 
 **Known limitations / TODO (P6):** geocoder cache + Nominatim throttle are per-process; rate limiter is in-memory — back both with Redis when `REDIS_URL` is wired. Pre-bake sentence-transformers model in Docker images (`SENTENCE_TRANSFORMERS_HOME`) so production skips cold download.
 
@@ -130,7 +132,7 @@ P4.0–4.8 done — travel_engine through trip_validator + OsrmRoutingProvider +
 
 ## Stubs only (do not assume implemented)
 
-trips/evaluation except `models.py`; planner graph/tool *bodies* (P5 — envelope only); `src/auth/dependencies.py` — still step 0.1 placeholders. Search + enrich/index scripts are **real** (P3). `travel_engine/*` through validator is **real**.
+trips/evaluation except `models.py`; planner LangGraph / tool *bodies* (P5 — `ToolResult`/`execute_tool` envelope only); `src/auth/dependencies.py` — still step 0.1 placeholders. Search + enrich/index scripts are **real** (P3). `travel_engine/*` through validator is **real** (P4).
 
 ---
 
@@ -165,6 +167,8 @@ python scripts/seed_destination.py --destination "Darjeeling" --radius 30   # id
 python scripts/enrich_places.py --destination "Darjeeling" --limit 0   # LLM required
 python scripts/index_places.py --destination "Darjeeling" --limit 0    # Qdrant + embeddings
 python scripts/test_p2_smoke.py   # network + commits seed data to dev DB
+python scripts/test_p4_smoke.py   # offline Fake travel_engine pipeline
+# OPTIONAL_LIVE_OSRM=1 python scripts/test_p4_smoke.py
 # alembic: local package named `alembic/` shadows CLI — run via site-packages alembic or path workaround
 python -m pytest tests/ -v
 ```
