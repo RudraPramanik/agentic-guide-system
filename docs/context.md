@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-30 · **Phase:** P4 in progress · **Next step:** P4.7 (trip_validator; see `docs/steps/step4.md`)
+**Last updated:** 2026-07-30 · **Phase:** P4 in progress · **Next step:** P4.9 (pytest coverage; see `docs/steps/step4.md`)
 
 ---
 
 ## Current state (one line)
 
-P4.0–4.6 done — CORS + protocols/rules + selector/allocator + route_optimizer + schedule_builder; next is trip_validator (4.7).
+P4.0–4.8 done — travel_engine through trip_validator + OsrmRoutingProvider + ToolResult/execute_tool stub; next is P4 pytest (4.9).
 
 ---
 
@@ -68,6 +68,8 @@ P4.0–4.6 done — CORS + protocols/rules + selector/allocator + route_optimize
 | 4.4 | ✅ Done | `travel_engine/day_allocator.py` — cluster-first pack under caps + visit budget |
 | 4.5 | ✅ Done | `travel_engine/route_optimizer.py` — matrix-once + permutations + drop-retry `dropped_stops` |
 | 4.6 | ✅ Done | `travel_engine/schedule_builder.py` — naive HH:MM, lunch gap, morning-only slots |
+| 4.7 | ✅ Done | `travel_engine/trip_validator.py` — CoR checks + dropped_stops warning |
+| 4.8 | ✅ Done | `OsrmRoutingProvider` + `ToolResult` / `execute_tool` skeleton |
 
 ---
 
@@ -82,6 +84,10 @@ P4.0–4.6 done — CORS + protocols/rules + selector/allocator + route_optimize
 | `src/travel_engine/day_allocator.py` | `allocate_days` — haversine cluster + caps/budget; pure, no geo I/O |
 | `src/travel_engine/route_optimizer.py` | `optimize_route`, `OptimizeResult`, `DroppedStop` — RoutingProvider DI; no TSP |
 | `src/travel_engine/schedule_builder.py` | `build_day_schedule`, `ScheduledStop` — naive wall-clock; morning + lunch |
+| `src/travel_engine/trip_validator.py` | `validate_trip`, `ValidationResult`, `DayPlan`, `TripItinerary` — pure CoR rules |
+| `src/planner/routing_provider.py` | `OsrmRoutingProvider` — wraps `geo/osrm.get_route` → `RouteLeg` |
+| `src/planner/tools/schemas.py` | `ToolResult` envelope |
+| `src/planner/tools/registry.py` | `execute_tool` stub — unknown → `ok=False` (full registry P5) |
 | `src/core/observability/logging.py` | `configure_logging()`, `get_logger()` |
 | `src/core/observability/tracing.py` | `get_tracer()`, `flush_tracer()` |
 | `src/core/llm/client.py` | `chat_completion()`, `chat_with_tools()` — **only** litellm import |
@@ -114,7 +120,7 @@ P4.0–4.6 done — CORS + protocols/rules + selector/allocator + route_optimize
 | `src/trips/models.py` | Trip / TripPlace / TripEditEvent |
 | `src/evaluation/models.py` | TripEvaluation |
 
-**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **117+** when DB up (106 prior + 11 optimizer/schedule)
+**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **131+** when DB up (117 prior + 8 validator + 6 provider/envelope)
 
 **Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
 
@@ -124,7 +130,7 @@ P4.0–4.6 done — CORS + protocols/rules + selector/allocator + route_optimize
 
 ## Stubs only (do not assume implemented)
 
-trips/evaluation except `models.py`; planner; travel_engine `trip_validator` still stub; `src/auth/dependencies.py` — still step 0.1 placeholders. Search + enrich/index scripts are **real** (P3).
+trips/evaluation except `models.py`; planner graph/tool *bodies* (P5 — envelope only); `src/auth/dependencies.py` — still step 0.1 placeholders. Search + enrich/index scripts are **real** (P3). `travel_engine/*` through validator is **real**.
 
 ---
 

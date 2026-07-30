@@ -1,0 +1,71 @@
+"""Tests for planner OsrmRoutingProvider (mocked get_route — no network)."""
+
+from __future__ import annotations
+
+from uuid import uuid4
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from src.geo.schemas import RouteResult
+from src.planner.routing_provider import OsrmRoutingProvider
+
+
+@pytest.mark.asyncio
+async def test_pairwise_matrix_three_waypoints():
+    provider = OsrmRoutingProvider()
+    a, b, c = uuid4(), uuid4(), uuid4()
+    waypoints = [
+        (a, 27.0, 88.0),
+        (b, 27.1, 88.1),
+        (c, 27.2, 88.2),
+    ]
+    mock_result = RouteResult(
+        distance_km=1.5,
+        duration_min=12.4,
+        fallback_used=False,
+    )
+    with patch(
+        "src.planner.routing_provider.get_route",
+        new_callable=AsyncMock,
+        return_value=mock_result,
+    ) as mock_route:
+        legs = await provider.travel_matrix(waypoints)
+    assert len(legs) == 6  # 3 * 2 directed pairs
+    assert mock_route.await_count == 6
+    assert all(leg.duration_min == 12 for leg in legs)  # round(12.4)
+    assert all(leg.used_fallback is False for leg in legs)
+
+
+@pytest.mark.asyncio
+async def test_fallback_flag_maps_to_route_leg():
+    provider = OsrmRoutingProvider()
+    a, b = uuid4(), uuid4()
+    mock_result = RouteResult(
+        distance_km=2.0,
+        duration_min=20.0,
+        fallback_used=True,
+    )
+    with patch(
+        "src.planner.routing_provider.get_route",
+        new_callable=AsyncMock,
+        return_value=mock_result,
+    ):
+        legs = await provider.travel_matrix(
+            [(a, 0.0, 0.0), (b, 0.1, 0.1)]
+        )
+    assert len(legs) == 2
+    assert all(leg.used_fallback is True for leg in legs)
+
+
+@pytest.mark.asyncio
+async def test_single_waypoint_empty():
+    provider = OsrmRoutingProvider()
+    legs = await provider.travel_matrix([(uuid4(), 27.0, 88.0)])
+    assert legs == []
+
+
+@pytest.mark.asyncio
+async def test_empty_waypoints():
+    provider = OsrmRoutingProvider()
+    assert await provider.travel_matrix([]) == []
