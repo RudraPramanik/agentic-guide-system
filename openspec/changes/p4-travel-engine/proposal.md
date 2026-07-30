@@ -4,17 +4,17 @@ P3 delivered enrichment + Qdrant indexing; the next layer is the pure-Python tra
 
 ## What Changes
 
-- Implement **P4 Travel Engine** (blueprint steps **4.1–4.8**) as pure Python under `src/travel_engine/` + thin planner DI stub.
-- **Adopt `docs/blueprint.md` LOCKED fixes** over the stale v6 draft in `blueprint_final.md` § travel_rules:
+- Implement **P4 Travel Engine** (blueprint steps **4.0–4.8**) as pure Python under `src/travel_engine/` + thin planner DI stub + CORS.
+- **Follow `docs/blueprint_final.md` v6.1** as Planner SoT (pre-flight locks merged; former `docs/blueprint.md` is a pointer only):
   - Split structural vs interest vocabularies; complete `VISIT_DURATION_BY_CATEGORY` for all P2 categories (incl. `attraction`, `trailhead`); remove dead `sunrise_point`; drop interest-only keys (`trek`, `cultural`) from duration maps.
   - Lock place scoring as **sum** of matching interest weights.
   - Lock route ordering as brute-force permutation TSP (≤720 perms at `MAX_PLACES_PER_DAY=6`); no TSP library.
   - Surface `dropped_stops` from PLAN-phase drop-retry for later REPLAN coordination.
   - Route `explain_selection` into trace-shaped data (not a new `TripEvaluation` column).
-- Add **CORS middleware** (addendum A.1) in `create_app()` with `CORS_ALLOWED_ORIGINS` from settings — required before any real frontend; not in original P4 list but locked pre-flight.
-- Author `docs/steps/step4.md` as the Cursor build prompt (mirrors P3 pattern), incorporating addendum B/C + A.1.
-- Record cookie SameSite deployment decision (A.2) in `docs/context.md` as Option A (same registrable domain / Lax) for MVP — docs-only in this change.
-- Forward-lock notes for P5/P6 (ToolContext vs graph state, SSE queue design, readiness floor, cache key, etc.) in design.md — **not implemented in P4**.
+- Add **CORS middleware** (step 4.0) in `create_app()` with `CORS_ALLOWED_ORIGINS` from settings.
+- Author `docs/steps/step4.md` as the Cursor build prompt from blueprint_final v6.1.
+- Record cookie SameSite Option A in `docs/context.md` (docs-only if already present).
+- Forward-lock notes for P5/P6 remain in blueprint_final — **not implemented in P4** beyond data shapes (`dropped_stops`, explain strings).
 
 ## Capabilities
 
@@ -32,7 +32,6 @@ P3 delivered enrichment + Qdrant indexing; the next layer is the pure-Python tra
 
 - **Code:** `src/travel_engine/*` (today stub/empty), `src/planner/routing_provider.py`, thin `src/planner/tools/` stub, `src/main.py` + `src/config.py` for CORS.
 - **AGENT.md:** travel_engine remains pure (no LLM/network/DB); routing times injected via `RoutingProvider`; geo only via `src/geo/` (provider wraps it outside travel_engine).
-- **Docs:** `docs/steps/step4.md` becomes P4 SoT; `docs/context.md` updated after validated steps; blueprint_final travel_rules draft treated as superseded by `docs/blueprint.md` §B for implementation.
+- **Docs:** `docs/steps/step4.md` becomes P4 implementation prompt; `docs/context.md` updated after validated steps; **`docs/blueprint_final.md` v6.1 is Planner SoT** (pre-flight merged).
 - **Tests:** unit tests with `FakeRoutingProvider` — no network; pytest expands beyond current 92.
 - **Non-goals:** no LangGraph, no planner SSE, no trip CRUD, no REPLAN tools, no Redis, no SameSite cookie code change (decision only), no P5/P6 D.* implementations beyond data shapes P4 must emit (`dropped_stops`, explain strings for trace).
-- **Conflicts flagged:** `blueprint_final.md` § travel_rules still shows the buggy draft — implementation MUST follow `docs/blueprint.md` §B; recommend a doc patch to blueprint_final in a follow-up so the master doc does not silently diverge.

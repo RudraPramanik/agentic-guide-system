@@ -1,7 +1,9 @@
-# Wandr — Backend Blueprint v6 (Definitive)
+# Wandr — Backend Blueprint v6.1 (Definitive + P4 pre-flight merge)
 > Production-grade AI travel planner. Modular monolith. Thin vertical slices. Phase-gated tool-loop agent. Every step ends with a runnable proof.
+>
+> **This file is the single source of truth for the Planner.** The former addendum `docs/blueprint.md` was merged here (v6.1) and is no longer a competing design doc.
 
-**Supersedes:** `wandr_blueprint_v4.md`, `wandr_blueprint_v5.md`, `wandr_blueprint_v5_1_tool_loop.md`
+**Supersedes:** `wandr_blueprint_v4.md`, `wandr_blueprint_v5.md`, `wandr_blueprint_v5_1_tool_loop.md`, standalone `docs/blueprint.md` addendum (merged)
 
 ---
 
@@ -12,6 +14,7 @@
 | v4 | Full step-by-step phase detail, resilience contracts, project structure, LLD patterns, failure boundary table, package install order |
 | v5 | Controlled hybrid agent fixes, `RoutingProvider` DI, `schedule_builder`, destination readiness, `PlanRequest` base coords, `ItineraryStop` with `suggested_start_time`, P7 Edit & Replan API, v5 TravelState fields, updated AGENT.md |
 | v5.1 | Phase-gated tool-loop agent replaces per-node pipeline for P5; `chat_with_tools()`, `AgentPhase`, `PHASE_TOOLS`, replan tools, control tools, updated SSE events, v5.1 TravelState fields, 14-step P5 |
+| **v6.1 pre-flight** | Structural vs interest vocabulary fix in `travel_rules`; sum scoring; permutation route order + `dropped_stops`; CORS + SameSite Option A; ToolContext out of graph state; SSE queue + disconnect cancel; absolute min places; cache key + base lat/lng; guest ownership rule; explain → tool_trace; agent nudge + `tool_choice=required`; pytest at 1.11 |
 
 ---
 
@@ -249,9 +252,13 @@ LLM_MAX_RETRIES=4
 # Planner agent bounds
 PLANNER_MAX_TOOL_CALLS=12              # hard ceiling — every execute_tool increments tool_loop_count
 PLANNER_MAX_REPLAN_ATTEMPTS=2          # replan_loop_count ceiling — NOT per tool call
-PLANNER_GENERATION_TIMEOUT_SECONDS=45  # SSE asyncio.wait_for ceiling
+PLANNER_GENERATION_TIMEOUT_SECONDS=45  # SSE asyncio.wait_for ceiling (wraps background graph task)
 PLANNER_MIN_READINESS_SCORE=0.3        # below this → warning in SSE, generation still allowed
+PLANNER_ABSOLUTE_MIN_PLACES=10         # place_count below this → 409/422 before graph (no LLM spend)
 PLANNER_AGENT_PHASE_STUCK_LIMIT=3      # same phase with no state change → auto-advance or abort
+
+# CORS (credentialed — never use "*" with allow_credentials=True)
+CORS_ALLOWED_ORIGINS=http://localhost:3000   # comma-separated list → settings list[str]
 
 # Observability
 LANGFUSE_PUBLIC_KEY=             # optional — NoOpTracer used if missing
@@ -272,6 +279,17 @@ OSRM_BASE_URL=https://router.project-osrm.org       # prod: self-hosted or Valha
 | Console logs | Logtail / Datadog (JSONRenderer, zero config change) |
 | Public OSRM | Self-hosted OSRM or Valhalla |
 | NVIDIA NIM free tier | Swap `LLM_MODEL` env var only |
+| `CORS_ALLOWED_ORIGINS=http://localhost:3000` | Explicit app origins (same registrable domain as API) |
+
+---
+
+## Deployment decisions (LOCKED — v6.1)
+
+### CORS
+Register `CORSMiddleware` in `create_app()` alongside existing middleware. Origins from `get_settings().CORS_ALLOWED_ORIGINS` (no hardcoded origin strings). Because auth cookies (`wandr_token`, `wandr_session`) are used, `allow_credentials=True` is required → `allow_origins` **cannot** be `["*"]`.
+
+### Cookie SameSite (MVP = Option A)
+Deploy frontend and backend under the **same registrable domain** (e.g. `app.wandr.dev` + `api.wandr.dev`, or reverse-proxied same origin). Keep `SameSite=Lax` on auth cookies. Truly cross-site (Option B: `SameSite=None; Secure`) is deferred and needs a documented local-HTTP workaround.
 
 ---
 
@@ -447,49 +465,72 @@ class RoutingProvider(Protocol):
 `OsrmRoutingProvider` lives in `planner/routing_provider.py` — wraps `geo/osrm.py`, implements protocol, sets `used_osrm_fallback` on state when haversine used.
 
 ### travel_rules.py
+> **LOCKED (v6.1):** Structural constants keyed by `Place.category` (P2). Interest weights keyed by `Place.enriched_tags` membership (P3 `PLACE_TAG_VOCAB`). Do not conflate the two.
+
 ```python
+# src/travel_engine/travel_rules.py
+
 MAX_PLACES_PER_DAY = 6
 MIN_TRAVEL_BUFFER_MIN = 30
 MAX_DAILY_TRAVEL_MIN = 180
-DAY_START_TIME = "08:00"
+DAY_START_TIME = "08:00"   # destination-local wall-clock — intentionally timezone-naive.
+                            # Do NOT convert to UTC or attach a timezone downstream.
 LUNCH_BREAK_START = "13:00"
 LUNCH_BREAK_MIN = 60
-VISIT_DURATION_BY_CATEGORY = {
-    "monastery": 45, "viewpoint": 20, "museum": 60,
-    "trek": 180, "park": 30, "cultural": 45,
+
+# ── STRUCTURAL — keyed by Place.category (P2 locked mapping) ──
+# Every P2 category MUST have an entry, including the "attraction" fallback.
+VISIT_DURATION_BY_CATEGORY: dict[str, int] = {
+    "monastery": 45,
+    "viewpoint": 20,
+    "museum": 60,
+    "park": 30,
+    "trailhead": 90,
+    "attraction": 40,
 }
-CATEGORY_WEIGHTS = {
-    "photography": 1.4, "offbeat": 1.3, "viewpoint": 1.2,
-    "trek": 1.1, "cultural": 1.0, "family": 0.9,
+VISIT_DURATION_DEFAULT_MIN = 30   # last-resort if category ever falls outside the dict
+
+MORNING_ONLY_CATEGORIES: list[str] = ["viewpoint"]   # no "sunrise_point" — P2 never produces it
+AVOID_SAME_DAY_PAIRS: list[tuple[str, str]] = [("monastery", "monastery")]
+
+# ── INTEREST — keyed by Place.enriched_tags MEMBERSHIP (P3 vocab) ──
+CATEGORY_WEIGHTS: dict[str, float] = {
+    "photography": 1.4, "offbeat": 1.3, "viewpoint": 1.2, "trek": 1.1,
+    "cultural": 1.0, "family": 0.9, "monastery": 1.0, "nature": 1.1, "adventure": 1.2,
 }
-MORNING_ONLY_CATEGORIES = ["viewpoint", "sunrise_point"]
-AVOID_SAME_DAY_PAIRS = [("monastery", "monastery")]
 ```
 
 ### place_selector.py
 Answers: *which places? why? what gets excluded?*
-- Filter by interest tags and budget
-- Apply exclusion rules (sunrise viewpoints cannot be afternoon slots)
-- Score with `CATEGORY_WEIGHTS`
-- Remove `AVOID_SAME_DAY_PAIRS` conflicts
-- `explain_selection(place, score_breakdown) → str` — logged to evaluation
+- Filter by interest tags (`enriched_tags`) and budget (soft preference until a cost field exists)
+- Morning-only structural categories (`viewpoint`) must not be planned as afternoon-only slots (enforced later in schedule_builder)
+- **Scoring (LOCKED — sum, not max/average):**
+  ```
+  score = sum(CATEGORY_WEIGHTS[tag] for tag in place.enriched_tags
+              if tag in CATEGORY_WEIGHTS and tag in user_interests)
+  ```
+- Remove `AVOID_SAME_DAY_PAIRS` conflicts (structural category pairs)
+- `explain_selection(place, score_breakdown) → str` — compact strings for `tool_trace` / `rank_places` ToolResult (e.g. `top_explanations`); **not** a new `TripEvaluation` column
 
 ### day_allocator.py
 Answers: *how many places per day? how long at each?*
-- Realistic visit duration from `VISIT_DURATION_BY_CATEGORY`
+- Visit duration: always `VISIT_DURATION_BY_CATEGORY.get(place.category, VISIT_DURATION_DEFAULT_MIN)` — never bare `[place.category]`
 - Cap day load by 8hr active budget
 - Geographic pre-clustering: places within 10km radius seeded into same-day candidate pool
 
 ### route_optimizer.py
 Answers: *what order? how much travel time?*
-- Signature: `optimize_route(day_places, base_lat, base_lng, routing: RoutingProvider) → list[OrderedStop]`
+- Signature: `optimize_route(day_places, base_lat, base_lng, routing: RoutingProvider) → OptimizeResult` (ordered stops + `dropped_stops`)
 - Calls `routing.travel_matrix()` — never imports `geo/`
+- **Ordering (LOCKED):** brute-force permutation search over the day's stops (fixed start at `base_lat`/`base_lng`); pick lowest total travel. `MAX_PLACES_PER_DAY = 6` → ≤720 perms. **No TSP solver package.**
 - If total travel > `MAX_DAILY_TRAVEL_MIN` → drop lowest-scored stop, retry (max 3 attempts)
-- Capped at 3 drop attempts; returns best available + warning if still over budget
+- **Must surface `dropped_stops: list[{place_id|name, reason}]`** so VALIDATE/REPLAN can see PLAN-phase thinning (prefer `expand_poi_search` over further `drop_weakest_stop` when already dropped)
+- Returns best available + warning if still over budget
 
 ### schedule_builder.py (new in v5)
 Answers: *what time should each stop start?*
-- Input: ordered stops + `RouteLeg` travel times + `VISIT_DURATION_BY_CATEGORY`
+- Input: ordered stops + `RouteLeg` travel times; durations via `.get(category, VISIT_DURATION_DEFAULT_MIN)`
+- Times are naive local wall-clock strings — do not attach timezones or convert to UTC
 - Morning-only categories forced into slots 1–2 with `suggested_start_time <= "10:30"`
 - Inserts lunch break at `LUNCH_BREAK_START` if day spans it
 - Output: stops enriched with `visit_duration_min`, `suggested_start_time`, `arrival_note`
@@ -557,7 +598,7 @@ PHASE_TOOLS = {
 | `finish_plan` | WRAP_UP | Sets `plan_complete=True`; precondition: validate ok OR abort |
 | `ask_clarification` | DISCOVER | Sets `needs_clarification=True`; SSE event; exits loop |
 | `reoptimize_routes` | REPLAN | Re-runs `build_route` + `build_schedule` for all days |
-| `drop_weakest_stop` | REPLAN | Removes lowest-scored stop on worst day, re-routes |
+| `drop_weakest_stop` | REPLAN | Removes lowest-scored stop on worst day, re-routes — prefer `expand_poi_search` if day already has `dropped_stops` from PLAN |
 | `expand_poi_search` | REPLAN | top_k × 1.5, re-search → rank → route → schedule |
 | `accept_partial` | REPLAN | Sets `abort_triggered=True`, moves to WRAP_UP |
 
@@ -581,16 +622,23 @@ async def execute_tool(name: str, input: BaseModel, ctx: ToolContext) -> ToolRes
 ```
 
 ### ToolContext
+> **LOCKED (v6.1):** `AsyncSession` and `RoutingProvider` are **not** part of LangGraph `TravelState` (non-serializable; would break checkpointers). Construct `ToolContext` once per graph invocation and thread via closure / `RunnableConfig.configurable` — never embed in the TypedDict LangGraph checkpoints.
+
 ```python
 class ToolContext(BaseModel):
     destination_id: UUID
     base_lat: float
     base_lng: float
     routing: RoutingProvider        # OsrmRoutingProvider injected from planner service
-    db: AsyncSession
+    # Prefer: no long-lived db on context — acquire AsyncSession inside tools that need DB
+    # (search_places PostGIS fallback, final trip save). Most tools are in-memory only.
+    # Fallback: one session for the generation only if measured pool pressure requires it;
+    # size pool for long-held LLM-bound requests before P6 ships.
+    db: AsyncSession | None = None  # optional; prefer per-tool acquire
     state: TravelState              # read/write allowed fields only via typed helpers
 ```
 
+**DB session lifecycle (LOCKED preference):** acquire a session only inside tools that need DB access — not one open session for the full `PLANNER_GENERATION_TIMEOUT_SECONDS` (45s) across ≤12 tool calls. Against P1 pool defaults (`pool_size=10, max_overflow=20`), long-held sessions exhaust under concurrent planner traffic.
 ---
 
 ## Phase-Gated Tool Loop — Agent Graph Design
@@ -625,12 +673,15 @@ async def agent_node(state: TravelState, ctx: ToolContext) -> TravelState:
     response = await chat_with_tools(
         messages=build_agent_messages(state),
         tools=tools,
+        tool_choice="auto",
     )
 
     if response.tool_calls:
         state.pending_tool_calls = response.tool_calls
     else:
-        # Model replied without tool — nudge retry once, then deterministic default tool for phase
+        # LOCKED nudge (v6.1): append system message, retry once with tool_choice="required".
+        # If still no tool call → execute phase default tool directly (bypass LLM for that step).
+        # Track nudge failures in tool_trace separately from normal tool_loop_count progress.
         state.warnings.append("agent_no_tool_call")
     return state
 ```
@@ -651,7 +702,7 @@ async def tool_executor_node(state: TravelState, ctx: ToolContext) -> TravelStat
 
 | Situation | Fallback |
 |-----------|----------|
-| No tool call after nudge | Call default tool for current phase (DISCOVER → `check_readiness`) |
+| No tool call | **Nudge:** append system-role ("You must call one of the available tools for this phase") → retry `chat_with_tools(..., tool_choice="required")` once. Still none → call default tool for phase (DISCOVER → `check_readiness`); record in `tool_trace` as nudge/default path |
 | Invalid tool for phase | Ignore; return `ToolResult(precondition_failed)` to agent message history |
 | `WandrLLMError` in agent | Execute default tool chain for phase once; increment `llm_retry_count` |
 | Same phase, no state change × 3 | Auto-advance phase OR `abort_triggered` |
@@ -771,7 +822,7 @@ class TripEvaluation:
 
     # Agent loop signals
     tool_loop_count: int
-    tool_trace: list[dict]              # serialized ToolTraceEntry[]
+    tool_trace: list[dict]              # serialized ToolTraceEntry[] — includes rank_places top_explanations
     agent_phase_reached: str            # last phase before finish/abort
     readiness_score: float | None
 
@@ -788,6 +839,8 @@ class TripEvaluation:
 
     created_at: datetime
 ```
+
+> **LOCKED (v6.1):** `explain_selection` / per-place ranking rationales go into `tool_trace` (e.g. `rank_places` → `top_explanations`), not a new TripEvaluation column.
 
 ### TripEditEvent
 ```python
@@ -1114,47 +1167,56 @@ All endpoints: `require_auth` + ownership check → 403 on mismatch. Return `Api
 ---
 
 ### P4 — Travel Engine (Intelligence Layer)
-**5 days · 8 steps**
+**5 days · 9 steps** (includes 4.0 CORS pre-flight)
 
 > Rules here. Logic here. Tools are thin wrappers. **No LLM calls. No external I/O. Pure Python only.**
+> Vocabulary and algorithms: see travel_engine design section (v6.1 LOCKED).
+
+#### 4.0 CORS middleware (pre-flight — land with P4)
+- Add `CORS_ALLOWED_ORIGINS: list[str]` to settings
+- Register `CORSMiddleware` in `create_app()` with `allow_credentials=True`, explicit origins only (never `*`)
+- ✅ Configured origin receives CORS allow headers; wildcard forbidden with credentials
 
 #### 4.1 travel_engine/protocols.py
 - Define `RoutingProvider`, `RouteLeg`, `TravelTimeMatrix` (full design above)
 - ✅ Import from `travel_engine` without any `geo/` dependency
 
 #### 4.2 travel_engine/travel_rules.py — constants + configuration
-- All constants as in travel_engine design section
+- **v6.1 corrected block** — structural durations for all P2 categories (`attraction`, `trailhead`, …); interest `CATEGORY_WEIGHTS`; no `sunrise_point`; `VISIT_DURATION_DEFAULT_MIN`
 - 🏗️ **Configuration Object** — rules are data, not logic
-- ✅ `from src.travel_engine.travel_rules import MAX_PLACES_PER_DAY` → 6
+- ✅ `from src.travel_engine.travel_rules import MAX_PLACES_PER_DAY` → 6; duration keys ⊇ all P2 categories
 
 #### 4.3 travel_engine/place_selector.py
 - `select_places(candidates, preferences, destination) → list[ScoredPlace]`
-- Apply `CATEGORY_WEIGHTS`, exclusion rules, budget filter, conflict filter
-- `explain_selection(place, score_breakdown) → str` — logged to evaluation
+- Score = **sum** of matching interest weights (see design formula); conflict filter; soft budget
+- `explain_selection(place, score_breakdown) → str` — for `tool_trace` / rank_places `top_explanations`
 - 🏗️ **Strategy Pattern** — selection criteria configurable, testable in isolation
 - ✅ 36 candidates, photography interests → photography places ranked higher, conflicts removed
 
 #### 4.4 travel_engine/day_allocator.py
 - `allocate_days(selected_places, days, preferences) → list[list[ScoredPlace]]`
+- Durations via `.get(category, VISIT_DURATION_DEFAULT_MIN)`
 - Time budget per day: 8hr − travel buffer
 - Cap at `MAX_PLACES_PER_DAY`; geographic pre-clustering within 10km radius
 - ✅ `allocate_days(18 places, 3)` → 3 lists, each ≤6 places, visit time < 8hrs
 
 #### 4.5 travel_engine/route_optimizer.py (updated)
-- `optimize_route(day_places, base_lat, base_lng, routing: RoutingProvider) → list[OrderedStop]`
+- `optimize_route(...) →` ordered stops + **`dropped_stops`**
+- **Brute-force permutation** ordering (≤720 at N=6); no TSP package
 - Calls `routing.travel_matrix()` — never imports `geo/`
-- Drop-retry loop capped at 3 attempts
+- Drop-retry loop capped at 3 attempts; each drop recorded with reason
 - 🏗️ **Template Method** — algorithm skeleton with injectable routing
 - ✅ Unit test with `FakeRoutingProvider` — no network required
 
 #### 4.6 travel_engine/schedule_builder.py
 - `build_day_schedule(ordered_stops, route_legs, rules) → list[ScheduledStop]`
-- Morning-only enforcement, lunch break insertion
+- Naive wall-clock times; duration `.get(..., DEFAULT)`; morning-only + lunch break
 - ✅ 6-stop day → all `suggested_start_time` set, first stop >= "08:00", morning viewpoint in slot 1 or 2
 
 #### 4.7 travel_engine/trip_validator.py
 - `validate_trip(itinerary) → ValidationResult(passed, warnings, errors)`
 - Rules: daily travel cap, no repeated places, morning slots, anchor per day, geo coherence
+- May observe `dropped_stops` from PLAN phase when deciding severity / REPLAN hints
 - 🏗️ **Chain of Responsibility** — each rule is a separate check function
 - ✅ Good itinerary → `errors=[]`. Injected bad itinerary → specific error messages.
 
@@ -1208,11 +1270,13 @@ All endpoints: `require_auth` + ownership check → 403 on mismatch. Return `Api
 
 #### 5.6 planner/graph/state.py — TravelState
 - Full TravelState TypedDict per design section above
+- **LOCKED:** `db` / `RoutingProvider` live on `ToolContext` (configurable), **not** inside TravelState
 - ✅ TypedDict passes mypy/pyright check
 
 #### 5.7 planner/graph/messages.py — agent prompt
 - System prompt: role, allowed tools for current phase, hard rules (never invent places)
-- Compact state summary: days, interests, counts, last validation errors
+- Compact state summary: days, interests, counts, last validation errors, **whether days already have `dropped_stops`**
+- REPLAN guidance: if a day already lost stops in PLAN drop-retry → prefer `expand_poi_search` over `drop_weakest_stop`
 - Include last 5 `tool_trace` entries as context — **not full history** (token control)
 
 #### 5.8 nodes/parse_preferences.py
@@ -1223,7 +1287,9 @@ All endpoints: `require_auth` + ownership check → 403 on mismatch. Return `Api
 
 #### 5.9 nodes/agent.py + tool_executor.py
 - `agent_node`: ceiling check → `get_tools_for_phase` → `chat_with_tools` → set `pending_tool_calls`
+- **No-tool path (LOCKED):** system nudge → one retry with `tool_choice="required"` → else default tool for phase; record in `tool_trace`
 - `tool_executor_node`: parse input → `execute_tool` → `apply_tool_result` → `maybe_transition_phase`
+- Tools needing DB acquire their own session (preferred) — see ToolContext lifecycle
 - Deterministic fallbacks per table above
 - ✅ DISCOVER → PLAN → VALIDATE → WRAP_UP on happy path
 - ✅ `tool_loop_count` increments on every execute_tool call
@@ -1274,6 +1340,7 @@ All endpoints: `require_auth` + ownership check → 403 on mismatch. Return `Api
 - `TripRepository(BaseRepository[Trip, UUID])`: `list_by_user()`, `list_by_session()`, `get_with_places()`
 - `TripService.save_from_state(state, user_id, session_id) → Trip`
 - Anonymous trips claimable after login (session_id match)
+- **Guest ownership (LOCKED):** for unauthenticated access, `wandr_session` cookie MUST exactly match `Trip.session_id` — mismatch/missing → 403 (same as auth user hitting another's trip)
 - 🏗️ **Unit of Work** — Trip + TripPlace written in one transaction
 - 🚨 Partial TripPlace insert fail → full rollback
 - ✅ Save itinerary → `trip_id` returned → `get_with_places` → all stops present
@@ -1284,24 +1351,26 @@ All endpoints: `require_auth` + ownership check → 403 on mismatch. Return `Api
 - SSE events: `preferences_done`, `phase_changed`, `tool_started`, `tool_done`, `validation_done`, `itinerary_done`, `error`, `clarification_needed`
 - `optional_auth` — guests can plan, registered users get auto-save
 - Default `base_lat/lng` to destination center when omitted
-- 🔒 Wrapped in `asyncio.wait_for(graph.invoke(state), timeout=PLANNER_GENERATION_TIMEOUT_SECONDS)`
-- 🚨 `asyncio.TimeoutError` → emit SSE `error` event, close stream. Never hangs.
-- ✅ `curl -N POST /api/v1/planner/generate` → events stream. Stall at 46s → stream closes with error event.
+- **Pre-graph floor (LOCKED):** if destination `place_count < PLANNER_ABSOLUTE_MIN_PLACES` → return 409/422 "destination not ready" — **do not** enter tool loop
+- **SSE design (LOCKED):** graph runs as background task; tool hooks `emit()` into `asyncio.Queue`; generator yields events while graph runs. Poll `request.is_disconnected()` → cancel task (stop LLM spend). Outer `PLANNER_GENERATION_TIMEOUT_SECONDS` wraps the **background task**; on timeout cancel + emit final `error` then close — never await-full-invoke-then-dump.
+- 🚨 Timeout / disconnect → emit SSE `error` (or clean cancel), close stream. Never hangs.
+- ✅ `curl -N POST /api/v1/planner/generate` → events stream while running. Stall at 46s → stream closes with error event. Disconnect cancels server work.
 
 #### 6.3 trips/router.py — CRUD + GeoJSON
 - `GET /api/v1/trips` → `PaginatedResponse[TripOut]` (require_auth)
-- `GET /api/v1/trips/{id}` → `ApiResponse[TripOut]` (optional_auth + ownership)
+- `GET /api/v1/trips/{id}` → `ApiResponse[TripOut]` (optional_auth + ownership — guest rule per 6.1)
 - `GET /api/v1/trips/{id}/geojson` → GeoJSON FeatureCollection (public)
 - `DELETE /api/v1/trips/{id}` → 204 (require_auth + ownership)
-- 🚨 Accessing another user's trip → 403 (not 404)
+- 🚨 Accessing another user's trip **or** guest session mismatch → 403 (not 404)
 - ✅ `GET /api/v1/trips/{id}/geojson` → paste to geojson.io → route renders on map
 
 #### 6.4 core/middleware/rate_limit.py + planner cache
 - Rate limiter: 10 req/min per IP on `/planner/generate`. Returns 429 + `Retry-After`.
-- Planner cache key: `sha256(destination_id + sorted_interests + days + budget)` — 1hr TTL
+- Planner cache key: `sha256(destination_id + sorted_interests + days + budget + round(base_lat,3) + round(base_lng,3))` — 1hr TTL
+  - Caching is best-effort at **parsed-preference** level; free-text nuance in `raw_input` beyond parse may be dropped on cache hit (stated MVP tradeoff)
 - Dev: in-memory dict. Prod (REDIS_URL present): Redis SET.
 - 🚨 Rate limiter error → fail open + log warning. Cache unavailable → skip cache, run agent fresh.
-- ✅ Same input twice → 2nd response instant. 11th rapid request → 429.
+- ✅ Same input twice (incl. same base coords) → 2nd response instant. 11th rapid request → 429.
 
 #### 6.5 Backend Ship Checklist
 - [ ] All errors return `ErrorResponse`. All lists return `PaginatedResponse`.
@@ -1440,12 +1509,21 @@ All endpoints: `require_auth` + ownership check → 403 on mismatch. Return `Api
 | 1.3 | `alembic` `geoalchemy2` | Migrations + PostGIS |
 | 1.6 | `python-jose[cryptography]` | JWT |
 | 1.7 | `httpx` | External HTTP |
+| **1.11** | **`pytest` `pytest-asyncio` `pytest-mock`** | **Tests from P1 onward (shipped here — not deferred)** |
 | 3.1 | `qdrant-client` | Vector search |
 | 3.2 | `sentence-transformers` | Embeddings |
 | 5.6 | `langgraph` | Agent graph |
-| 7.3 | `pytest` `pytest-asyncio` `pytest-mock` | Tests |
 
-**Removed:** `groq`, `langchain-groq` — replaced by `litellm` at step 0.6.
+**Removed:** `groq`, `langchain-groq` — replaced by `litellm` at step 0.6.  
+**Note (v6.1):** Older drafts listed pytest at 7.3; actual P1 correctly installed them at 1.11.
+
+---
+
+## Production hardening (deferred — non-blocking)
+
+- Planner rate limit bounds burst abuse but not sustained daily LLM spend — consider a coarser daily cap once usage is known.
+- `/health` stays DB-only (Qdrant degrades gracefully); optional later: `component_status` on `/health` for ops (`db` / `qdrant`).
+- No automated alerting on `abort_triggered` rate yet — fine for MVP; add once traffic exists.
 
 ---
 

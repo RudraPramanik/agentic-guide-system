@@ -1,12 +1,14 @@
 # Wandr — AI Agent Context
 
-> **Read this first every session.** Then `AGENT.md` (rules), then the current step in `docs/steps/step3.md` (or blueprint).
+> **Read this first every session.** Then `AGENT.md` (rules), then the current step in `docs/steps/step*.md` (or blueprint).
+> **Planner single source of truth:** `docs/blueprint_final.md` **v6.1** (pre-flight addendum merged; `docs/blueprint.md` is a pointer only).
+> **Deployment (MVP):** frontend + API under the same registrable domain; auth cookies stay `SameSite=Lax` (Option A).
 > Deep reference: `docs/app/system.md` (architecture), `docs/app/lld.md` (patterns).
 > Junior map (layers / files / imports): `docs/app/documentation.md` → `docs/manual/` (refresh on phase end or every 4–5 steps — not every step).
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-28 · **Phase:** P3 complete · **Next step:** P4.1
+**Last updated:** 2026-07-30 · **Phase:** P3 complete · **Next step:** P4.0 / P4.1 (see blueprint_final v6.1)
 
 ---
 

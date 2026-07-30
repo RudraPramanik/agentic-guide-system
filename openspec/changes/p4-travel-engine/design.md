@@ -1,6 +1,6 @@
 ## Context
 
-P0–P3 are done: DB/auth, geo seed, enrichment, Qdrant index, readiness with live `search_available`. `src/travel_engine/` and planner tools remain stubs. Blueprint v6 (`docs/blueprint_final.md`) defines P4 as the pure-Python intelligence layer; pre-flight addendum (`docs/blueprint.md`) corrects vocabulary bugs and locks underspecified algorithms before P5 wraps this layer in tools.
+P0–P3 are done: DB/auth, geo seed, enrichment, Qdrant index, readiness with live `search_available`. `src/travel_engine/` and planner tools remain stubs. **`docs/blueprint_final.md` v6.1** is Planner SoT (pre-flight locks merged). Implement P4 against that document and this change's specs/design.
 
 Constraints (AGENT.md): travel_engine has **no** LLM, network, or DB; routing via injected `RoutingProvider`; geo only through `src/geo/` (outside travel_engine); all env via `get_settings()`.
 
@@ -12,7 +12,7 @@ Constraints (AGENT.md): travel_engine has **no** LLM, network, or DB; routing vi
 - Inject routing via protocol + `OsrmRoutingProvider` stub (4.8) without polluting travel_engine with `geo/` imports.
 - Emit data shapes P5/P6 need: `dropped_stops`, explain strings for `tool_trace`.
 - Add CORS so a separate frontend can call the API with credentials.
-- Produce `docs/steps/step4.md` as the build prompt incorporating addendum LOCKED items.
+- Produce `docs/steps/step4.md` as the build prompt from `blueprint_final.md` v6.1.
 
 **Non-Goals:**
 
@@ -23,7 +23,7 @@ Constraints (AGENT.md): travel_engine has **no** LLM, network, or DB; routing vi
 
 ## Decisions
 
-### D1 — Vocabulary split (supersedes blueprint_final travel_rules draft)
+### D1 — Vocabulary split (per blueprint_final v6.1 travel_rules)
 
 **Choice:** Structural constants keyed by `Place.category` (P2 locked: `museum|viewpoint|monastery|attraction|park|trailhead`). Interest weights keyed by `Place.enriched_tags` membership (P3 `PLACE_TAG_VOCAB`).
 
@@ -66,7 +66,7 @@ Return compact explanation strings from selector (top-N ready for `rank_places` 
 
 ### D8 — Day times are wall-clock naive strings
 
-`DAY_START_TIME` etc. are destination-local wall-clock; do not attach timezone or convert to UTC in travel_engine (addendum B).
+`DAY_START_TIME` etc. are destination-local wall-clock; do not attach timezone or convert to UTC in travel_engine (blueprint_final v6.1).
 
 ### D9 — Forward locks for P5/P6 (design-only here)
 
@@ -109,7 +109,7 @@ src/main.py             # CORSMiddleware
 
 | Risk | Mitigation |
 |------|------------|
-| blueprint_final still shows buggy rules → agent follows wrong draft | step4.md + this design are SoT; cite docs/blueprint.md §B; follow-up patch blueprint_final |
+| Doc drift after future edits | Keep `blueprint_final.md` as sole Planner SoT; `docs/blueprint.md` is pointer-only |
 | Permutation TSP with async matrix N! calls | Batch matrix once for all waypoint pairs if provider supports; or sync Fake in tests; keep N≤6 |
 | Places with empty `enriched_tags` score 0 | Still allocatable via fallback / budget filters; document; P5 search should prefer enriched places |
 | CORS misconfig blocks local Next.js | Default origins include `http://localhost:3000` in settings example; never ship `*` with credentials |
