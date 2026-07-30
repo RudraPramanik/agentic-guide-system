@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-30 · **Phase:** P3 complete · **Next step:** P4.0 / P4.1 (see blueprint_final v6.1)
+**Last updated:** 2026-07-30 · **Phase:** P4 in progress · **Next step:** P4.3 (place_selector; see `docs/steps/step4.md`)
 
 ---
 
 ## Current state (one line)
 
-P3 complete — place enrichment + Qdrant semantic index + readiness search flag; pytest 92 passing; next is P4.
+P4.0–4.2 done — CORS middleware + travel_engine protocols/rules; next is place_selector (4.3).
 
 ---
 
@@ -61,6 +61,9 @@ P3 complete — place enrichment + Qdrant semantic index + readiness search flag
 | 3.4 | ✅ Done | `search/places_index.py` batch upsert + destination-scoped search |
 | 3.5 | ✅ Done | `scripts/enrich_places.py` + `scripts/index_places.py` |
 | 3.6 | ✅ Done | Readiness uses live `is_qdrant_available()` |
+| 4.0 | ✅ Done | CORS middleware + `CORS_ALLOWED_ORIGINS` |
+| 4.1 | ✅ Done | `travel_engine/protocols.py` — `RouteLeg`, `RoutingProvider`, `legs_to_lookup` |
+| 4.2 | ✅ Done | `travel_engine/travel_rules.py` — structural vs interest vocab + `visit_duration_min` |
 
 ---
 
@@ -68,7 +71,9 @@ P3 complete — place enrichment + Qdrant semantic index + readiness search flag
 
 | Module | Exports / notes |
 |--------|-----------------|
-| `src/config.py` | `get_settings()` — Qdrant/embeddings/enrich concurrency, OAuth, JWT, rate limits, geo |
+| `src/config.py` | `get_settings()` — Qdrant/embeddings/enrich concurrency, OAuth, JWT, rate limits, geo, CORS origins |
+| `src/travel_engine/protocols.py` | `RouteLeg`, `RoutingProvider`, `legs_to_lookup` — pure, no I/O |
+| `src/travel_engine/travel_rules.py` | Caps, structural durations, interest weights, `visit_duration_min` |
 | `src/core/observability/logging.py` | `configure_logging()`, `get_logger()` |
 | `src/core/observability/tracing.py` | `get_tracer()`, `flush_tracer()` |
 | `src/core/llm/client.py` | `chat_completion()`, `chat_with_tools()` — **only** litellm import |
@@ -82,7 +87,7 @@ P3 complete — place enrichment + Qdrant semantic index + readiness search flag
 | `src/core/security/permissions.py` | `require_auth`, `optional_auth`, `get_current_user_id` |
 | `src/core/middleware/logging.py` | `RequestLoggingMiddleware` |
 | `src/core/middleware/rate_limit.py` | `RateLimitMiddleware`, path limits |
-| `src/main.py` | lifespan: DB ping + Qdrant ensure + embedding load; routers |
+| `src/main.py` | lifespan: DB ping + Qdrant ensure + embedding load; CORSMiddleware; routers |
 | `alembic/env.py` | Async Alembic + model imports |
 | `alembic/versions/001_enable_postgis.py` | PostGIS + uuid-ossp |
 | `alembic/versions/20260717_*_create_all_tables.py` | Migration 002 — 6 core tables |
@@ -111,7 +116,7 @@ P3 complete — place enrichment + Qdrant semantic index + readiness search flag
 
 ## Stubs only (do not assume implemented)
 
-trips/evaluation except `models.py`; planner; travel_engine; `src/auth/dependencies.py` — still step 0.1 placeholders. Search + enrich/index scripts are **real** (P3).
+trips/evaluation except `models.py`; planner; travel_engine modules beyond protocols/rules (selector→validator still stubs); `src/auth/dependencies.py` — still step 0.1 placeholders. Search + enrich/index scripts are **real** (P3).
 
 ---
 

@@ -51,11 +51,20 @@ def create_app() -> FastAPI:
     )
 
     # Outermost middleware — added last (Starlette LIFO).
+    from fastapi.middleware.cors import CORSMiddleware
+
     from src.core.middleware.logging import RequestLoggingMiddleware
     from src.core.middleware.rate_limit import RateLimitMiddleware
 
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(RequestLoggingMiddleware)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.exception_handler(WandrError)
     async def wandr_error_handler(_request: Request, exc: WandrError) -> JSONResponse:

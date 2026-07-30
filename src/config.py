@@ -81,6 +81,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_DESTINATIONS_SEARCH_WINDOW_SECONDS: int = 60
     RATE_LIMIT_DESTINATIONS_SEARCH_PATH: str = "/api/v1/destinations/search"
 
+    # CORS (credentialed; explicit origins only — never "*" with credentials)
+    CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]
+
 
 @lru_cache
 def get_settings() -> Settings:
