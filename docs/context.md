@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-30 · **Phase:** P4 in progress · **Next step:** P4.3 (place_selector; see `docs/steps/step4.md`)
+**Last updated:** 2026-07-30 · **Phase:** P4 in progress · **Next step:** P4.7 (trip_validator; see `docs/steps/step4.md`)
 
 ---
 
 ## Current state (one line)
 
-P4.0–4.2 done — CORS middleware + travel_engine protocols/rules; next is place_selector (4.3).
+P4.0–4.6 done — CORS + protocols/rules + selector/allocator + route_optimizer + schedule_builder; next is trip_validator (4.7).
 
 ---
 
@@ -64,6 +64,10 @@ P4.0–4.2 done — CORS middleware + travel_engine protocols/rules; next is pla
 | 4.0 | ✅ Done | CORS middleware + `CORS_ALLOWED_ORIGINS` |
 | 4.1 | ✅ Done | `travel_engine/protocols.py` — `RouteLeg`, `RoutingProvider`, `legs_to_lookup` |
 | 4.2 | ✅ Done | `travel_engine/travel_rules.py` — structural vs interest vocab + `visit_duration_min` |
+| 4.3 | ✅ Done | `travel_engine/place_selector.py` — sum scoring, AVOID_SAME_DAY filter, explain |
+| 4.4 | ✅ Done | `travel_engine/day_allocator.py` — cluster-first pack under caps + visit budget |
+| 4.5 | ✅ Done | `travel_engine/route_optimizer.py` — matrix-once + permutations + drop-retry `dropped_stops` |
+| 4.6 | ✅ Done | `travel_engine/schedule_builder.py` — naive HH:MM, lunch gap, morning-only slots |
 
 ---
 
@@ -74,6 +78,10 @@ P4.0–4.2 done — CORS middleware + travel_engine protocols/rules; next is pla
 | `src/config.py` | `get_settings()` — Qdrant/embeddings/enrich concurrency, OAuth, JWT, rate limits, geo, CORS origins |
 | `src/travel_engine/protocols.py` | `RouteLeg`, `RoutingProvider`, `legs_to_lookup` — pure, no I/O |
 | `src/travel_engine/travel_rules.py` | Caps, structural durations, interest weights, `visit_duration_min` |
+| `src/travel_engine/place_selector.py` | `PlaceCandidate`, `TripPreferences`, `ScoredPlace`, `score_place`, `select_places`, `explain_selection` |
+| `src/travel_engine/day_allocator.py` | `allocate_days` — haversine cluster + caps/budget; pure, no geo I/O |
+| `src/travel_engine/route_optimizer.py` | `optimize_route`, `OptimizeResult`, `DroppedStop` — RoutingProvider DI; no TSP |
+| `src/travel_engine/schedule_builder.py` | `build_day_schedule`, `ScheduledStop` — naive wall-clock; morning + lunch |
 | `src/core/observability/logging.py` | `configure_logging()`, `get_logger()` |
 | `src/core/observability/tracing.py` | `get_tracer()`, `flush_tracer()` |
 | `src/core/llm/client.py` | `chat_completion()`, `chat_with_tools()` — **only** litellm import |
@@ -106,7 +114,7 @@ P4.0–4.2 done — CORS middleware + travel_engine protocols/rules; next is pla
 | `src/trips/models.py` | Trip / TripPlace / TripEditEvent |
 | `src/evaluation/models.py` | TripEvaluation |
 
-**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **92 passing**
+**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **117+** when DB up (106 prior + 11 optimizer/schedule)
 
 **Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
 
@@ -116,7 +124,7 @@ P4.0–4.2 done — CORS middleware + travel_engine protocols/rules; next is pla
 
 ## Stubs only (do not assume implemented)
 
-trips/evaluation except `models.py`; planner; travel_engine modules beyond protocols/rules (selector→validator still stubs); `src/auth/dependencies.py` — still step 0.1 placeholders. Search + enrich/index scripts are **real** (P3).
+trips/evaluation except `models.py`; planner; travel_engine `trip_validator` still stub; `src/auth/dependencies.py` — still step 0.1 placeholders. Search + enrich/index scripts are **real** (P3).
 
 ---
 
