@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-30 · **Phase:** P5 in progress · **Next step:** P5.4 (see `docs/steps/step5.md`)
+**Last updated:** 2026-07-31 · **Phase:** P5 in progress · **Next step:** P5.6 (see `docs/steps/step5.md`)
 
 ---
 
 ## Current state (one line)
 
-P5.1–5.3 done — 12-tool registry + DISCOVER/PLAN/VALIDATE/REPLAN bodies; pytest 141 green; next is 5.4 chat_with_tools verify + 5.5 phase gating.
+P5.1–5.5 done — tools + chat_with_tools tests + apply_tool_result / phase transitions; next is 5.6 TravelState + langgraph.
 
 ---
 
@@ -75,6 +75,8 @@ P5.1–5.3 done — 12-tool registry + DISCOVER/PLAN/VALIDATE/REPLAN bodies; pyt
 | 5.1 | ✅ Done | `AgentPhase` / `PHASE_TOOLS` / `ToolContext` + 12-tool `TOOL_REGISTRY` + phase-gated `execute_tool` |
 | 5.2 | ✅ Done | DISCOVER tools: `check_readiness`, `search_places`, `rank_places` |
 | 5.3 | ✅ Done | PLAN/VALIDATE/control/REPLAN tools (9) + `finish_plan` precondition |
+| 5.4 | ✅ Done | Verify `chat_with_tools` + `tests/core/test_llm_chat_with_tools.py` |
+| 5.5 | ✅ Done | `apply_tool_result` / `maybe_transition_phase` / `check_preconditions` + tool_trace bookkeeping |
 
 ---
 
@@ -92,7 +94,8 @@ P5.1–5.3 done — 12-tool registry + DISCOVER/PLAN/VALIDATE/REPLAN bodies; pyt
 | `src/travel_engine/trip_validator.py` | `validate_trip`, `ValidationResult`, `DayPlan`, `TripItinerary` — pure CoR rules |
 | `src/planner/routing_provider.py` | `OsrmRoutingProvider` — wraps `geo/osrm.get_route` → `RouteLeg` |
 | `src/planner/tools/schemas.py` | `AgentPhase`, `PHASE_TOOLS`, `ToolResult` (+`fallback_used`), `ToolContext`, 12 input models |
-| `src/planner/tools/registry.py` | 12-tool `TOOL_REGISTRY`, phase/precondition `execute_tool`, `get_tools_for_phase` |
+| `src/planner/tools/registry.py` | 12-tool `TOOL_REGISTRY`, phase/precondition `execute_tool`, re-exports orchestration helpers |
+| `src/planner/tools/orchestration.py` | `check_preconditions`, `apply_tool_result` (sole writer), `maybe_transition_phase`, `_make_test_state` |
 | `src/planner/tools/constants.py` | `RANK_EXPLANATION_TOP_N`, `SEARCH_EXPAND_FACTOR`, search defaults |
 | `src/planner/tools/*.py` (12) | Real tool bodies → `ToolResult` only (no TravelState mutation) |
 | `src/core/observability/logging.py` | `configure_logging()`, `get_logger()` |
@@ -127,7 +130,7 @@ P5.1–5.3 done — 12-tool registry + DISCOVER/PLAN/VALIDATE/REPLAN bodies; pyt
 | `src/trips/models.py` | Trip / TripPlace / TripEditEvent |
 | `src/evaluation/models.py` | TripEvaluation |
 
-**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **141** when DB up
+**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **149** when DB up (incl. chat_with_tools + phase transitions)
 
 **Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_p4_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
 
@@ -137,7 +140,7 @@ P5.1–5.3 done — 12-tool registry + DISCOVER/PLAN/VALIDATE/REPLAN bodies; pyt
 
 ## Stubs only (do not assume implemented)
 
-trips/evaluation except `models.py`; planner LangGraph graph/nodes/service/HTTP (5.4+ / P6); `apply_tool_result` / phase transitions (5.5); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** 5.1–5.3 are **real**. Search + enrich/index scripts are **real** (P3). `travel_engine/*` through validator is **real** (P4).
+trips/evaluation except `models.py`; planner LangGraph graph/nodes/service/HTTP (5.6+ / P6); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** (5.1–5.5) are **real**. Search + enrich/index scripts are **real** (P3). `travel_engine/*` through validator is **real** (P4).
 
 ---
 

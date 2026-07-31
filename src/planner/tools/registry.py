@@ -1,4 +1,11 @@
-﻿"""Tool registry — 12 named tools, phase gating, soft-fail execute_tool."""
+﻿"""Tool registry — 12 named tools, phase gating, soft-fail execute_tool.
+
+Orchestration call order for tool_executor_node (step 5.9):
+  execute_tool → apply_tool_result → maybe_transition_phase
+
+execute_tool never merges ToolResult.data into route/schedule;
+apply_tool_result is the sole TravelState writer from tool outcomes.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +13,12 @@ from typing import Any, Callable
 
 from pydantic import BaseModel
 
+from src.planner.tools.orchestration import (
+    _make_test_state,
+    apply_tool_result,
+    check_preconditions,
+    maybe_transition_phase,
+)
 from src.planner.tools.schemas import (
     AcceptPartialIn,
     AgentPhase,
@@ -26,21 +39,19 @@ from src.planner.tools.schemas import (
 )
 from src.planner.tools._helpers import resolve_state, state_get
 
+__all__ = [
+    "TOOL_REGISTRY",
+    "execute_tool",
+    "get_tools_for_phase",
+    "apply_tool_result",
+    "check_preconditions",
+    "maybe_transition_phase",
+    "_make_test_state",
+]
+
 
 async def _stub_fn(*_args: Any, **_kwargs: Any) -> ToolResult:
     return ToolResult(ok=False, code="not_implemented", message="stub")
-
-
-def _phase_from_state(state: Any) -> AgentPhase | None:
-    raw = state_get(state, "agent_phase")
-    if raw is None:
-        return None
-    if isinstance(raw, AgentPhase):
-        return raw
-    try:
-        return AgentPhase(str(raw))
-    except ValueError:
-        return None
 
 
 def _finish_plan_ok(state: Any, _ctx: Any) -> bool:
@@ -174,7 +185,11 @@ async def execute_tool(
     ctx: object | None = None,
     state: Any = None,
 ) -> ToolResult:
-    """Dispatch by name. Soft-fail unknown / wrong-phase / precondition / errors."""
+    """Dispatch by name. Soft-fail unknown / wrong-phase / precondition / errors.
+
+    Does not mutate planning state. Callers must run:
+    apply_tool_result(state, name, result) then maybe_transition_phase(...).
+    """
     if name not in TOOL_REGISTRY:
         return ToolResult(
             ok=False,
@@ -185,33 +200,14 @@ async def execute_tool(
 
     defn = TOOL_REGISTRY[name]
     view = resolve_state(ctx, state)
-    phase = _phase_from_state(view)
-
-    if defn.allowed_phases:
-        if phase is None or phase not in defn.allowed_phases:
-            return ToolResult(
-                ok=False,
-                code="precondition_failed",
-                message=f"tool {name} not allowed in phase {phase}",
-                data=None,
-            )
-
-    if defn.preconditions is not None:
-        try:
-            if not defn.preconditions(view, ctx):
-                return ToolResult(
-                    ok=False,
-                    code="precondition_failed",
-                    message=f"precondition failed for {name}",
-                    data=None,
-                )
-        except Exception as exc:  # noqa: BLE001 — soft-fail
-            return ToolResult(
-                ok=False,
-                code="precondition_failed",
-                message=str(exc),
-                data=None,
-            )
+    ok_pre, pre_msg = check_preconditions(name, view, ctx)
+    if not ok_pre:
+        return ToolResult(
+            ok=False,
+            code="precondition_failed",
+            message=pre_msg,
+            data=None,
+        )
 
     try:
         if isinstance(input, dict):
