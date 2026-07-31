@@ -63,7 +63,7 @@ def _append_warning(state: dict[str, Any], code: str) -> list[str]:
 
 async def agent_node(
     state: dict[str, Any],
-    config: RunnableConfig | None = None,
+    config: RunnableConfig,
 ) -> dict[str, Any]:
     """ONLY decides next tools. NEVER invokes the tool registry runner itself."""
     _ = config  # ToolContext unused for decide-only path; available if needed later

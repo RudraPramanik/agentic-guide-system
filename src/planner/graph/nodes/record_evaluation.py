@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+# Register FK targets on Base.metadata before EvaluationService writes.
+import src.destinations.models  # noqa: F401
+import src.trips.models  # noqa: F401
+
 from src.core.database.session import get_session_factory
 from src.core.observability.logging import get_logger
 from src.evaluation.service import EvaluationService

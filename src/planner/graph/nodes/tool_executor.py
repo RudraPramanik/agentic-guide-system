@@ -26,15 +26,16 @@ def _call_fields(call: Any) -> tuple[str, str]:
 
 async def tool_executor_node(
     state: dict[str, Any],
-    config: RunnableConfig | None = None,
+    config: RunnableConfig,
 ) -> dict[str, Any]:
     """Sole registry runner for pending tool calls (LLM and synthesized defaults)."""
-    cfg = config or {}
-    configurable = cfg.get("configurable") if isinstance(cfg, dict) else None
+    # Annotate config as RunnableConfig (not Optional) so LangGraph injects it.
+    configurable = config.get("configurable") if config else None
     if not isinstance(configurable, dict):
         configurable = {}
     ctx = configurable.get("tool_context")
 
+    emit = configurable.get("emit")
     working_state: dict[str, Any] = dict(state)
     pending = list(state.get("pending_tool_calls") or [])
 
@@ -48,7 +49,20 @@ async def tool_executor_node(
             working_state, name, result, duration_ms=duration_ms
         )
         maybe_transition_phase(working_state, name, result)
+        if callable(emit):
+            emit(
+                "tool_done",
+                {
+                    "name": name,
+                    "ok": bool(result.ok),
+                    "code": result.code,
+                    "ms": duration_ms,
+                },
+                state_snapshot=dict(working_state),
+            )
 
     working_state["pending_tool_calls"] = []
     run_stuck_detector(working_state)
+    if callable(emit):
+        emit("tool_batch_done", {}, state_snapshot=dict(working_state))
     return working_state

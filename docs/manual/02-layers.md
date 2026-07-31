@@ -76,12 +76,12 @@ External map providers are **unstable and rate-limited**. All Nominatim / Overpa
 ✅  src/core/llm/client.py  →  chat_completion / chat_with_tools
 ```
 
-**Product rule (even before the planner graph ships):**
+**Product rule:**
 
 - LLM may help with **narrative / language**.  
 - LLM must **not** invent place IDs, coordinates, stop order, or clock times — those come from DB, geo, `travel_engine`, and planner tools.
 
-Today the LLM client exists; **`travel_engine` is real**; the **planner LangGraph loop / tool bodies are still stubs**. Don’t assume agent tools beyond the `ToolResult` / `execute_tool` envelope are wired.
+Today: LLM client is real; **`travel_engine` is real**; **planner tools + graph loop (5.1–5.11) are real**. PlannerService SSE bridge (5.12) and HTTP generate (P6) are not context-✅ / not registered.
 
 ---
 
@@ -90,8 +90,9 @@ Today the LLM client exists; **`travel_engine` is real**; the **planner LangGrap
 | Kind of work | Where | I/O? |
 |--------------|-------|------|
 | Ranking days, travel times, validation | `travel_engine/` (real, P4) | **No** network/DB/LLM — pure Python; routing times injected |
-| Tool side effects (search, route, persist) | `planner/tools/` + domain services (envelope P4; bodies P5) | Yes, via gateways/services |
-| Prose for the itinerary | LLM via `core/llm` **outside** the tool loop | Yes |
+| Tool side effects (search, route, persist) | `planner/tools/` + domain services (real, P5) | Yes, via gateways/services |
+| Agent orchestration | `planner/graph` agent↔tool_executor (real, P5.9–5.11) | LLM decide; executor runs tools |
+| Prose for the itinerary | `write_narrative` via `core/llm` **outside** the tool loop | Yes |
 
 ---
 

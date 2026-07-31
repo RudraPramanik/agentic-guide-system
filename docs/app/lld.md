@@ -257,21 +257,21 @@ async with AsyncSessionLocal() as session:
 
 Connection verification: `python scripts/test_db_conn.py` (requires `docker compose up -d`).
 
-### Planned (upcoming steps)
+### Patterns (by phase)
 
-| Pattern | Location | Step |
-|---------|----------|------|
-| **Generic Repository** | `BaseRepository[M, ID]` | 1.5 |
-| **Cache-Aside** | Destinations, planner cache | P2+ |
-| **Protocol / DI** | `travel_engine` routing injection | P4 |
-| **Strategy** | `RoutingProvider` | P4 |
-| **Tool Registry** | `planner/tools/registry.py` | P5 |
-| **Phase-Gated Tool Loop** | `agent` ↔ `tool_executor` | P5 |
-| **Bounded ReAct** | `tool_loop_count` ceiling | P5 |
-| **Bookend Nodes** | `parse_preferences`, `write_narrative` outside loop | P5 |
-| **State Machine** | `TravelState` through LangGraph | P5 |
-| **Builder** | `build_graph()` | P5 |
-| **Chain of Responsibility** | Middleware stack, validator rules | 0.10+, P4 |
+| Pattern | Location | Status |
+|---------|----------|--------|
+| **Generic Repository** | `BaseRepository[M, ID]` | Shipped (1.5) |
+| **Cache-Aside** | Destinations, planner cache | Destinations shipped; planner cache later |
+| **Protocol / DI** | `travel_engine` routing injection | Shipped (P4) |
+| **Strategy** | `RoutingProvider` | Shipped (P4) |
+| **Tool Registry** | `planner/tools/registry.py` | Shipped (P5) |
+| **Phase-Gated Tool Loop** | `agent` ↔ `tool_executor` | Shipped (P5.9–5.11) |
+| **Bounded ReAct** | `tool_loop_count` ceiling | Shipped (P5) |
+| **Bookend Nodes** | `parse_preferences`, `write_narrative`, `record_evaluation` | Shipped (P5.8–5.10) |
+| **State Machine** | `TravelState` through LangGraph | Shipped (P5.6+) |
+| **Builder** | `build_planner_graph` / `get_compiled_graph` | Shipped (P5.11) |
+| **Chain of Responsibility** | Middleware stack, validator rules | Shipped (0.10+, P4) |
 
 ## Resilience Contract (summary)
 

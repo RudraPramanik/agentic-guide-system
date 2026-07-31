@@ -1,8 +1,8 @@
-# 03 — Module map (through P4.10)
+# 03 — Module map (through P5.11)
 
 **Up:** [Developer Manual index](../app/documentation.md) · **Prev:** [02-layers](02-layers.md)
 
-Source of truth for “real vs stub”: [`docs/context.md`](../context.md). This page is a navigable snapshot as of **P4.10**.
+Source of truth for “real vs stub”: [`docs/context.md`](../context.md). This page is a navigable snapshot as of **P5.11**.
 
 ---
 
@@ -11,7 +11,7 @@ Source of truth for “real vs stub”: [`docs/context.md`](../context.md). This
 ```text
 src/
 ├── main.py                 # App factory ✅ (auth + destinations + places; CORS; Qdrant/embed lifespan)
-├── config.py               # Settings ✅ (incl. Qdrant, embeddings, CORS, enrich concurrency)
+├── config.py               # Settings ✅ (incl. Qdrant, embeddings, CORS, planner timeouts)
 ├── auth/                   # Google OAuth + JWT cookie flow ✅ (deps.py stub)
 ├── geo/                    # schemas, geocoder, overpass, osrm ✅
 ├── core/                   # shared infrastructure ✅
@@ -19,7 +19,7 @@ src/
 │   ├── security/           # jwt, permissions ✅
 │   ├── middleware/         # logging, rate_limit (path table) ✅
 │   ├── observability/      # logging, tracing ✅
-│   ├── llm/                # litellm gateway ✅
+│   ├── llm/                # litellm gateway ✅ (chat_completion + chat_with_tools)
 │   ├── pagination.py ✅
 │   ├── responses.py ✅
 │   └── exceptions.py ✅
@@ -27,9 +27,9 @@ src/
 ├── places/                 # models…router + enrich_place ✅ (tags + enriched_tags)
 ├── search/                 # Qdrant client, embeddings, places_index ✅
 ├── travel_engine/          # pure selector→…→validator ✅ (no I/O)
-├── planner/                # routing_provider + tools envelope ✅ · LangGraph / tool bodies ❌
-├── trips/                  # models ✅ · rest ❌ stubs
-└── evaluation/             # models ✅ · rest ❌ stubs
+├── planner/                # tools + graph loop ✅ · service SSE bridge ❌ (5.12) · HTTP ❌ (P6)
+├── trips/                  # models ✅ · HTTP ❌ stubs
+└── evaluation/             # models + generation repo/service ✅ · HTTP ❌
 
 alembic/                    # migrations 001–004 ✅
 scripts/                    # P1/P2/P4 smoke + geo CLIs + seed + enrich + index ✅
@@ -45,7 +45,7 @@ tests/                      # core + auth + geo + destinations + places + script
 | Path | Exports / role |
 |------|----------------|
 | `src/main.py` | `create_app()`, lifespan (DB + Qdrant ensure + MiniLM), CORSMiddleware, handlers, health + auth + destinations + places |
-| `src/config.py` | `get_settings()` — DB, OAuth, JWT, rate limits, geo, Qdrant, embeddings, enrich concurrency, CORS origins |
+| `src/config.py` | `get_settings()` — DB, OAuth, JWT, rate limits, geo, Qdrant, embeddings, enrich concurrency, CORS, planner ceilings |
 
 ### Core
 
@@ -114,20 +114,38 @@ tests/                      # core + auth + geo + destinations + places + script
 | `src/travel_engine/schedule_builder.py` | `build_day_schedule`, `ScheduledStop` |
 | `src/travel_engine/trip_validator.py` | `validate_trip`, `ValidationResult`, `DayPlan`, `TripItinerary` |
 
-### Planner envelope (P4 — not the graph yet)
+### Planner tools + graph (P5.1–5.11)
 
 | Path | Exports / role |
 |------|----------------|
 | `src/planner/routing_provider.py` | `OsrmRoutingProvider` — wraps `geo/osrm.get_route` → `RouteLeg` |
-| `src/planner/tools/schemas.py` | `ToolResult` envelope |
-| `src/planner/tools/registry.py` | `execute_tool` stub — unknown → `ok=False` (full registry P5) |
+| `src/planner/tools/schemas.py` | `AgentPhase`, `PHASE_TOOLS`, `DEFAULT_TOOL_BY_PHASE`, `ToolResult`, `ToolContext`, 12 input models |
+| `src/planner/tools/registry.py` | 12-tool `TOOL_REGISTRY`, phase-gated `execute_tool`, `parse_tool_input` |
+| `src/planner/tools/orchestration.py` | `check_preconditions`, `apply_tool_result` (sole writer), `maybe_transition_phase`, `run_stuck_detector` |
+| `src/planner/tools/constants.py` | Rank/search defaults |
+| `src/planner/tools/*.py` (12) | Real tool bodies → `ToolResult` only (no TravelState mutation) |
+| `src/planner/graph/state.py` | `TravelState` TypedDict — no db/routing; list fields last-write-wins |
+| `src/planner/graph/messages.py` | `build_agent_messages` — phase + PHASE_TOOLS + compact summary |
+| `src/planner/graph/nodes/parse_preferences.py` | Fixed `chat_completion` prefs bookend; defaults on LLM fail |
+| `src/planner/graph/nodes/agent.py` | Sets `pending_tool_calls` only; never calls `execute_tool` |
+| `src/planner/graph/nodes/tool_executor.py` | Sole `execute_tool` caller; apply + stuck-detector |
+| `src/planner/graph/nodes/write_narrative.py` | Titles/paragraphs via LLM; templates on fail; geometry locked |
+| `src/planner/graph/nodes/record_evaluation.py` | Best-effort `EvaluationService.record_generation` |
+| `src/planner/graph/builder.py` | `build_planner_graph` / `get_compiled_graph` singleton |
 
-### Domain models only (no services yet)
+### Evaluation (generation persist)
+
+| Path | Exports / role |
+|------|----------------|
+| `src/evaluation/models.py` | `TripEvaluation` |
+| `src/evaluation/repository.py` | `EvaluationRepository` — flush-only create |
+| `src/evaluation/service.py` | `record_generation(state)` maps TravelState → columns |
+
+### Domain models only (no HTTP yet)
 
 | Path | Model |
 |------|-------|
 | `src/trips/models.py` | `Trip`, `TripPlace`, `TripEditEvent`, enums |
-| `src/evaluation/models.py` | `TripEvaluation` |
 
 ### Geo
 
@@ -159,7 +177,7 @@ tests/                      # core + auth + geo + destinations + places + script
 | `tests/core/`, `tests/auth/` | P0/P1 pytest |
 | `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/scripts/` | P2 pytest |
 | `tests/search/` | P3 search/embeddings tests |
-| `tests/travel_engine/`, `tests/planner/` | P4 purity + adapter/envelope tests |
+| `tests/travel_engine/`, `tests/planner/` | P4 purity + P5 phase transitions / tools (tool-loop suite lands 5.13) |
 
 ---
 
@@ -168,11 +186,11 @@ tests/                      # core + auth + geo + destinations + places + script
 | Area | Notes |
 |------|-------|
 | `src/auth/dependencies.py` | Unused placeholder |
-| `src/trips/*` except `models.py` | Trip APIs later |
-| `src/evaluation/*` except `models.py` | Eval recording later |
-| Planner LangGraph / tool *bodies* | P5 — nodes, graph builder, tool impls beyond envelope |
-| Full `TOOL_REGISTRY` tool functions | Envelope exists; bodies land in P5 |
+| `src/trips/*` except `models.py` | Trip HTTP CRUD later (P6+) |
+| `src/planner/service.py` | SSE bridge / `generate` — **5.12** (not context-✅ yet); do not treat as shipped API |
+| Planner HTTP `POST /api/v1/planner/generate` | **P6** — not registered in `main.py` |
+| Clarification-path evaluation | Graph ends clarification at END without `record_evaluation`; deferred to 5.12 service |
 
-If unsure: open the file. Stubs are ~1-line docstrings. Do **not** treat `src/search/` or `src/travel_engine/` as stubs — they are real.
+If unsure: open the file. Stubs are ~1-line docstrings. Planner **tools** + **orchestration** + **graph nodes/builder** (5.1–5.11) are **real**.
 
 Next: [04 — Imports & wiring](04-imports-and-wiring.md)

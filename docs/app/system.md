@@ -46,11 +46,11 @@ Domain Services          ← business logic, orchestration
 | `src/destinations/` | Destination catalog + readiness scoring |
 | `src/places/` | POI storage and enrichment |
 | `src/trips/` | Trip models (+ edit events); HTTP CRUD later |
-| `src/planner/` | `OsrmRoutingProvider` + tools envelope today; LangGraph / tool bodies / SSE in P5–P6 |
+| `src/planner/` | Tools + graph loop real (P5.1–5.11); service SSE bridge 5.12; HTTP generate P6 |
 | `src/travel_engine/` | Pure routing/scheduling/validation algorithms (real, P4) |
 | `src/geo/` | External geo service gateways |
 | `src/search/` | Vector search and embeddings (real, P3) |
-| `src/evaluation/` | `TripEvaluation` model today; recording services later |
+| `src/evaluation/` | Models + generation repo/service (planner bookend); HTTP later |
 | `scripts/` | Seeding, indexing, local test harnesses |
 | `tests/` | Pytest suites per domain |
 
@@ -201,7 +201,7 @@ python scripts/test_db_conn.py
 | 0.10 | Done | FastAPI app factory, lifespan, `/api/v1/health`, global exception handlers |
 | 1.1 | Done | `Base`, `UUIDMixin`, `TimestampMixin`, `SoftDeleteMixin` |
 | 1.2 | Done | Async engine pool, `get_db()`, `scripts/test_db_conn.py` |
-| 1.3+ | Pending | Alembic, models, auth, planner |
+| 1.3+ | Done | Alembic, models, auth, geo, search, travel_engine, planner graph (through P5.11) — see `docs/context.md` |
 
 ## P0 Complete — Verification
 

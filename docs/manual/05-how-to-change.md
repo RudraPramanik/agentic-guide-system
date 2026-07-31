@@ -109,7 +109,18 @@ OSRM: use `src/geo/osrm.py` → `get_route()` (never call OSRM HTTP outside `geo
 1. Import pure functions from `src/travel_engine/` only — **no** geo/DB/LLM inside that package  
 2. Inject travel times via a `RoutingProvider` (tests: Fake; app: `OsrmRoutingProvider`)  
 3. Proof offline: `python scripts/test_p4_smoke.py` (optional `OPTIONAL_LIVE_OSRM=1`)  
-4. Do **not** invent planner tool body APIs — only `ToolResult` / `execute_tool` envelope exists until P5  
+4. Planner tools call travel_engine internally — do not re-implement ranking/routing in graph nodes  
+
+---
+
+## I want to work on the planner graph (P5)
+
+1. Tools: `src/planner/tools/` — bodies return `ToolResult` only; state writes via `apply_tool_result`  
+2. Agent node sets `pending_tool_calls` only — **never** call `execute_tool` from `agent.py`  
+3. `tool_executor_node` is the sole `execute_tool` caller; `ToolContext` from `config["configurable"]`  
+4. Compile via `get_compiled_graph()` — do not bind per-request closures onto the compiled graph  
+5. Verify: `python -m pytest tests/planner -v`  
+6. **Not live yet:** `POST /api/v1/planner/generate` (P6). Service SSE bridge is step **5.12** (not context-✅). Do not invent HTTP callers against it  
 
 ---
 
@@ -128,12 +139,15 @@ python scripts/index_places.py --destination "Darjeeling" --limit 0    # Qdrant 
 python -m pytest tests/ -v
 python scripts/test_p2_smoke.py   # network + commits seed data to the development DB
 python scripts/test_p4_smoke.py   # offline Fake travel_engine pipeline
+# After 5.14 context-✅: python scripts/test_agent.py
 uvicorn src.main:app --reload
 ```
 
 Focused packages: `python -m pytest tests/geo tests/destinations tests/places tests/scripts tests/search tests/travel_engine tests/planner -v`.
 
 DB URL uses port **5433** locally — see `docs/context.md`.
+
+**Not a live endpoint:** `/api/v1/planner/generate` — wait for P6 registration in `main.py`.
 
 ---
 

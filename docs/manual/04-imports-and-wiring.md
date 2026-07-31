@@ -192,7 +192,6 @@ flowchart TD
   OPT --> RP[RoutingProvider protocol]
   ORP[planner/routing_provider OsrmRoutingProvider] --> OSRM[geo/osrm get_route]
   ORP -.->|implements| RP
-  REG[planner/tools/registry execute_tool] --> TR[planner/tools/schemas ToolResult]
 ```
 
 | From | Imports | Why |
@@ -200,9 +199,41 @@ flowchart TD
 | `travel_engine/*` | each other + `protocols` / `travel_rules` only | **No** geo / DB / LLM imports |
 | `route_optimizer` | `RoutingProvider` protocol | Times injected by caller |
 | `OsrmRoutingProvider` | `geo/osrm.get_route` → `RouteLeg` | Adapter at planner boundary |
-| `execute_tool` | `ToolResult` | Envelope stub; unknown tool → `ok=False` |
 
 `scripts/test_p4_smoke.py` drives the pure pipeline with a Fake routing provider (optional live OSRM).
+
+---
+
+## Planner tool loop + graph (P5.1–5.11)
+
+```mermaid
+flowchart TD
+  PP[parse_preferences] --> AG[agent_node]
+  AG -->|pending_tool_calls| TE[tool_executor_node]
+  TE -->|execute_tool + apply_tool_result| AG
+  AG -->|plan_complete / abort| WN[write_narrative]
+  WN --> RE[record_evaluation]
+  TE --> REG[tools/registry execute_tool]
+  REG --> BODY[tool bodies]
+  BODY --> TE_ENG[travel_engine / search / geo via tools]
+  AG --> LLM[core/llm chat_with_tools]
+  PP --> LLM2[core/llm chat_completion]
+  WN --> LLM2
+  RE --> EV[evaluation/service record_generation]
+  BLD[graph/builder get_compiled_graph] --> PP
+```
+
+| From | Imports | Why |
+|------|---------|-----|
+| `agent_node` | `chat_with_tools`, `build_agent_messages`, `PHASE_TOOLS` | Decides tools only — **never** `execute_tool` |
+| `tool_executor_node` | `execute_tool`, `apply_tool_result`, stuck-detector | Sole tool runner; optional `emit` later (5.12) |
+| `execute_tool` | `TOOL_REGISTRY` + phase/precondition gates | Typed contracts; tools return `ToolResult` only |
+| `apply_tool_result` | orchestration sole writer | Tools never mutate `TravelState` |
+| Graph nodes | `ToolContext` from `config["configurable"]` | Cached compiled graph shared across requests |
+| `record_evaluation` | `EvaluationService` | Best-effort persist; warning on DB fail |
+| `builder` | LangGraph compile singleton | agent→executor unconditional; bookends on complete |
+
+Clarification exit ends at END **without** `record_evaluation` (deferred to 5.12 service).
 
 ---
 
@@ -229,10 +260,13 @@ flowchart TD
 
 ## What is *not* wired yet
 
-Planner **LangGraph** / tool *bodies* have no callers yet (P5). Trip/evaluation packages are models-only.
-Search, travel_engine, and the planner tools **envelope** (`ToolResult` / `execute_tool` stub) **are** wired — see sections above.
+- `PlannerService.generate` SSE bridge (5.12) — not context-✅; `/api/v1/planner/generate` HTTP is **P6** (not in `main.py`).
+- Trips HTTP CRUD — models only.
+- Clarification-path evaluation persist — deferred to 5.12 service.
 
-## P2–P4 verification wiring
+Search, travel_engine, and the full P5 planner tools + graph loop **are** wired — see sections above.
+
+## P2–P5 verification wiring
 
 | Path | Role |
 |------|------|
@@ -241,7 +275,8 @@ Search, travel_engine, and the planner tools **envelope** (`ToolResult` / `execu
 | `tests/scripts/test_seed_destination.py` | Seed failure boundaries via `seed_destination_into` / `seed_places` |
 | `scripts/test_p2_smoke.py` | Live fail-fast proof (network + commits to the development database) |
 | `tests/search/` | Qdrant / embeddings / index tests |
-| `tests/travel_engine/`, `tests/planner/` | Purity + CORS + OsrmRoutingProvider / ToolResult envelope |
+| `tests/travel_engine/`, `tests/planner/` | Purity + phase transitions + tools; full tool-loop suite lands 5.13 |
 | `scripts/test_p4_smoke.py` | Offline Fake travel_engine pipeline (+ optional live OSRM) |
+| `scripts/test_agent.py` | P5 agent smoke — lands with 5.14 (not context-✅ yet) |
 
 Next: [05 — How to change](05-how-to-change.md)

@@ -6,7 +6,7 @@
 
 ## What Wandr is (one paragraph)
 
-Wandr is a **FastAPI modular monolith** that will generate multi-day travel itineraries. Structure (places, routes, times) comes from **code**; narrative prose will come from an **LLM** later. Today (through **P4.10**) you have: app scaffold, auth, database models, geo gateways, destination/place HTTP APIs with readiness, seed + enrich + index CLIs, Qdrant search, pure `travel_engine`, CORS, and the planner tools envelope (`ToolResult` / `execute_tool` stub). Next product work is **P5.1** (phase-gated LangGraph planner / tool bodies).
+Wandr is a **FastAPI modular monolith** that generates multi-day travel itineraries. Structure (places, routes, times) comes from **code**; narrative prose comes from an **LLM** outside the tool loop. Today (through **P5.11**) you have: app scaffold, auth, database models, geo gateways, destination/place HTTP APIs with readiness, seed + enrich + index CLIs, Qdrant search, pure `travel_engine`, CORS, and the phase-gated LangGraph planner (tools + agent↔executor loop + narrative/eval bookends + compiled graph). Next product work is **P5.12** (PlannerService SSE bridge), then 5.13–5.14 (tool-loop tests + agent smoke), then **P6** HTTP generate.
 
 ---
 
@@ -60,6 +60,6 @@ Wandr is a **FastAPI modular monolith** that will generate multi-day travel itin
 2. Routers call **services**; services call **repositories** (never skip layers).  
 3. **External geo** (Nominatim, Overpass, OSRM) only inside `src/geo/`.  
 4. **LLM** only inside `src/core/llm/client.py`; **search** only via `src/search/`; **scheduling math** only via `src/travel_engine/` (pure).  
-5. If a file is listed under **Stubs** in `context.md`, it has **no public API** — don’t import it expecting logic. Planner LangGraph / tool *bodies* are still stubs (P5).
+5. If a file is listed under **Stubs** in `context.md`, it has **no public API** — don’t import it expecting logic. PlannerService SSE bridge (5.12) and planner HTTP generate (P6) are still not context-✅ / not built.
 
 Next: [02 — Layers & AI boundary](02-layers.md)
