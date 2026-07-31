@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-31 · **Phase:** P5 in progress · **Next step:** P5.9 (see `docs/steps/step5.md`)
+**Last updated:** 2026-07-31 · **Phase:** P5 in progress · **Next step:** P5.12 (see `docs/steps/step5.md`)
 
 ---
 
 ## Current state (one line)
 
-P5.1–5.8 done — TravelState + langgraph pin + agent messages + parse_preferences bookend; next is 5.9 agent ↔ tool_executor nodes.
+P5.1–5.11 done — agent↔tool_executor loop + narrative/eval bookends + compiled graph; next is 5.12 PlannerService SSE bridge.
 
 ---
 
@@ -80,7 +80,9 @@ P5.1–5.8 done — TravelState + langgraph pin + agent messages + parse_prefere
 | 5.6 | ✅ Done | `TravelState` TypedDict + `langgraph==0.2.76` (hello-world configurable passthrough) |
 | 5.7 | ✅ Done | `build_agent_messages` — phase-aware system prompt + REPLAN expand guidance |
 | 5.8 | ✅ Done | `parse_preferences` — `chat_completion` JSON bookend; defaults on LLM fail |
-
+| 5.9 | ✅ Done | `agent_node` + `tool_executor_node` — sole `execute_tool` + stuck-detector |
+| 5.10 | ✅ Done | `write_narrative` + `record_evaluation` + evaluation repo/service |
+| 5.11 | ✅ Done | `build_planner_graph` / `get_compiled_graph` singleton compile |
 ---
 
 ## Implemented modules (real code)
@@ -104,6 +106,16 @@ P5.1–5.8 done — TravelState + langgraph pin + agent messages + parse_prefere
 | `src/planner/graph/state.py` | `TravelState` TypedDict — no db/routing; list fields last-write-wins |
 | `src/planner/graph/messages.py` | `build_agent_messages` — phase + PHASE_TOOLS + compact summary |
 | `src/planner/graph/nodes/parse_preferences.py` | Fixed `chat_completion` prefs bookend; defaults + `llm_retry_count` on fail |
+| `src/planner/graph/nodes/agent.py` | Decides `pending_tool_calls` only (nudge / phase-default); never runs tools |
+| `src/planner/graph/nodes/tool_executor.py` | Sole `execute_tool` caller; `apply_tool_result` + stuck-detector every cycle |
+| `src/planner/graph/nodes/write_narrative.py` | Titles/paragraphs via `chat_completion`; templates on LLM fail; geometry locked |
+| `src/planner/graph/nodes/record_evaluation.py` | Best-effort `EvaluationService.record_generation`; warning on DB fail |
+| `src/planner/graph/builder.py` | Compiled graph singleton — agent→executor unconditional; bookends on `plan_complete` |
+| `src/evaluation/repository.py` | `EvaluationRepository` — flush-only TripEvaluation create |
+| `src/evaluation/service.py` | `record_generation(state)` maps TravelState → TripEvaluation columns |
+| `src/planner/tools/schemas.py` | + `DEFAULT_TOOL_BY_PHASE` (nudge / LLM-fail defaults) |
+| `src/planner/tools/registry.py` | + `parse_tool_input`; re-exports `run_stuck_detector` |
+| `src/planner/tools/orchestration.py` | + unconditional `run_stuck_detector` |
 | `src/core/observability/logging.py` | `configure_logging()`, `get_logger()` |
 | `src/core/observability/tracing.py` | `get_tracer()`, `flush_tracer()` |
 | `src/core/llm/client.py` | `chat_completion()`, `chat_with_tools()` — **only** litellm import |
@@ -146,7 +158,7 @@ P5.1–5.8 done — TravelState + langgraph pin + agent messages + parse_prefere
 
 ## Stubs only (do not assume implemented)
 
-trips/evaluation except `models.py`; planner agent/tool_executor/narrative/evaluation nodes, graph builder, service/HTTP (5.9+ / P6); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** (5.1–5.5) and **TravelState / messages / parse_preferences** (5.6–5.8) are **real**. Search + enrich/index scripts are **real** (P3). `travel_engine/*` through validator is **real** (P4).
+trips/evaluation HTTP except models + generation persist (repo/service real for planner bookend); planner `service.py` SSE bridge (5.12) and HTTP generate (P6); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph nodes/builder** (5.1–5.11) are **real**. Clarification-path evaluation persistence is deferred to 5.12 service (graph ends clarification at END without `record_evaluation` node). Search + enrich/index scripts are **real** (P3). `travel_engine/*` through validator is **real** (P4).
 
 ---
 

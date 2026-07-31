@@ -242,3 +242,76 @@ def maybe_transition_phase(
         if tool_name in _REPLAN_TOOLS and tool_name != "accept_partial" and ok:
             _state_set(state, "agent_phase", AgentPhase.PLAN)
             return
+
+
+_HAPPY_PATH_NEXT: dict[AgentPhase, AgentPhase] = {
+    AgentPhase.DISCOVER: AgentPhase.PLAN,
+    AgentPhase.PLAN: AgentPhase.VALIDATE,
+    AgentPhase.VALIDATE: AgentPhase.WRAP_UP,
+}
+
+
+def _progress_fingerprint(state: Any) -> str:
+    """Compact progress signature for stuck detection."""
+    phase = _phase_from_state(state) or AgentPhase.DISCOVER
+    candidates = state_get(state, "candidate_pois") or []
+    ranked = state_get(state, "ranked_pois") or []
+    route = state_get(state, "route") or []
+    schedule = state_get(state, "schedule") or []
+    codes: list[str] = []
+    vr = state_get(state, "validation_result")
+    if isinstance(vr, dict):
+        errs = vr.get("errors") or []
+        if isinstance(errs, list):
+            codes = [str(e)[:80] for e in errs[:5]]
+        elif errs:
+            codes = [str(errs)[:80]]
+    return (
+        f"{phase.value}|c={len(candidates)}|r={len(ranked)}|"
+        f"rt={len(route)}|s={len(schedule)}|v={','.join(codes)}"
+    )
+
+
+def run_stuck_detector(state: Any) -> None:
+    """Unconditional end-of-cycle stuck check. Mutates state in place; never raises."""
+    try:
+        settings = get_settings()
+        limit = int(settings.PLANNER_AGENT_PHASE_STUCK_LIMIT)
+        fp = _progress_fingerprint(state)
+        prev = state_get(state, "stuck_fingerprint")
+        cycles = int(state_get(state, "stuck_cycles", 0) or 0)
+        if prev == fp:
+            cycles += 1
+        else:
+            cycles = 1
+        _state_set(state, "stuck_fingerprint", fp)
+        _state_set(state, "stuck_cycles", cycles)
+        if cycles < limit:
+            return
+
+        phase = _phase_from_state(state) or AgentPhase.DISCOVER
+        warnings = list(state_get(state, "warnings") or [])
+
+        if phase in (AgentPhase.DISCOVER, AgentPhase.PLAN, AgentPhase.VALIDATE):
+            nxt = _HAPPY_PATH_NEXT[phase]
+            _state_set(state, "agent_phase", nxt)
+            warnings.append("phase_stuck_auto_advance")
+            _state_set(state, "warnings", warnings)
+            _state_set(state, "stuck_cycles", 0)
+            return
+
+        if phase == AgentPhase.REPLAN:
+            _state_set(state, "abort_triggered", True)
+            _state_set(state, "agent_phase", AgentPhase.WRAP_UP)
+            warnings.append("phase_stuck_replan_abort")
+            _state_set(state, "warnings", warnings)
+            _state_set(state, "stuck_cycles", 0)
+            return
+
+        # WRAP_UP: force bookend exit path
+        _state_set(state, "plan_complete", True)
+        warnings.append("phase_stuck_wrap_up_force_complete")
+        _state_set(state, "warnings", warnings)
+        _state_set(state, "stuck_cycles", 0)
+    except Exception:  # noqa: BLE001 — never raise to graph
+        pass

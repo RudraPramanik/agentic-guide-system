@@ -9,6 +9,7 @@ apply_tool_result is the sole TravelState writer from tool outcomes.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Callable
 
 from pydantic import BaseModel
@@ -18,6 +19,7 @@ from src.planner.tools.orchestration import (
     apply_tool_result,
     check_preconditions,
     maybe_transition_phase,
+    run_stuck_detector,
 )
 from src.planner.tools.schemas import (
     AcceptPartialIn,
@@ -43,9 +45,11 @@ __all__ = [
     "TOOL_REGISTRY",
     "execute_tool",
     "get_tools_for_phase",
+    "parse_tool_input",
     "apply_tool_result",
     "check_preconditions",
     "maybe_transition_phase",
+    "run_stuck_detector",
     "_make_test_state",
 ]
 
@@ -177,6 +181,23 @@ def get_tools_for_phase(phase: AgentPhase) -> list[dict]:
             }
         )
     return out
+
+
+def parse_tool_input(name: str, arguments_json: str | None) -> BaseModel:
+    """Parse LLM tool args into the tool's Pydantic model. Soft-fail — never raises."""
+    defn = TOOL_REGISTRY.get(name)
+    model_cls = defn.input_model if defn is not None else CheckReadinessIn
+    raw = arguments_json if arguments_json is not None else "{}"
+    try:
+        data = json.loads(raw) if str(raw).strip() else {}
+        if not isinstance(data, dict):
+            data = {}
+        return model_cls.model_validate(data)
+    except Exception:  # noqa: BLE001 — soft-fail for executor
+        try:
+            return model_cls()
+        except Exception:  # noqa: BLE001
+            return CheckReadinessIn()
 
 
 async def execute_tool(

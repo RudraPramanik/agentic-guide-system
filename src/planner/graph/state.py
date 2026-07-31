@@ -62,3 +62,7 @@ class TravelState(TypedDict, total=False):
     errors: list[str]
     warnings: list[str]
     trace_id: str
+
+    # Loop-internal stuck detector (not checkpointed across requests by design intent)
+    stuck_fingerprint: str
+    stuck_cycles: int

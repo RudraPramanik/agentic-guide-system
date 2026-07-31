@@ -35,6 +35,15 @@ PHASE_TOOLS: dict[AgentPhase, list[str]] = {
     AgentPhase.WRAP_UP: ["finish_plan"],
 }
 
+# Locked nudge / LLM-fail defaults — agent synthesizes these; executor runs them.
+DEFAULT_TOOL_BY_PHASE: dict[AgentPhase, str] = {
+    AgentPhase.DISCOVER: "check_readiness",
+    AgentPhase.PLAN: "build_route",
+    AgentPhase.VALIDATE: "validate_itinerary",
+    AgentPhase.REPLAN: "reoptimize_routes",
+    AgentPhase.WRAP_UP: "finish_plan",
+}
+
 
 class ToolResult(BaseModel):
     ok: bool
