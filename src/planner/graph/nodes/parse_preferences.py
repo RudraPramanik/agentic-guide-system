@@ -1,1 +1,155 @@
-﻿"""Wandr - src/planner/graph/nodes/parse_preferences. Implemented in step 0.1."""
+﻿"""Fixed LLM bookend: parse trip preferences before the tool loop (P5.8)."""
+
+from __future__ import annotations
+
+import json
+import re
+from typing import Any
+
+from src.core.exceptions import WandrLLMError
+from src.core.llm.client import chat_completion
+from src.places.constants import PLACE_TAG_VOCAB
+
+_DEFAULT_DAYS = 3
+_DEFAULT_BUDGET = "mid"
+
+_INTEREST_ALIASES: dict[str, str] = {
+    "photo": "photography",
+    "photos": "photography",
+    "photograph": "photography",
+    "photography": "photography",
+    "offbeat": "offbeat",
+    "hidden": "offbeat",
+    "trek": "trek",
+    "trekking": "trek",
+    "hike": "trek",
+    "hiking": "trek",
+    "viewpoint": "viewpoint",
+    "views": "viewpoint",
+    "monastery": "monastery",
+    "temple": "monastery",
+    "cultural": "cultural",
+    "culture": "cultural",
+    "family": "family",
+    "nature": "nature",
+    "adventure": "adventure",
+}
+
+_VOCAB_SET = {t.lower() for t in PLACE_TAG_VOCAB}
+
+_PARSE_SYSTEM = (
+    "Extract trip preferences as JSON with keys: "
+    "days (int), budget (string: budget|mid|luxury), "
+    "interests (array of strings), include_offbeat (bool), include_trekking (bool). "
+    "Respond with JSON only."
+)
+
+
+def _defaults(llm_retry_count: int) -> dict[str, Any]:
+    return {
+        "days": _DEFAULT_DAYS,
+        "budget": _DEFAULT_BUDGET,
+        "interests": [],
+        "include_offbeat": False,
+        "include_trekking": False,
+        "llm_retry_count": llm_retry_count + 1,
+    }
+
+
+def _map_interest(raw: str) -> str:
+    key = raw.strip().lower()
+    if not key:
+        return raw
+    if key in _INTEREST_ALIASES:
+        return _INTEREST_ALIASES[key]
+    if key in _VOCAB_SET:
+        # Preserve canonical vocab casing from PLACE_TAG_VOCAB
+        for tag in PLACE_TAG_VOCAB:
+            if tag.lower() == key:
+                return tag
+    return raw.strip()
+
+
+def _normalize_interests(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        mapped = _map_interest(item)
+        key = mapped.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(mapped)
+    return out
+
+
+def _coerce_days(value: Any) -> int:
+    try:
+        days = int(value)
+    except (TypeError, ValueError):
+        return _DEFAULT_DAYS
+    return days if days > 0 else _DEFAULT_DAYS
+
+
+def _parse_json_content(content: str | None) -> dict[str, Any] | None:
+    if not content or not str(content).strip():
+        return None
+    text = str(content).strip()
+    try:
+        data = json.loads(text)
+        return data if isinstance(data, dict) else None
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+        if not match:
+            return None
+        try:
+            data = json.loads(match.group(0))
+            return data if isinstance(data, dict) else None
+        except json.JSONDecodeError:
+            return None
+
+
+async def parse_preferences(state: dict[str, Any]) -> dict[str, Any]:
+    """Parse raw_input into prefs via chat_completion; defaults on failure."""
+    raw_input = (state or {}).get("raw_input") or ""
+    llm_retry_count = int((state or {}).get("llm_retry_count") or 0)
+
+    try:
+        content = await chat_completion(
+            messages=[
+                {"role": "system", "content": _PARSE_SYSTEM},
+                {"role": "user", "content": str(raw_input)},
+            ],
+            response_format={"type": "json_object"},
+        )
+        parsed = _parse_json_content(content)
+        if parsed is None:
+            return _defaults(llm_retry_count)
+
+        interests = _normalize_interests(parsed.get("interests"))
+        include_offbeat = bool(parsed.get("include_offbeat", False))
+        include_trekking = bool(parsed.get("include_trekking", False))
+        interest_keys = {i.lower() for i in interests}
+        if "offbeat" in interest_keys:
+            include_offbeat = True
+        if "trek" in interest_keys:
+            include_trekking = True
+
+        budget = parsed.get("budget")
+        if not isinstance(budget, str) or not budget.strip():
+            budget = _DEFAULT_BUDGET
+
+        return {
+            "days": _coerce_days(parsed.get("days")),
+            "budget": budget.strip().lower(),
+            "interests": interests,
+            "include_offbeat": include_offbeat,
+            "include_trekking": include_trekking,
+            "llm_retry_count": llm_retry_count,
+        }
+    except WandrLLMError:
+        return _defaults(llm_retry_count)

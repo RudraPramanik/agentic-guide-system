@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-31 · **Phase:** P5 in progress · **Next step:** P5.6 (see `docs/steps/step5.md`)
+**Last updated:** 2026-07-31 · **Phase:** P5 in progress · **Next step:** P5.9 (see `docs/steps/step5.md`)
 
 ---
 
 ## Current state (one line)
 
-P5.1–5.5 done — tools + chat_with_tools tests + apply_tool_result / phase transitions; next is 5.6 TravelState + langgraph.
+P5.1–5.8 done — TravelState + langgraph pin + agent messages + parse_preferences bookend; next is 5.9 agent ↔ tool_executor nodes.
 
 ---
 
@@ -77,6 +77,9 @@ P5.1–5.5 done — tools + chat_with_tools tests + apply_tool_result / phase tr
 | 5.3 | ✅ Done | PLAN/VALIDATE/control/REPLAN tools (9) + `finish_plan` precondition |
 | 5.4 | ✅ Done | Verify `chat_with_tools` + `tests/core/test_llm_chat_with_tools.py` |
 | 5.5 | ✅ Done | `apply_tool_result` / `maybe_transition_phase` / `check_preconditions` + tool_trace bookkeeping |
+| 5.6 | ✅ Done | `TravelState` TypedDict + `langgraph==0.2.76` (hello-world configurable passthrough) |
+| 5.7 | ✅ Done | `build_agent_messages` — phase-aware system prompt + REPLAN expand guidance |
+| 5.8 | ✅ Done | `parse_preferences` — `chat_completion` JSON bookend; defaults on LLM fail |
 
 ---
 
@@ -98,6 +101,9 @@ P5.1–5.5 done — tools + chat_with_tools tests + apply_tool_result / phase tr
 | `src/planner/tools/orchestration.py` | `check_preconditions`, `apply_tool_result` (sole writer), `maybe_transition_phase`, `_make_test_state` |
 | `src/planner/tools/constants.py` | `RANK_EXPLANATION_TOP_N`, `SEARCH_EXPAND_FACTOR`, search defaults |
 | `src/planner/tools/*.py` (12) | Real tool bodies → `ToolResult` only (no TravelState mutation) |
+| `src/planner/graph/state.py` | `TravelState` TypedDict — no db/routing; list fields last-write-wins |
+| `src/planner/graph/messages.py` | `build_agent_messages` — phase + PHASE_TOOLS + compact summary |
+| `src/planner/graph/nodes/parse_preferences.py` | Fixed `chat_completion` prefs bookend; defaults + `llm_retry_count` on fail |
 | `src/core/observability/logging.py` | `configure_logging()`, `get_logger()` |
 | `src/core/observability/tracing.py` | `get_tracer()`, `flush_tracer()` |
 | `src/core/llm/client.py` | `chat_completion()`, `chat_with_tools()` — **only** litellm import |
@@ -140,7 +146,7 @@ P5.1–5.5 done — tools + chat_with_tools tests + apply_tool_result / phase tr
 
 ## Stubs only (do not assume implemented)
 
-trips/evaluation except `models.py`; planner LangGraph graph/nodes/service/HTTP (5.6+ / P6); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** (5.1–5.5) are **real**. Search + enrich/index scripts are **real** (P3). `travel_engine/*` through validator is **real** (P4).
+trips/evaluation except `models.py`; planner agent/tool_executor/narrative/evaluation nodes, graph builder, service/HTTP (5.9+ / P6); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** (5.1–5.5) and **TravelState / messages / parse_preferences** (5.6–5.8) are **real**. Search + enrich/index scripts are **real** (P3). `travel_engine/*` through validator is **real** (P4).
 
 ---
 
