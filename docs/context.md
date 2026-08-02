@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-07-31 · **Phase:** P5 in progress · **Next step:** P5.12 (see `docs/steps/step5.md`)
+**Last updated:** 2026-08-02 · **Phase:** P5 in progress · **Next step:** P5.14 smoke ship (see `docs/steps/step5.md`)
 
 ---
 
 ## Current state (one line)
 
-P5.1–5.11 done — agent↔tool_executor loop + narrative/eval bookends + compiled graph; next is 5.12 PlannerService SSE bridge.
+P5.1–5.13 done — PlannerService SSE bridge + tool-loop pytest green (162); 5.14 script ready but live smoke blocked by Gemini RateLimit → `generation_timeout` (re-run `python scripts/test_agent.py` then mark P5 ✅ / Next P6.1).
 
 ---
 
@@ -83,6 +83,9 @@ P5.1–5.11 done — agent↔tool_executor loop + narrative/eval bookends + comp
 | 5.9 | ✅ Done | `agent_node` + `tool_executor_node` — sole `execute_tool` + stuck-detector |
 | 5.10 | ✅ Done | `write_narrative` + `record_evaluation` + evaluation repo/service |
 | 5.11 | ✅ Done | `build_planner_graph` / `get_compiled_graph` singleton compile |
+| 5.12 | ✅ Done | `PlannerService.generate` — emit bridge, `wait_for`, settings-derived `recursion_limit` |
+| 5.13 | ✅ Done | `tests/planner/test_tool_loop.py` — ★ cases incl. stuck/timeout/concurrent ctx (162 suite) |
+| 5.14 | ⬜ Smoke pending | `scripts/test_agent.py` exists; live LLM smoke not green yet (Gemini rate limit) |
 ---
 
 ## Implemented modules (real code)
@@ -111,6 +114,7 @@ P5.1–5.11 done — agent↔tool_executor loop + narrative/eval bookends + comp
 | `src/planner/graph/nodes/write_narrative.py` | Titles/paragraphs via `chat_completion`; templates on LLM fail; geometry locked |
 | `src/planner/graph/nodes/record_evaluation.py` | Best-effort `EvaluationService.record_generation`; warning on DB fail |
 | `src/planner/graph/builder.py` | Compiled graph singleton — agent→executor unconditional; bookends on `plan_complete` |
+| `src/planner/service.py` | `PlannerService.generate` — fresh ToolContext, emit/`last_known_state`, `wait_for`, recursion ceiling |
 | `src/evaluation/repository.py` | `EvaluationRepository` — flush-only TripEvaluation create |
 | `src/evaluation/service.py` | `record_generation(state)` maps TravelState → TripEvaluation columns |
 | `src/planner/tools/schemas.py` | + `DEFAULT_TOOL_BY_PHASE` (nudge / LLM-fail defaults) |
@@ -148,9 +152,9 @@ P5.1–5.11 done — agent↔tool_executor loop + narrative/eval bookends + comp
 | `src/trips/models.py` | Trip / TripPlace / TripEditEvent |
 | `src/evaluation/models.py` | TripEvaluation |
 
-**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **149** when DB up (incl. chat_with_tools + phase transitions)
+**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **162** when DB up (incl. tool_loop + chat_with_tools)
 
-**Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_p4_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
+**Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_p4_smoke.py`, `scripts/test_agent.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
 
 **Known limitations / TODO (P6):** geocoder cache + Nominatim throttle are per-process; rate limiter is in-memory — back both with Redis when `REDIS_URL` is wired. Pre-bake sentence-transformers model in Docker images (`SENTENCE_TRANSFORMERS_HOME`) so production skips cold download.
 
@@ -158,7 +162,7 @@ P5.1–5.11 done — agent↔tool_executor loop + narrative/eval bookends + comp
 
 ## Stubs only (do not assume implemented)
 
-trips/evaluation HTTP except models + generation persist (repo/service real for planner bookend); planner `service.py` SSE bridge (5.12) and HTTP generate (P6); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph nodes/builder** (5.1–5.11) are **real**. Clarification-path evaluation persistence is deferred to 5.12 service (graph ends clarification at END without `record_evaluation` node). Search + enrich/index scripts are **real** (P3). `travel_engine/*` through validator is **real** (P4).
+trips HTTP CRUD + planner HTTP `/planner/generate` SSE (P6); evaluation HTTP still stub (generation persist via repo/service is **real**); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + **PlannerService.generate** (5.1–5.13) are **real**. Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4).
 
 ---
 

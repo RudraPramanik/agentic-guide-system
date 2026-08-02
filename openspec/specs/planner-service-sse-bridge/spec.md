@@ -1,6 +1,6 @@
 ## Purpose
 
-P5.12 PlannerService SSE bridge: `generate` with wait_for ceiling, last_known_state on timeout, always-eval after generate (no FastAPI router yet).
+P5.12 PlannerService SSE bridge: `generate` with wait_for ceiling, last_known_state on timeout, always-eval after generate. P6 HTTP router adapts via `on_event` + background task; service stays free of FastAPI streaming types.
 
 ## Requirements
 
@@ -39,3 +39,16 @@ After `ainvoke` returns or the timeout path builds `final`, `generate` MUST awai
 #### Scenario: Clarification or timeout still records evaluation
 - **WHEN** generate finishes with `needs_clarification=True` or via the timeout path
 - **THEN** evaluation persistence is invoked for the returned final state
+
+### Requirement: HTTP SSE adapter consumes generate on_event without FastAPI types in service
+`PlannerService.generate` MUST remain the HTTP-agnostic generation runner. The P6 FastAPI router MAY adapt it by supplying an `on_event` callback that enqueues events for a StreamingResponse generator and by running `generate` as a background task. The service module MUST NOT import FastAPI `Request` or `StreamingResponse`.
+
+Existing contracts remain in force: fresh `ToolContext` per invoke, `wait_for(PLANNER_GENERATION_TIMEOUT_SECONDS)`, `last_known_state` on timeout, and evaluation persistence after return/timeout/clarification short-circuit.
+
+#### Scenario: Service stays free of FastAPI streaming types
+- **WHEN** `src/planner/service.py` is inspected for FastAPI streaming imports
+- **THEN** it does not import `StreamingResponse` or depend on `Request.is_disconnected`
+
+#### Scenario: Router can drive SSE from on_event
+- **WHEN** the generate endpoint runs with an `on_event` that enqueues `(event, data)`
+- **THEN** tool/phase events emitted during generation become available to the SSE generator before `generate` returns

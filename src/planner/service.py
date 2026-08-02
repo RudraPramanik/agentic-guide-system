@@ -11,17 +11,35 @@ from collections.abc import Callable
 from typing import Any
 from uuid import UUID
 
+from langgraph.errors import GraphRecursionError
+
 from src.config import get_settings
 from src.planner.graph.builder import get_compiled_graph
 from src.planner.graph.nodes.record_evaluation import record_evaluation
 from src.planner.routing_provider import OsrmRoutingProvider
 from src.planner.tools.schemas import AgentPhase, ToolContext
 
+# Bookend nodes outside the agent↔executor cycle (parse + narrative + eval).
+_GRAPH_BOOKEND_STEPS = 4
+# Worst-case stuck auto-advance: DISCOVER→PLAN→VALIDATE→WRAP_UP (4 phases).
+_STUCK_PHASE_HOPS = 4
+
 
 def _as_uuid(value: UUID | str) -> UUID:
     if isinstance(value, UUID):
         return value
     return UUID(str(value))
+
+
+def _recursion_limit(settings: Any) -> int:
+    """LangGraph steps needed for max tool cycles + stuck auto-advances + bookends.
+
+    Each tool cycle is agent + tool_executor (2 steps). Default LangGraph limit (25)
+    is too low when stuck auto-advances through happy-path phases.
+    """
+    max_tools = int(settings.PLANNER_MAX_TOOL_CALLS)
+    stuck = int(settings.PLANNER_AGENT_PHASE_STUCK_LIMIT)
+    return max_tools * 2 + stuck * _STUCK_PHASE_HOPS * 2 + _GRAPH_BOOKEND_STEPS
 
 
 def _initial_state(
@@ -119,7 +137,8 @@ class PlannerService:
             "configurable": {
                 "tool_context": ctx,
                 "emit": _capture_and_emit,
-            }
+            },
+            "recursion_limit": _recursion_limit(settings),
         }
 
         try:
@@ -136,6 +155,16 @@ class PlannerService:
                 "abort_triggered": True,
             }
             _capture_and_emit("error", {"code": "generation_timeout"})
+        except GraphRecursionError:
+            # Bound exceeded despite settings-derived limit — controlled abort.
+            errors = list(last_known_state.get("errors") or [])
+            errors.append("graph_recursion_limit")
+            final = {
+                **last_known_state,
+                "errors": errors,
+                "abort_triggered": True,
+            }
+            _capture_and_emit("error", {"code": "graph_recursion_limit"})
 
         eval_update = await record_evaluation(final)
         if eval_update.get("warnings"):
