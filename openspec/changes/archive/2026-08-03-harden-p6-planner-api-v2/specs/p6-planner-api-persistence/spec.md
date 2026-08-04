@@ -1,8 +1,4 @@
-## Purpose
-
-P6 Planner API + Persistence — hardened v2 `docs/steps/step6.md` Cursor build contract (change `harden-p6-planner-api-v2`) and locked behaviors for route geometry hand-off, trips persistence (incl. claim), SSE generate HTTP, trips CRUD/GeoJSON, swappable Redis backends, and ship checklist.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Hardened P6 Cursor prompt exists as step6.md
 The project SHALL provide `docs/steps/step6.md` as the sole P6 implementation prompt, modeled on `docs/steps/step5.md` / `docs/steps/step4.md`, adopting the hardened v2 content from `docs/steps/step6_suggestion.md`.

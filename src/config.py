@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     NOMINATIM_BASE_URL: str = "https://nominatim.openstreetmap.org"
     OVERPASS_API_URL: str = "https://overpass-api.de/api/interpreter"
     OSRM_BASE_URL: str = "https://router.project-osrm.org"
+    # Bounded parallelism for OsrmRoutingProvider.travel_matrix (public OSRM-safe)
+    OSRM_MATRIX_MAX_CONCURRENCY: int = 8
 
     # Auth / JWT
     ACCESS_TOKEN_EXPIRE_DAYS: int = 7

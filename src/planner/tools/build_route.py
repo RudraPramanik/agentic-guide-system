@@ -52,6 +52,21 @@ async def run(
     raw_ranked = state_get(state, "ranked_pois") or []
     ranked = [dict_to_scored(r) if isinstance(r, dict) else r for r in raw_ranked]
     prefs = preferences_from_state(state)
+
+    # LLM may skip rank_places (or stuck-advance into PLAN before ranking).
+    # Auto-rank from candidates so allocate_days is never fed an empty list when
+    # search already produced POIs.
+    if not ranked:
+        from src.planner.tools._helpers import dict_to_candidate
+        from src.travel_engine.place_selector import select_places
+
+        raw_cands = state_get(state, "candidate_pois") or []
+        candidates = [
+            dict_to_candidate(c) if isinstance(c, dict) else c for c in raw_cands
+        ]
+        if candidates:
+            ranked = select_places(candidates, prefs)
+
     days = allocate_days(ranked, prefs.days, prefs)
 
     route_days: list[dict] = []
@@ -79,6 +94,7 @@ async def run(
         ok=True,
         data={
             "route": route_days,
+            "ranked_pois": [scored_to_dict(s) for s in ranked],
             "dropped_stops": all_dropped,
             "used_osrm_fallback": used_osrm_fallback,
         },

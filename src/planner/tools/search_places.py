@@ -64,7 +64,7 @@ async def run(
     top_k = inp.top_k
     if top_k is None:
         top_k = state_get(state, "search_top_k") or SEARCH_DEFAULT_TOP_K
-    top_k = int(top_k)
+    top_k = max(int(top_k), SEARCH_DEFAULT_TOP_K)
     query = search_query_from_state(state, inp.query)
 
     own_session = False

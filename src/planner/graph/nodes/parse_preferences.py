@@ -75,15 +75,33 @@ def _normalize_interests(raw: Any) -> list[str]:
         return []
     out: list[str] = []
     seen: set[str] = set()
+
+    def _add(mapped: str) -> None:
+        key = mapped.lower()
+        if not key or key in seen:
+            return
+        seen.add(key)
+        out.append(mapped)
+
     for item in raw:
         if not isinstance(item, str):
             continue
-        mapped = _map_interest(item)
-        key = mapped.lower()
-        if key in seen:
+        # LLM may return compound phrases ("offbeat photography") — split tokens.
+        parts = [p for p in re.split(r"[\s,/|;]+", item.strip()) if p]
+        if not parts:
             continue
-        seen.add(key)
-        out.append(mapped)
+        if len(parts) == 1:
+            _add(_map_interest(parts[0]))
+            continue
+        mapped_any = False
+        for part in parts:
+            mapped = _map_interest(part)
+            # Only keep tokens that resolve to known vocab/aliases (drop junk words).
+            if mapped.lower() in _VOCAB_SET or part.strip().lower() in _INTEREST_ALIASES:
+                _add(mapped)
+                mapped_any = True
+        if not mapped_any:
+            _add(_map_interest(item))
     return out
 
 

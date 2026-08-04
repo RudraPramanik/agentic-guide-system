@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
+from types import SimpleNamespace
 from uuid import uuid4
 from unittest.mock import AsyncMock, patch
 
@@ -69,3 +72,54 @@ async def test_single_waypoint_empty():
 async def test_empty_waypoints():
     provider = OsrmRoutingProvider()
     assert await provider.travel_matrix([]) == []
+
+
+@pytest.mark.asyncio
+async def test_matrix_respects_concurrency_and_beats_serial():
+    """Peak in-flight ≤ concurrency; wall time ≪ serial n*(n-1)*delay."""
+    n = 4
+    delay = 0.05
+    concurrency = 3
+    pair_count = n * (n - 1)
+    serial_floor = pair_count * delay
+
+    in_flight = 0
+    peak = 0
+    lock = asyncio.Lock()
+    mock_result = RouteResult(
+        distance_km=1.0,
+        duration_min=10.0,
+        fallback_used=False,
+    )
+
+    async def slow_get_route(_waypoints):
+        nonlocal in_flight, peak
+        async with lock:
+            in_flight += 1
+            peak = max(peak, in_flight)
+        try:
+            await asyncio.sleep(delay)
+            return mock_result
+        finally:
+            async with lock:
+                in_flight -= 1
+
+    waypoints = [(uuid4(), 27.0 + i * 0.01, 88.0 + i * 0.01) for i in range(n)]
+    provider = OsrmRoutingProvider()
+    fake_settings = SimpleNamespace(OSRM_MATRIX_MAX_CONCURRENCY=concurrency)
+
+    with (
+        patch("src.planner.routing_provider.get_settings", return_value=fake_settings),
+        patch(
+            "src.planner.routing_provider.get_route",
+            side_effect=slow_get_route,
+        ),
+    ):
+        t0 = time.perf_counter()
+        legs = await provider.travel_matrix(waypoints)
+        elapsed = time.perf_counter() - t0
+
+    assert len(legs) == pair_count
+    assert peak <= concurrency
+    # Allow small scheduling overhead; still well under serial cost.
+    assert elapsed < serial_floor * 0.7

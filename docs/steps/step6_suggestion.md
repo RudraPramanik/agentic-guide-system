@@ -1,8 +1,9 @@
 # Wandr — P6 Cursor Prompts: Planner API + Persistence (v2 — hardened)
-> Blueprint SoT: [`docs/blueprint_final.md`](../blueprint_final.md) **v6.1** — Phase P6 (3 days · 5 blueprint steps, expanded here to **6.0–6.5**)
+> **Merged into [`docs/steps/step6.md`](step6.md)** via OpenSpec change `harden-p6-planner-api-v2`
+> (kept for provenance; implement from `step6.md` only — that file also locks the MVP cache key).
+> Blueprint SoT: [`docs/blueprint_final.md`](../blueprint_final.md) **v6.1** — Phase P6 (3 days · 5 blueprint steps, expanded here to **6.0–6.6**)
 > Built-so-far context: [`docs/context.md`](../context.md) · Guardrails: [`AGENT.md`](../../AGENT.md)
-> **Canonical P6 build contract.** Adopted from `docs/steps/step6_suggestion.md` via OpenSpec
-> change `harden-p6-planner-api-v2`. **v2 changelog:** closes a polyline gap that's been invisible
+> **Supersedes** the prior P6 draft. **v2 changelog:** closes a polyline gap that's been invisible
 > since P4 (nothing anywhere in the pipeline ever computes route geometry, yet `TripPlace.polyline`
 > and the whole point of `GET /trips/{id}/geojson` depend on one existing), fixes a double/ambiguous
 > `itinerary_done` emission, adds reverse-proxy streaming headers (a near-certain production
@@ -18,8 +19,6 @@
 > Paste each prompt into Cursor **Agent mode** in order. Do NOT advance until the current
 > ✅ validation passes. Step 6.0 touches P4/P5 files — do it first, it's small, and P6.1/6.3
 > cannot honestly implement GeoJSON without it.
-> **Gate:** do not implement P6 code batches until P5.14 is green in `docs/context.md` (or an
-> explicitly accepted documented blocker).
 
 ## Decision / Fix Log (read before implementing)
 
@@ -311,20 +310,13 @@ Cache stores a JSON-serializable subset of the final `TravelState` — specifica
 preference fields — sufficient to both render the SSE response AND call `save_from_state`
 identically to the non-cached path. It is not a narrative-only blob.
 
-**MVP cache key — LOCKED** (router lookup before graph; coarser than preference-semantic):
-
 ```
 key = sha256(
-  f"{destination_id}:{sha256(normalized_raw_input)}:{days_or_0}:"
+  f"{destination_id}:{','.join(sorted(interests))}:{days}:{budget}:"
   f"{round(base_lat, 3)}:{round(base_lng, 3)}"
 )
 TTL = PLANNER_CACHE_TTL_SECONDS (default 3600)
 ```
-
-- `normalized_raw_input` = strip + collapse internal whitespace on `PlanRequest.raw_input`.
-- `days_or_0` = `PlanRequest.days` if set, else `0`.
-- Preference-semantic keys (`interests` / `budget` after parse) are a **post-MVP** refinement
-  once parse-once-without-dual-invoke is designed — do not invent a second key scheme in P6.
 
 ### Trip save (UoW) — LOCKED, field mapping now explicit (v2)
 
@@ -746,10 +738,13 @@ save_from_state. This is step 6.4.
 
   async def maybe_get_cached_state(body: PlanRequest, base_lat: float, base_lng: float) -> dict | None:
       """
-      Cache lookup using the LOCKED MVP key formula (see Cached value shape):
-        sha256(f"{destination_id}:{sha256(normalized_raw_input)}:{days_or_0}:"
-               f"{round(base_lat,3)}:{round(base_lng,3)}")
-      No pre-parse / interests-budget key in P6 — router lookup before graph.
+      Cache lookup using the LOCKED key formula (rounded coords). Requires parsed
+      preferences to compute interests/days/budget for the key — since parse_preferences
+      normally runs INSIDE the graph, this MVP cache check uses a lightweight heuristic
+      pre-parse (or: cache key is computed AFTER parse_preferences runs once, and only the
+      REMAINING tool-loop work is skipped on a hit — pick ONE, locked: compute the cache
+      key from body.raw_input's hash directly for MVP simplicity, accepting a slightly
+      coarser cache — document this explicitly rather than silently picking one).
       Returns a dict shaped like the relevant subset of TravelState (schedule/itinerary/
       prefs — see LOCKED cached value shape) on hit, None on miss or backend error.
       """
@@ -894,17 +889,8 @@ echo "P6 COMPLETE — proceed to P7"
 
 ### Recommended OpenSpec implementation batches
 
-Code implementation is **not** part of the `harden-p6-planner-api-v2` planning change.
-After P5.14 is green, apply these as **separate** OpenSpec implementation changes (or
-batched `/opsx:apply` sessions), in order:
-
 1. `6.0` — cross-phase polyline patch (P4/P5 files)
 2. `6.1` — trips repository + save_from_state + ownership + claim + schemas
 3. `6.2` — planner SSE router with terminal-event buffering + proxy headers + floor check
 4. `6.3` — trips CRUD + GeoJSON + claim endpoint
 5. `6.4–6.5` — Redis backends + cache-persists-trip + tests/smoke + context.md
-
-Do **not** open a full propose→archive cycle for each micro-detail inside a step unless a
-design conflict appears. Sync delta specs from `harden-p6-planner-api-v2` to main via
-`/opsx:sync` or archive workflow when that planning change is archived — do not hand-edit
-`openspec/specs/` outside that workflow.

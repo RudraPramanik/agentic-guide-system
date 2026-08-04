@@ -86,6 +86,20 @@ async def section_3_to_7() -> dict:
     print("\n=== 3) generate() completes ===")
     dest_id, lat, lng = await _resolve_darjeeling()
 
+    # Same infra as FastAPI lifespan — without this, is_qdrant_available() stays
+    # False and search_places always geo-falls back (weak smoke itineraries).
+    from src.search.client import ensure_places_collection, is_qdrant_available
+    from src.search.embeddings import ensure_embedding_model_loaded
+
+    await ensure_places_collection()
+    await ensure_embedding_model_loaded()
+    if not is_qdrant_available():
+        _fail(
+            "3 generate",
+            "Qdrant not available after ensure_places_collection — "
+            "start docker compose (Qdrant :6335) and re-index if needed",
+        )
+
     events: list[str] = []
 
     def on_event(event: str, data: dict) -> None:
