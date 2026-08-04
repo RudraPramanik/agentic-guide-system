@@ -34,7 +34,7 @@ def _scored(
 
 
 def _consecutive_legs(order: list[ScoredPlace], hop_min: int = 10) -> list[RouteLeg]:
-    """base→first, then each consecutive hop — matches OptimizeResult.legs."""
+    """base→first, then each consecutive hop (incomplete for morning reorder)."""
     legs: list[RouteLeg] = []
     prev = BASE_SENTINEL_ID
     for s in order:

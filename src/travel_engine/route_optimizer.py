@@ -133,6 +133,9 @@ async def optimize_route(
 
     Calls travel_matrix once per attempt. Drops lowest-scored stops when
     over MAX_DAILY_TRAVEL_MIN (max MAX_ROUTE_DROP_ATTEMPTS).
+
+    ``legs`` is the full pairwise matrix from the final attempt (not only the
+    consecutive chain) so schedule morning-only reorder can look up any hop.
     """
     if not day_places:
         return OptimizeResult()
@@ -148,7 +151,10 @@ async def optimize_route(
         ]
         matrix = await routing.travel_matrix(waypoints)
         lookup = legs_to_lookup(matrix)
-        ordered, total, legs = _best_order(remaining, lookup)
+        ordered, total, _consecutive = _best_order(remaining, lookup)
+        # Return the full pairwise matrix (not just the consecutive chain) so
+        # build_day_schedule can re-time after morning-only extract reorder.
+        legs = list(matrix)
 
         if total <= MAX_DAILY_TRAVEL_MIN or drops_done >= MAX_ROUTE_DROP_ATTEMPTS:
             return OptimizeResult(

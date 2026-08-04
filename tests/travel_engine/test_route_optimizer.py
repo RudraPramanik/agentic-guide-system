@@ -53,9 +53,14 @@ async def test_fake_matrix_complete_ordered_day():
     fake = FakeRoutingProvider()
     result = await optimize_route(places, 0.0, 0.0, fake)
     assert len(result.ordered) == 3
-    assert len(result.legs) == 3
-    assert result.legs[0].from_place_id == BASE_SENTINEL_ID
-    assert result.legs[0].to_place_id == result.ordered[0].place.id
+    # Full directed pairwise among BASE + 3 stops (4×3), not consecutive-only —
+    # schedule morning-extract needs arbitrary hops.
+    assert len(result.legs) == 12
+    assert any(
+        leg.from_place_id == BASE_SENTINEL_ID
+        and leg.to_place_id == result.ordered[0].place.id
+        for leg in result.legs
+    )
     assert fake.call_count == 1
     assert result.dropped_stops == []
     assert result.still_over_budget is False
