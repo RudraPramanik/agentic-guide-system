@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-02 · **Phase:** P5 in progress · **Next step:** P5.14 smoke ship (see `docs/steps/step5.md`)
+**Last updated:** 2026-08-04 · **Phase:** P5 complete · **Next step:** P6.1 (see `docs/steps/step6.md`)
 
 ---
 
 ## Current state (one line)
 
-P5.1–5.13 done — PlannerService SSE bridge + tool-loop pytest green (162); 5.14 script ready but live smoke blocked by Gemini RateLimit → `generation_timeout` (re-run `python scripts/test_agent.py` then mark P5 ✅ / Next P6.1).
+P5.1–5.14 done — live `scripts/test_agent.py` green (NIM via env `LLM_*`; packing aligned with validator); pytest 168; Next P6.1 (trips CRUD + `/planner/generate` still stubs).
 
 ---
 
@@ -85,7 +85,7 @@ P5.1–5.13 done — PlannerService SSE bridge + tool-loop pytest green (162); 5
 | 5.11 | ✅ Done | `build_planner_graph` / `get_compiled_graph` singleton compile |
 | 5.12 | ✅ Done | `PlannerService.generate` — emit bridge, `wait_for`, settings-derived `recursion_limit` |
 | 5.13 | ✅ Done | `tests/planner/test_tool_loop.py` — ★ cases incl. stuck/timeout/concurrent ctx (162 suite) |
-| 5.14 | ⬜ Smoke pending | `scripts/test_agent.py` exists; live LLM smoke not green yet (Gemini rate limit) |
+| 5.14 | ✅ Done | `scripts/test_agent.py` live smoke sections 1–8 PASS (provider via `LLM_*` env; not vendor-locked) |
 ---
 
 ## Implemented modules (real code)
@@ -96,9 +96,9 @@ P5.1–5.13 done — PlannerService SSE bridge + tool-loop pytest green (162); 5
 | `src/travel_engine/protocols.py` | `RouteLeg`, `RoutingProvider`, `legs_to_lookup` — pure, no I/O |
 | `src/travel_engine/travel_rules.py` | Caps, structural durations, interest weights, `visit_duration_min` |
 | `src/travel_engine/place_selector.py` | `PlaceCandidate`, `TripPreferences`, `ScoredPlace`, `score_place`, `select_places`, `explain_selection` |
-| `src/travel_engine/day_allocator.py` | `allocate_days` — haversine cluster + caps/budget; pure, no geo I/O |
-| `src/travel_engine/route_optimizer.py` | `optimize_route`, `OptimizeResult`, `DroppedStop` — RoutingProvider DI; no TSP |
-| `src/travel_engine/schedule_builder.py` | `build_day_schedule`, `ScheduledStop` — naive wall-clock; morning + lunch |
+| `src/travel_engine/day_allocator.py` | `allocate_days` — cluster + caps/budget + morning≤2/day + soft geo spill |
+| `src/travel_engine/route_optimizer.py` | `optimize_route` — full-matrix legs; drop until under travel or 1 stop |
+| `src/travel_engine/schedule_builder.py` | `build_day_schedule` — morning extract ≤2; excess morning omitted |
 | `src/travel_engine/trip_validator.py` | `validate_trip`, `ValidationResult`, `DayPlan`, `TripItinerary` — pure CoR rules |
 | `src/planner/routing_provider.py` | `OsrmRoutingProvider` — wraps `geo/osrm.get_route` → `RouteLeg` |
 | `src/planner/tools/schemas.py` | `AgentPhase`, `PHASE_TOOLS`, `ToolResult` (+`fallback_used`), `ToolContext`, 12 input models |
@@ -152,7 +152,7 @@ P5.1–5.13 done — PlannerService SSE bridge + tool-loop pytest green (162); 5
 | `src/trips/models.py` | Trip / TripPlace / TripEditEvent |
 | `src/evaluation/models.py` | TripEvaluation |
 
-**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **162** when DB up (incl. tool_loop + chat_with_tools)
+**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **168** when DB up (incl. tool_loop + chat_with_tools)
 
 **Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_p4_smoke.py`, `scripts/test_agent.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
 
@@ -162,7 +162,7 @@ P5.1–5.13 done — PlannerService SSE bridge + tool-loop pytest green (162); 5
 
 ## Stubs only (do not assume implemented)
 
-trips HTTP CRUD + planner HTTP `/planner/generate` SSE (P6); evaluation HTTP still stub (generation persist via repo/service is **real**); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + **PlannerService.generate** (5.1–5.13) are **real**. Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4).
+trips HTTP CRUD + planner HTTP `/planner/generate` SSE (P6); evaluation HTTP still stub (generation persist via repo/service is **real**); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + **PlannerService.generate** (5.1–5.14) are **real**. Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4; packing aligned with validator for morning/travel).
 
 ---
 

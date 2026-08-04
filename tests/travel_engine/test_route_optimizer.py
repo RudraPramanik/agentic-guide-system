@@ -11,6 +11,7 @@ from src.travel_engine.route_optimizer import optimize_route
 from src.travel_engine.travel_rules import (
     BASE_SENTINEL_ID,
     MAX_DAILY_TRAVEL_MIN,
+    MAX_PLACES_PER_DAY,
     MAX_ROUTE_DROP_ATTEMPTS,
 )
 from tests.travel_engine.fake_routing import FakeRoutingProvider
@@ -101,21 +102,35 @@ async def test_over_budget_records_dropped_stops():
     fake = FakeRoutingProvider(default_duration_min=MAX_DAILY_TRAVEL_MIN + 1)
     result = await optimize_route(places, 0.0, 0.0, fake)
 
-    assert len(result.dropped_stops) == MAX_ROUTE_DROP_ATTEMPTS
+    # Thin to one stop (3 drops from 4); still over because single hop is huge
+    assert len(result.dropped_stops) == 3
     assert all(d.reason == "exceeded_max_daily_travel" for d in result.dropped_stops)
     assert {d.name for d in result.dropped_stops} == {"Lower", "Low", "Mid"}
     assert len(result.ordered) == 1
     assert result.ordered[0].place.name == "High"
     assert result.still_over_budget is True
     # matrix once per attempt: initial + 3 drops = 4
-    assert fake.call_count == MAX_ROUTE_DROP_ATTEMPTS + 1
+    assert fake.call_count == 4
 
 
 @pytest.mark.asyncio
-async def test_drop_attempts_capped():
-    places = [_scored(f"P{i}", score=float(10 - i)) for i in range(5)]
+async def test_drop_until_under_budget():
+    # 100 min hops: 3 stops → ~300 over; 1 stop → 100 under
+    places = [_scored(f"P{i}", score=float(10 - i)) for i in range(3)]
+    fake = FakeRoutingProvider(default_duration_min=100)
+    result = await optimize_route(places, 0.0, 0.0, fake)
+    assert result.still_over_budget is False
+    assert result.total_travel_min <= MAX_DAILY_TRAVEL_MIN
+    assert len(result.ordered) == 1
+    assert len(result.dropped_stops) == 2
+
+
+@pytest.mark.asyncio
+async def test_drop_attempts_allow_full_day_to_one_stop():
+    assert MAX_ROUTE_DROP_ATTEMPTS == MAX_PLACES_PER_DAY - 1
+    places = [_scored(f"P{i}", score=float(10 - i)) for i in range(MAX_PLACES_PER_DAY)]
     fake = FakeRoutingProvider(default_duration_min=MAX_DAILY_TRAVEL_MIN + 1)
     result = await optimize_route(places, 0.0, 0.0, fake)
     assert len(result.dropped_stops) == MAX_ROUTE_DROP_ATTEMPTS
     assert result.still_over_budget is True
-    assert len(result.ordered) == 5 - MAX_ROUTE_DROP_ATTEMPTS
+    assert len(result.ordered) == 1

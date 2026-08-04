@@ -1,8 +1,4 @@
-## Purpose
-
-Travel engine constants-as-data: structural place durations vs interest scoring weights, locked to P2/P3 vocabularies per `docs/steps/step4.md` step 4.2.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: travel_rules split structural and interest vocabularies
 The project SHALL provide `src/travel_engine/travel_rules.py` with constants as locked in `docs/steps/step4.md` step 4.2, including:

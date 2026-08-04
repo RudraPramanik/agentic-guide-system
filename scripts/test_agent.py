@@ -136,27 +136,39 @@ async def section_3_to_7() -> dict:
     schedule = final.get("schedule") or []
     itinerary = final.get("itinerary") or {}
     day_list = itinerary.get("days") if isinstance(itinerary, dict) else None
+
+    def _day_stops(day: object) -> list:
+        # build_schedule stores list[list[stop_dict]]; narrative days use dicts.
+        if isinstance(day, list):
+            return day
+        if isinstance(day, dict):
+            return day.get("stops") or day.get("places") or []
+        return []
+
+    def _stop_lat_lng(stop: dict) -> tuple[object, object]:
+        if stop.get("lat") is not None and stop.get("lng") is not None:
+            return stop.get("lat"), stop.get("lng")
+        place = stop.get("place") or {}
+        if isinstance(place, dict):
+            return place.get("lat"), place.get("lng")
+        return None, None
+
     stops_source = schedule if schedule else day_list
     if not stops_source:
         _fail("5 stops", "empty schedule/itinerary days")
     for day in stops_source:
-        stops = day.get("stops") or day.get("places") or []
+        stops = _day_stops(day)
         if isinstance(day, dict) and not stops and "stops" not in day:
             # narrative-only day entry — check schedule instead
             continue
         for stop in stops:
-            if stop.get("lat") is None or stop.get("lng") is None:
+            if not isinstance(stop, dict):
+                _fail("5 stops", f"non-dict stop: {stop}")
+            lat, lng = _stop_lat_lng(stop)
+            if lat is None or lng is None:
                 _fail("5 stops", f"missing lat/lng: {stop}")
             if not stop.get("suggested_start_time"):
                 _fail("5 stops", f"missing suggested_start_time: {stop}")
-    # Prefer schedule for geometry checks
-    if schedule:
-        for day in schedule:
-            for stop in day.get("stops") or []:
-                if stop.get("lat") is None or stop.get("lng") is None:
-                    _fail("5 stops", f"missing lat/lng: {stop}")
-                if not stop.get("suggested_start_time"):
-                    _fail("5 stops", f"missing suggested_start_time: {stop}")
     _ok("5 days", f"days={days} schedule_days={len(schedule)}")
 
     print("\n=== 6) tool_trace ===")

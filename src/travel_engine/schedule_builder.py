@@ -2,9 +2,11 @@
 
 Morning-only algorithm (before first timing):
 1. If any stop's structural category is in MORNING_ONLY_CATEGORIES, stable-extract
-   morning-only stops to the front (preserve relative order among morning-only
+   morning-only stops toward the front (preserve relative order among morning-only
    and among others).
-2. Place k = min(2, n_morning) morning-only stops in the earliest slots.
+2. Place k = min(2, n_morning) morning-only stops in the earliest slots; omit any
+   excess morning-only beyond two from the timed day (allocator should already
+   have capped; this is a safety net so slot 3+ morning validation cannot fire).
 3. Time the day using legs_to_lookup; missing required hops after extract raise
    ValueError (do not invent durations; do not call geo).
 
@@ -49,6 +51,7 @@ def _format_hhmm(total_min: int) -> str:
 
 
 def _extract_morning_first(stops: list[ScoredPlace]) -> list[ScoredPlace]:
+    """Put up to two morning-only stops first; omit any excess morning-only."""
     morning = [
         s for s in stops if s.place.category in MORNING_ONLY_CATEGORIES
     ]
@@ -59,8 +62,8 @@ def _extract_morning_first(stops: list[ScoredPlace]) -> list[ScoredPlace]:
     ]
     k = min(2, len(morning))
     early = morning[:k]
-    rest_morning = morning[k:]
-    return early + rest_morning + others
+    # Excess morning-only (morning[k:]) omitted — do not leave in slot 3+.
+    return early + others
 
 
 def _required_hops(order: list[ScoredPlace]) -> list[tuple[UUID, UUID]]:

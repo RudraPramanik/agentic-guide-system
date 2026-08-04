@@ -5,6 +5,8 @@ from __future__ import annotations
 from src.places.constants import PLACE_TAG_VOCAB
 from src.travel_engine.travel_rules import (
     CATEGORY_WEIGHTS,
+    MAX_PLACES_PER_DAY,
+    MAX_ROUTE_DROP_ATTEMPTS,
     MORNING_ONLY_CATEGORIES,
     VISIT_DURATION_BY_CATEGORY,
     VISIT_DURATION_DEFAULT_MIN,
@@ -42,3 +44,7 @@ def test_no_sunrise_point_in_morning_only() -> None:
 def test_interest_only_tags_not_in_duration_map() -> None:
     for tag in ("trek", "cultural", "photography", "offbeat", "family", "nature", "adventure"):
         assert tag not in VISIT_DURATION_BY_CATEGORY
+
+
+def test_drop_attempts_allow_thinning_full_day() -> None:
+    assert MAX_ROUTE_DROP_ATTEMPTS == MAX_PLACES_PER_DAY - 1

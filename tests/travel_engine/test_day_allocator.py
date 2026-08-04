@@ -48,6 +48,8 @@ def test_eighteen_places_three_days_within_caps() -> None:
     for d in days:
         total = sum(visit_duration_min(s.place.category) for s in d)
         assert total <= ACTIVE_DAY_VISIT_BUDGET_MIN
+        morning = sum(1 for s in d if s.place.category == "viewpoint")
+        assert morning <= 2
 
 
 def test_days_zero_raises_value_error() -> None:
@@ -91,3 +93,39 @@ def test_returns_exact_day_count_even_if_empty() -> None:
     days = allocate_days([], 4)
     assert len(days) == 4
     assert all(d == [] for d in days)
+
+
+def test_morning_only_capped_at_two_per_day() -> None:
+    views = [
+        _scored(f"V{i}", category="viewpoint", score=float(20 - i), lat=27.0, lng=88.0)
+        for i in range(5)
+    ]
+    fillers = [
+        _scored(f"M{i}", category="museum", score=float(5 - i), lat=27.05, lng=88.05)
+        for i in range(4)
+    ]
+    days = allocate_days(views + fillers, 3)
+    for d in days:
+        assert sum(1 for s in d if s.place.category == "viewpoint") <= 2
+    packed_views = sum(
+        1 for d in days for s in d if s.place.category == "viewpoint"
+    )
+    assert packed_views >= 2  # at least some viewpoints placed
+
+
+def test_spill_prefers_nearer_day_centroid() -> None:
+    # Day capacity: fill preferred day so VFar must spill.
+    # Seed day0 with a near cluster (full for morning+places), day1 near, day2 far.
+    seed_near = [
+        _scored(f"Seed{i}", category="museum", score=8.0, lat=27.04, lng=88.26)
+        for i in range(MAX_PLACES_PER_DAY)
+    ]
+    near_day_anchor = _scored("NearAnchor", category="museum", score=7.0, lat=27.05, lng=88.27)
+    far_day_anchor = _scored("FarAnchor", category="museum", score=7.0, lat=28.5, lng=90.0)
+    # Candidate near the near_day_anchor; preferred day0 is full → spill
+    candidate = _scored("Cand", category="museum", score=6.0, lat=27.051, lng=88.271)
+    days = allocate_days(seed_near + [near_day_anchor, far_day_anchor, candidate], 3)
+    flat = {s.place.name: di for di, day in enumerate(days) for s in day}
+    assert "Cand" in flat
+    assert flat["Cand"] == flat["NearAnchor"]
+    assert flat["Cand"] != flat["FarAnchor"]

@@ -3,7 +3,8 @@
 Template Method: algorithm is fixed; travel times come only via RoutingProvider DI.
 Ordering: brute-force permutations (≤ MAX_PLACES_PER_DAY!); no TSP package.
 Drop-retry: when best total > MAX_DAILY_TRAVEL_MIN, drop lowest-scored stop
-(reason exceeded_max_daily_travel) up to MAX_ROUTE_DROP_ATTEMPTS times.
+(reason exceeded_max_daily_travel) until under budget or one stop remains
+(capped by MAX_ROUTE_DROP_ATTEMPTS).
 """
 
 from __future__ import annotations
@@ -131,8 +132,9 @@ async def optimize_route(
     """
     Order day's stops for minimum travel via injected RoutingProvider.
 
-    Calls travel_matrix once per attempt. Drops lowest-scored stops when
-    over MAX_DAILY_TRAVEL_MIN (max MAX_ROUTE_DROP_ATTEMPTS).
+    Calls travel_matrix once per attempt. Drops lowest-scored stops while
+    over MAX_DAILY_TRAVEL_MIN and more than one stop remains (capped by
+    MAX_ROUTE_DROP_ATTEMPTS).
 
     ``legs`` is the full pairwise matrix from the final attempt (not only the
     consecutive chain) so schedule morning-only reorder can look up any hop.
@@ -152,26 +154,27 @@ async def optimize_route(
         matrix = await routing.travel_matrix(waypoints)
         lookup = legs_to_lookup(matrix)
         ordered, total, _consecutive = _best_order(remaining, lookup)
-        # Return the full pairwise matrix (not just the consecutive chain) so
-        # build_day_schedule can re-time after morning-only extract reorder.
+        # Full pairwise matrix so build_day_schedule can re-time after
+        # morning-only extract reorder.
         legs = list(matrix)
+        under_budget = total <= MAX_DAILY_TRAVEL_MIN
 
-        if total <= MAX_DAILY_TRAVEL_MIN or drops_done >= MAX_ROUTE_DROP_ATTEMPTS:
+        if under_budget or len(remaining) <= 1:
             return OptimizeResult(
                 ordered=ordered,
                 legs=legs,
                 total_travel_min=total if ordered else 0,
                 dropped_stops=dropped,
-                still_over_budget=bool(ordered) and total > MAX_DAILY_TRAVEL_MIN,
+                still_over_budget=bool(ordered) and not under_budget,
             )
 
-        if len(remaining) <= 1:
+        if drops_done >= MAX_ROUTE_DROP_ATTEMPTS:
             return OptimizeResult(
                 ordered=ordered,
                 legs=legs,
                 total_travel_min=total if ordered else 0,
                 dropped_stops=dropped,
-                still_over_budget=bool(ordered) and total > MAX_DAILY_TRAVEL_MIN,
+                still_over_budget=True,
             )
 
         victim = _pick_lowest_scored(remaining)

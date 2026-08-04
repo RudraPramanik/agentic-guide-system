@@ -1,7 +1,8 @@
 ﻿"""Day allocation — pack scored places into per-day lists (pure, no I/O).
 
-Places that cannot fit under MAX_PLACES_PER_DAY or ACTIVE_DAY_VISIT_BUDGET_MIN
-are omitted from the result (callers observe this via returned list sizes).
+Places that cannot fit under MAX_PLACES_PER_DAY, ACTIVE_DAY_VISIT_BUDGET_MIN,
+or the morning-only per-day cap (≤2) are omitted from the result (callers
+observe this via returned list sizes).
 """
 
 from __future__ import annotations
@@ -13,8 +14,11 @@ from src.travel_engine.travel_rules import (
     ACTIVE_DAY_VISIT_BUDGET_MIN,
     CLUSTER_RADIUS_KM,
     MAX_PLACES_PER_DAY,
+    MORNING_ONLY_CATEGORIES,
     visit_duration_min,
 )
+
+_MAX_MORNING_ONLY_PER_DAY = 2
 
 
 def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -34,8 +38,17 @@ def _day_visit_min(day: list[ScoredPlace]) -> int:
     return sum(visit_duration_min(s.place.category) for s in day)
 
 
+def _morning_count(day: list[ScoredPlace]) -> int:
+    return sum(1 for s in day if s.place.category in MORNING_ONLY_CATEGORIES)
+
+
 def _can_add(day: list[ScoredPlace], place: ScoredPlace) -> bool:
     if len(day) >= MAX_PLACES_PER_DAY:
+        return False
+    if (
+        place.place.category in MORNING_ONLY_CATEGORIES
+        and _morning_count(day) >= _MAX_MORNING_ONLY_PER_DAY
+    ):
         return False
     return (
         _day_visit_min(day) + visit_duration_min(place.place.category)
@@ -48,6 +61,18 @@ def _cluster_centroid(cluster: list[ScoredPlace]) -> tuple[float, float]:
     lat = sum(s.place.lat for s in cluster) / n
     lng = sum(s.place.lng for s in cluster) / n
     return lat, lng
+
+
+def _distance_to_day(day: list[ScoredPlace], place: ScoredPlace) -> float:
+    """Soft geo distance for spill ranking.
+
+    Empty days use CLUSTER_RADIUS_KM so an existing nearer day wins, but an
+    empty day is preferred over joining a far centroid.
+    """
+    if not day:
+        return CLUSTER_RADIUS_KM
+    c_lat, c_lng = _cluster_centroid(day)
+    return _haversine_km(place.place.lat, place.place.lng, c_lat, c_lng)
 
 
 def _build_clusters(ordered: list[ScoredPlace]) -> list[list[ScoredPlace]]:
@@ -80,13 +105,15 @@ def allocate_days(
     Rules:
     - Each day: len(places) <= MAX_PLACES_PER_DAY
     - Each day: sum(visit_duration_min(...)) <= ACTIVE_DAY_VISIT_BUDGET_MIN
+    - Each day: ≤2 places with category in MORNING_ONLY_CATEGORIES
     - Geographic pre-clustering: places within CLUSTER_RADIUS_KM prefer same day
+    - Spill prefers nearer day centroid among days that can accept (soft geo)
     - Higher scores preferred when a day is full
     - Overflow that cannot fit any day is omitted (no logger; observe via sizes)
 
-    ``preferences`` is accepted for API symmetry with callers; unused in P4 packing.
+    ``preferences`` is accepted for API symmetry with callers; unused in packing.
     """
-    _ = preferences  # reserved for future soft prefs; unused in P4
+    _ = preferences  # reserved for future soft prefs; unused in packing
     if days < 1:
         raise ValueError("days must be >= 1")
 
@@ -114,14 +141,17 @@ def allocate_days(
             if _can_add(day_lists[preferred], item):
                 day_lists[preferred].append(item)
                 continue
-            # Spill to other underfilled days (higher scores already tried preferred)
-            placed = False
-            day_order = sorted(range(days), key=lambda i: (len(day_lists[i]), i))
-            for di in day_order:
-                if _can_add(day_lists[di], item):
-                    day_lists[di].append(item)
-                    placed = True
-                    break
-            # else omit overflow
+            # Soft geo spill: nearer centroid among days that can accept
+            candidates = [di for di in range(days) if _can_add(day_lists[di], item)]
+            if not candidates:
+                continue  # omit overflow
+            candidates.sort(
+                key=lambda di: (
+                    _distance_to_day(day_lists[di], item),
+                    len(day_lists[di]),
+                    di,
+                )
+            )
+            day_lists[candidates[0]].append(item)
 
     return day_lists

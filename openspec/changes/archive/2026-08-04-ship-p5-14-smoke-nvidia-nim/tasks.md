@@ -12,11 +12,11 @@
 
 ## 3. Smoke + pytest
 
-- [ ] 3.1 Run `python scripts/test_agent.py` (venv + `PYTHONPATH`); on failure try alternate free `nvidia_nim/...` model before declaring blocked
-- [ ] 3.2 Run `python -m pytest tests/ -q` and confirm green
-- [ ] 3.3 Run step5.14 import guards (`litellm` only in `core/llm/client.py`; `travel_engine` purity)
+- [x] 3.1 Run `python scripts/test_agent.py` (venv + `PYTHONPATH`); on failure try alternate free `nvidia_nim/...` model before declaring blocked
+- [x] 3.2 Run `python -m pytest tests/ -q` and confirm green
+- [x] 3.3 Run step5.14 import guards (`litellm` only in `core/llm/client.py`; `travel_engine` purity)
 
 ## 4. Context ship
 
-- [ ] 4.1 Update `docs/context.md`: Last updated; Progress 5.1–5.14 ✅; Next step → P6.1; PlannerService real; keep trips CRUD / planner HTTP as P6 stubs; do not register `/planner/generate`; do not claim NIM-only product lock-in
-- [ ] 4.2 Confirm no FastAPI route contains `planner/generate`
+- [x] 4.1 Update `docs/context.md`: Last updated; Progress 5.1–5.14 ✅; Next step → P6.1; PlannerService real; keep trips CRUD / planner HTTP as P6 stubs; do not register `/planner/generate`; do not claim NIM-only product lock-in
+- [x] 4.2 Confirm no FastAPI route contains `planner/generate`

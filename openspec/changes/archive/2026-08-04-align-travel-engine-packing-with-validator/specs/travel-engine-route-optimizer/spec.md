@@ -1,8 +1,4 @@
-## Purpose
-
-Pure day-route ordering for the travel engine (P4 step 4.5). Travel times injected via `RoutingProvider`; no geo/network/DB/LLM I/O.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Route optimizer orders a day via injected RoutingProvider
 The project SHALL provide `src/travel_engine/route_optimizer.py` with types `DroppedStop`, `OptimizeResult`, and async function `optimize_route(day_places, base_lat, base_lng, routing: RoutingProvider) -> OptimizeResult` as locked in `docs/steps/step4.md` step 4.5 and `docs/blueprint_final.md` v6.1.

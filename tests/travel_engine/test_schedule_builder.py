@@ -126,3 +126,16 @@ def test_missing_hop_after_morning_extract_raises():
     legs = _consecutive_legs([other, view], hop_min=10)
     with pytest.raises(ValueError, match="missing route leg"):
         build_day_schedule([other, view], legs)
+
+
+def test_excess_morning_only_omitted_from_timed_day():
+    views = [_scored(f"V{i}", category="viewpoint", score=float(3 - i)) for i in range(3)]
+    museum = _scored("Museum", category="museum", score=1.0)
+    stops = views + [museum]
+    schedule = build_day_schedule(stops, _pairwise_legs(stops, hop_min=5))
+    morning = [s for s in schedule if s.place.category == "viewpoint"]
+    assert len(morning) == 2
+    assert all(i < 2 for i, s in enumerate(schedule) if s.place.category == "viewpoint")
+    assert {s.place.name for s in morning} == {"V0", "V1"}
+    assert any(s.place.name == "Museum" for s in schedule)
+    assert not any(s.place.name == "V2" for s in schedule)
