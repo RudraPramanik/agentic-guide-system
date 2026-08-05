@@ -66,5 +66,6 @@ Prefer **links and tables** over prose.
 | 2026-07-26 | P2.10 | P2 phase complete — 2.9 pytest + 2.10 smoke |
 | 2026-07-30 | P4.10 | P3+P4 catch-up — search/enrich/index + travel_engine + CORS + tools envelope + p4 smoke |
 | 2026-07-31 | P5.11 | Cadence — P5.1–5.11 (tools + graph loop + narrative/eval + compile); 5.12–5.14 not yet context-✅ |
+| 2026-08-06 | P6.5 | P5+P6 catch-up — PlannerService/SSE/trips HTTP/cache backends + p6 smoke; Next → P7.1 |
 
-Next natural refresh: when **P5** completes (5.12–5.14 smoke + context), or after ~4–5 validated P6 steps since this marker.
+Next natural refresh: when **P7** completes, or after ~4–5 validated P7 steps since this marker.

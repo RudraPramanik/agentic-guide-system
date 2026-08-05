@@ -20,6 +20,8 @@ flowchart TD
   M --> AR[auth/router]
   M --> DR[destinations/router]
   M --> PR[places/router]
+  M --> PLR[planner/router]
+  M --> TR[trips/router]
   M --> H["GET /api/v1/health"]
   M --> QD[search ensure + embeddings load]
 ```
@@ -32,7 +34,7 @@ flowchart TD
 | `src/main.py` | `ensure_places_collection`, embedding load | Qdrant + MiniLM lifespan |
 | `src/main.py` | `WandrError`, `ApiResponse`, `ErrorResponse` | Global handlers |
 | `src/main.py` | `CORSMiddleware`, `RequestLoggingMiddleware`, `RateLimitMiddleware` | Cross-cutting |
-| `src/main.py` | `auth.router`, `destinations.router`, `places.router` | Mount HTTP routes |
+| `src/main.py` | `auth.router`, `destinations.router`, `places.router`, `planner.router`, `trips.router` | Mount HTTP routes |
 
 ---
 
@@ -204,7 +206,7 @@ flowchart TD
 
 ---
 
-## Planner tool loop + graph (P5.1–5.11)
+## Planner tool loop + graph (P5)
 
 ```mermaid
 flowchart TD
@@ -226,14 +228,58 @@ flowchart TD
 | From | Imports | Why |
 |------|---------|-----|
 | `agent_node` | `chat_with_tools`, `build_agent_messages`, `PHASE_TOOLS` | Decides tools only — **never** `execute_tool` |
-| `tool_executor_node` | `execute_tool`, `apply_tool_result`, stuck-detector | Sole tool runner; optional `emit` later (5.12) |
+| `tool_executor_node` | `execute_tool`, `apply_tool_result`, stuck-detector | Sole tool runner; optional `emit` for SSE |
 | `execute_tool` | `TOOL_REGISTRY` + phase/precondition gates | Typed contracts; tools return `ToolResult` only |
 | `apply_tool_result` | orchestration sole writer | Tools never mutate `TravelState` |
 | Graph nodes | `ToolContext` from `config["configurable"]` | Cached compiled graph shared across requests |
 | `record_evaluation` | `EvaluationService` | Best-effort persist; warning on DB fail |
 | `builder` | LangGraph compile singleton | agent→executor unconditional; bookends on complete |
 
-Clarification exit ends at END **without** `record_evaluation` (deferred to 5.12 service).
+Clarification exit ends at END **without** graph `record_evaluation`; `PlannerService` still records after invoke/timeout.
+
+---
+
+## Planner SSE generate + cache (P6.2 / 6.4)
+
+```mermaid
+flowchart TD
+  PLR[planner/router.py POST /generate] --> PS[planner/service.py generate]
+  PLR --> CACHE[planner/cache maybe_get / maybe_set]
+  CACHE --> CB[core/cache/backends get_cache_backend]
+  PS --> GRAPH[get_compiled_graph]
+  PLR -->|terminal buffer| TS[trips/service save_from_state]
+  TS --> TREP[trips/repository]
+  RL[RateLimitMiddleware] --> RLB[get_rate_limiter Redis or InMemory]
+```
+
+| From | Imports | Why |
+|------|---------|-----|
+| `planner/router.py` | `PlannerService`, `PlanRequest`, trips `save_from_state` | SSE stream + terminal persist + `trip_id` |
+| `planner/cache.py` | `get_cache_backend()`, settings TTL | MVP cache hit still feeds `save_from_state` (new trip) |
+| `core/cache/backends.py` | `REDIS_URL` via `get_settings()` | Empty → `InMemoryCacheBackend` |
+| `core/middleware/rate_limit.py` | `get_rate_limiter()` | Redis when `REDIS_URL` set; else in-memory; fail-open |
+
+Proxy must disable response buffering for `/api/v1/planner/generate`. Clients: POST `fetch()` + manual SSE parse — not `EventSource`.
+
+---
+
+## Trips HTTP (P6.1–6.3)
+
+```mermaid
+flowchart LR
+  TR[trips/router.py] --> TS[trips/service.py]
+  TS --> TREP[trips/repository.py]
+  TS --> POLY[trips/polyline.py]
+  TR --> AUTH[require_auth / optional_auth]
+```
+
+| From | Imports | Why |
+|------|---------|-----|
+| `trips/router.py` | `TripService` helpers | list/get/delete/geojson/claim |
+| `trips/service.py` | `TripRepository`, ownership, `build_geojson` | UoW `save_from_state`; no `PlannerService` import |
+| `trips/polyline.py` | pure decode | Invalid encoded string → `[]` |
+
+Ownership: guest session or owner for GET; DELETE requires auth; claim matches `wandr_session` + unclaimed.
 
 ---
 
@@ -260,13 +306,13 @@ Clarification exit ends at END **without** `record_evaluation` (deferred to 5.12
 
 ## What is *not* wired yet
 
-- `PlannerService.generate` SSE bridge (5.12) — not context-✅; `/api/v1/planner/generate` HTTP is **P6** (not in `main.py`).
-- Trips HTTP CRUD — models only.
-- Clarification-path evaluation persist — deferred to 5.12 service.
+- P7 trip edit/replan HTTP — not registered.
+- Evaluation HTTP — generation persist is real; no evaluation router.
+- `auth/dependencies.py` — unused placeholder.
 
-Search, travel_engine, and the full P5 planner tools + graph loop **are** wired — see sections above.
+Planner SSE generate, trips HTTP, and Redis/in-memory cache backends **are** wired — see sections above.
 
-## P2–P5 verification wiring
+## P2–P6 verification wiring
 
 | Path | Role |
 |------|------|
@@ -275,8 +321,11 @@ Search, travel_engine, and the full P5 planner tools + graph loop **are** wired 
 | `tests/scripts/test_seed_destination.py` | Seed failure boundaries via `seed_destination_into` / `seed_places` |
 | `scripts/test_p2_smoke.py` | Live fail-fast proof (network + commits to the development database) |
 | `tests/search/` | Qdrant / embeddings / index tests |
-| `tests/travel_engine/`, `tests/planner/` | Purity + phase transitions + tools; full tool-loop suite lands 5.13 |
+| `tests/travel_engine/`, `tests/planner/` | Purity + tool-loop + SSE/cache tests |
+| `tests/trips/` | Trips HTTP / ownership / claim |
+| `tests/core/` | Cache backends + Redis rate limiter fail-open |
 | `scripts/test_p4_smoke.py` | Offline Fake travel_engine pipeline (+ optional live OSRM) |
-| `scripts/test_agent.py` | P5 agent smoke — lands with 5.14 (not context-✅ yet) |
+| `scripts/test_agent.py` | P5 agent smoke |
+| `scripts/test_p6_smoke.py` | P6 SSE + trips + cache proof |
 
 Next: [05 — How to change](05-how-to-change.md)

@@ -120,7 +120,29 @@ OSRM: use `src/geo/osrm.py` → `get_route()` (never call OSRM HTTP outside `geo
 3. `tool_executor_node` is the sole `execute_tool` caller; `ToolContext` from `config["configurable"]`  
 4. Compile via `get_compiled_graph()` — do not bind per-request closures onto the compiled graph  
 5. Verify: `python -m pytest tests/planner -v`  
-6. **Not live yet:** `POST /api/v1/planner/generate` (P6). Service SSE bridge is step **5.12** (not context-✅). Do not invent HTTP callers against it  
+
+---
+
+## I want to call planner generate (SSE)
+
+1. Endpoint: `POST /api/v1/planner/generate` (optional auth; `wandr_session` cookie for guest ownership)  
+2. Client: use POST `fetch()` + manual SSE parsing — native `EventSource` is GET-only  
+3. Reverse proxy: disable response buffering (`proxy_buffering off;` for nginx)  
+4. Floor: low `place_count` → 409 `destination_not_ready`  
+5. On success the stream ends with a terminal event that includes `trip_id` (persist always runs, including cache hits)  
+6. After login: `POST /api/v1/trips/{id}/claim` with matching `wandr_session`  
+7. Empty `REDIS_URL` → in-memory rate limit + planner cache (not shared across workers); set `REDIS_URL` for multi-worker  
+
+**Not live yet:** P7 trip edit/replan HTTP — do not invent those routes.
+
+---
+
+## I want to work on trips HTTP
+
+1. Router → Service → Repository only (`src/trips/`)  
+2. Ownership: guest session or owner for GET; DELETE requires auth + ownership  
+3. Public GeoJSON: `GET /api/v1/trips/{id}/geojson`  
+4. Persist path from planner: `TripService.save_from_state` (UoW) — trips service must not import `PlannerService`  
 
 ---
 
@@ -139,15 +161,14 @@ python scripts/index_places.py --destination "Darjeeling" --limit 0    # Qdrant 
 python -m pytest tests/ -v
 python scripts/test_p2_smoke.py   # network + commits seed data to the development DB
 python scripts/test_p4_smoke.py   # offline Fake travel_engine pipeline
-# After 5.14 context-✅: python scripts/test_agent.py
+python scripts/test_agent.py      # P5 agent smoke (needs LLM_*)
+python scripts/test_p6_smoke.py   # P6 SSE + trips + cache
 uvicorn src.main:app --reload
 ```
 
-Focused packages: `python -m pytest tests/geo tests/destinations tests/places tests/scripts tests/search tests/travel_engine tests/planner -v`.
+Focused packages: `python -m pytest tests/geo tests/destinations tests/places tests/scripts tests/search tests/travel_engine tests/planner tests/trips tests/core -v`.
 
 DB URL uses port **5433** locally — see `docs/context.md`.
-
-**Not a live endpoint:** `/api/v1/planner/generate` — wait for P6 registration in `main.py`.
 
 ---
 

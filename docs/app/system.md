@@ -41,12 +41,12 @@ Domain Services          ← business logic, orchestration
 | Path | Role |
 |------|------|
 | `src/config.py` | Single source of truth for env vars (`get_settings()`) |
-| `src/core/` | Cross-cutting infra: DB, security, middleware, observability, LLM |
+| `src/core/` | Cross-cutting infra: DB, security, middleware, cache backends, observability, LLM |
 | `src/auth/` | JWT auth, user management |
 | `src/destinations/` | Destination catalog + readiness scoring |
 | `src/places/` | POI storage and enrichment |
-| `src/trips/` | Trip models (+ edit events); HTTP CRUD later |
-| `src/planner/` | Tools + graph loop real (P5.1–5.11); service SSE bridge 5.12; HTTP generate P6 |
+| `src/trips/` | Trip models + HTTP CRUD / GeoJSON / claim (real, P6); edit/replan HTTP later (P7) |
+| `src/planner/` | Tools + graph + `PlannerService` + SSE `/generate` + MVP cache (real through P6) |
 | `src/travel_engine/` | Pure routing/scheduling/validation algorithms (real, P4) |
 | `src/geo/` | External geo service gateways |
 | `src/search/` | Vector search and embeddings (real, P3) |
@@ -201,7 +201,7 @@ python scripts/test_db_conn.py
 | 0.10 | Done | FastAPI app factory, lifespan, `/api/v1/health`, global exception handlers |
 | 1.1 | Done | `Base`, `UUIDMixin`, `TimestampMixin`, `SoftDeleteMixin` |
 | 1.2 | Done | Async engine pool, `get_db()`, `scripts/test_db_conn.py` |
-| 1.3+ | Done | Alembic, models, auth, geo, search, travel_engine, planner graph (through P5.11) — see `docs/context.md` |
+| 1.3+ | Done | Alembic, models, auth, geo, search, travel_engine, planner graph/SSE, trips HTTP, Redis/in-memory cache (through P6.5) — see `docs/context.md` |
 
 ## P0 Complete — Verification
 

@@ -262,9 +262,9 @@ Connection verification: `python scripts/test_db_conn.py` (requires `docker comp
 | Pattern | Location | Status |
 |---------|----------|--------|
 | **Generic Repository** | `BaseRepository[M, ID]` | Shipped (1.5) |
-| **Cache-Aside** | Destinations, planner cache | Destinations shipped; planner cache later |
-| **Protocol / DI** | `travel_engine` routing injection | Shipped (P4) |
-| **Strategy** | `RoutingProvider` | Shipped (P4) |
+| **Cache-Aside** | Destinations, planner cache (`CacheBackend`) | Shipped (destinations + P6.4 planner MVP cache) |
+| **Protocol / DI** | `travel_engine` routing injection; `CacheBackend` | Shipped (P4 / P6.4) |
+| **Strategy** | `RoutingProvider`; Redis vs InMemory rate limiter / cache | Shipped (P4 / P6.4) |
 | **Tool Registry** | `planner/tools/registry.py` | Shipped (P5) |
 | **Phase-Gated Tool Loop** | `agent` ↔ `tool_executor` | Shipped (P5.9–5.11) |
 | **Bounded ReAct** | `tool_loop_count` ceiling | Shipped (P5) |
@@ -272,6 +272,7 @@ Connection verification: `python scripts/test_db_conn.py` (requires `docker comp
 | **State Machine** | `TravelState` through LangGraph | Shipped (P5.6+) |
 | **Builder** | `build_planner_graph` / `get_compiled_graph` | Shipped (P5.11) |
 | **Chain of Responsibility** | Middleware stack, validator rules | Shipped (0.10+, P4) |
+| **SSE + Unit of Work** | `planner/router` → persist via `trips/service.save_from_state` | Shipped (P6.2–6.3) |
 
 ## Resilience Contract (summary)
 

@@ -17,10 +17,10 @@ Middleware (outer → inner as registered)
   RateLimitMiddleware        ← per-IP limits (fail-open)
   │
   ▼
-Router  (e.g. auth / destinations / places routers, /api/v1/health)
-  │  returns ApiResponse[T] or PaginatedResponse[T]
+Router  (e.g. auth / destinations / places / planner / trips routers, /api/v1/health)
+  │  returns ApiResponse[T] or PaginatedResponse[T] (planner generate is SSE)
   ▼
-Service (e.g. AuthService)
+Service (e.g. AuthService, PlannerService, TripService)
   │  business logic, orchestration, external HTTP (OAuth)
   ▼
 Repository (e.g. UserRepository → BaseRepository)
@@ -51,6 +51,8 @@ Postgres / PostGIS
 | Pagination | `src/core/pagination.py` | Shared page params / responses |
 | JWT / deps | `src/core/security/*` | Tokens + `require_auth` / `optional_auth` |
 | DB | `src/core/database/*` | Engine, session, mixins, `BaseRepository` |
+| Cache | `src/core/cache/backends.py` | `CacheBackend`; Redis or in-memory via `REDIS_URL` |
+| Rate limit | `src/core/middleware/rate_limit.py` | Path table; Redis/InMemory backends; fail-open |
 
 ---
 
@@ -81,7 +83,7 @@ External map providers are **unstable and rate-limited**. All Nominatim / Overpa
 - LLM may help with **narrative / language**.  
 - LLM must **not** invent place IDs, coordinates, stop order, or clock times — those come from DB, geo, `travel_engine`, and planner tools.
 
-Today: LLM client is real; **`travel_engine` is real**; **planner tools + graph loop (5.1–5.11) are real**. PlannerService SSE bridge (5.12) and HTTP generate (P6) are not context-✅ / not registered.
+Today: LLM client is real; **`travel_engine` is real**; **planner tools + graph + SSE generate are real**; trips HTTP is real. Still not built: P7 edit/replan HTTP, evaluation HTTP.
 
 ---
 
@@ -91,7 +93,8 @@ Today: LLM client is real; **`travel_engine` is real**; **planner tools + graph 
 |--------------|-------|------|
 | Ranking days, travel times, validation | `travel_engine/` (real, P4) | **No** network/DB/LLM — pure Python; routing times injected |
 | Tool side effects (search, route, persist) | `planner/tools/` + domain services (real, P5) | Yes, via gateways/services |
-| Agent orchestration | `planner/graph` agent↔tool_executor (real, P5.9–5.11) | LLM decide; executor runs tools |
+| Agent orchestration | `planner/graph` agent↔tool_executor (real) | LLM decide; executor runs tools |
+| SSE generate + persist | `planner/router` + `PlannerService` + `trips/service` (real, P6) | Yes |
 | Prose for the itinerary | `write_narrative` via `core/llm` **outside** the tool loop | Yes |
 
 ---
@@ -103,7 +106,7 @@ Today: LLM client is real; **`travel_engine` is real**; **planner tools + graph 
 1. Lifespan (logging config, DB ping, Qdrant ensure, MiniLM load, tracer flush)  
 2. Middleware registration (CORS + request logging + rate limit)  
 3. Global exception handlers → `ErrorResponse`  
-4. Router includes (`auth`, `destinations`, `places`)  
+4. Router includes (`auth`, `destinations`, `places`, `planner`, `trips`)  
 5. `GET /api/v1/health`
 
 Next: [03 — Module map](03-module-map.md)

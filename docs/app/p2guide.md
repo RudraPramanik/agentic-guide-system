@@ -52,7 +52,7 @@ User / CLI
 
 ### Shipped in P2 (real — do not treat as stubs)
 
-`src/geo/*`, `src/destinations/{repository,service,router,schemas,readiness}`, `src/places/{repository,service,router,schemas}`, P2 pytest under `tests/geo|destinations|places|scripts`, and `scripts/test_p2_smoke.py` are implemented. Truth for “is this built?” → [`docs/context.md`](../context.md). After P2, P3 (`search/*`, enrich/index), P4 (`travel_engine/*`), and P5.1–5.11 (planner tools + graph loop + evaluation persist) also shipped — do not treat those as stubs. Still not context-✅ / stubs for agents: planner `service.py` SSE bridge (5.12), planner HTTP generate (P6), trips HTTP beyond models, `auth/dependencies.py`.
+`src/geo/*`, `src/destinations/{repository,service,router,schemas,readiness}`, `src/places/{repository,service,router,schemas}`, P2 pytest under `tests/geo|destinations|places|scripts`, and `scripts/test_p2_smoke.py` are implemented. Truth for “is this built?” → [`docs/context.md`](../context.md). After P2, P3–P6 also shipped (search/enrich, travel_engine, planner graph + SSE generate, trips HTTP, Redis/in-memory cache) — do not treat those as stubs. Still stubs for agents: P7 trip edit/replan HTTP, evaluation HTTP, `auth/dependencies.py`.
 
 ### Live endpoints (P2)
 

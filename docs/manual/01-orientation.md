@@ -6,7 +6,7 @@
 
 ## What Wandr is (one paragraph)
 
-Wandr is a **FastAPI modular monolith** that generates multi-day travel itineraries. Structure (places, routes, times) comes from **code**; narrative prose comes from an **LLM** outside the tool loop. Today (through **P5.11**) you have: app scaffold, auth, database models, geo gateways, destination/place HTTP APIs with readiness, seed + enrich + index CLIs, Qdrant search, pure `travel_engine`, CORS, and the phase-gated LangGraph planner (tools + agent↔executor loop + narrative/eval bookends + compiled graph). Next product work is **P5.12** (PlannerService SSE bridge), then 5.13–5.14 (tool-loop tests + agent smoke), then **P6** HTTP generate.
+Wandr is a **FastAPI modular monolith** that generates multi-day travel itineraries. Structure (places, routes, times) comes from **code**; narrative prose comes from an **LLM** outside the tool loop. Today (through **P6.5**) you have: app scaffold, auth, database models, geo gateways, destination/place HTTP APIs with readiness, seed + enrich + index CLIs, Qdrant search, pure `travel_engine` (incl. polylines), CORS, the phase-gated LangGraph planner, SSE `POST /api/v1/planner/generate`, trips HTTP CRUD/GeoJSON/claim, and Redis/in-memory cache + rate-limit backends. Next product work is **P7.1** (trip edit/replan).
 
 ---
 
@@ -56,10 +56,10 @@ Wandr is a **FastAPI modular monolith** that generates multi-day travel itinerar
 
 ## Local mental model
 
-1. **HTTP** hits FastAPI routers in domain packages (`src/auth/router.py`, `src/destinations/router.py`, `src/places/router.py`).  
+1. **HTTP** hits FastAPI routers in domain packages (`src/auth/router.py`, `src/destinations/router.py`, `src/places/router.py`, `src/planner/router.py`, `src/trips/router.py`).  
 2. Routers call **services**; services call **repositories** (never skip layers).  
 3. **External geo** (Nominatim, Overpass, OSRM) only inside `src/geo/`.  
 4. **LLM** only inside `src/core/llm/client.py`; **search** only via `src/search/`; **scheduling math** only via `src/travel_engine/` (pure).  
-5. If a file is listed under **Stubs** in `context.md`, it has **no public API** — don’t import it expecting logic. PlannerService SSE bridge (5.12) and planner HTTP generate (P6) are still not context-✅ / not built.
+5. If a file is listed under **Stubs** in `context.md`, it has **no public API** — don’t import it expecting logic. Still stub: P7 edit/replan HTTP, evaluation HTTP, `auth/dependencies.py`.
 
 Next: [02 — Layers & AI boundary](02-layers.md)
