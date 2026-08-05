@@ -125,10 +125,12 @@ def create_app() -> FastAPI:
     from src.auth.router import router as auth_router
     from src.destinations.router import router as destinations_router
     from src.places.router import router as places_router
+    from src.planner.router import router as planner_router
 
     app.include_router(auth_router)
     app.include_router(destinations_router)
     app.include_router(places_router)
+    app.include_router(planner_router)
 
     return app
 

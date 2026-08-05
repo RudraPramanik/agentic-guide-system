@@ -50,13 +50,15 @@ The system SHALL define append-only `TripEvaluation` with all blueprint fields i
 - **THEN** all fields from step 1.4c validation set are present including `tool_loop_count`, `used_geo_fallback`, `validation_warnings`
 
 ### Requirement: No ORM relationships in step 1.4 models
+Models from step 1.4 originally MUST NOT define `relationship()` until both sides exist. As of step **6.1**, `Trip`, `TripPlace`, and `Place` MAY define SQLAlchemy `relationship()` mappings solely to support eager loading in `TripRepository.get_with_places` (and later GeoJSON/schema mapping). Relationships MUST NOT introduce new columns or require an Alembic migration. Other domain models MAY remain relationship-free until a later step needs them.
 
-Models from step 1.4 SHALL NOT define `relationship()` until both sides exist in a later step.
+#### Scenario: Trip eager-load relationships exist for 6.1
+- **WHEN** `Trip` / `TripPlace` models are inspected after step 6.1
+- **THEN** relationships exist so `get_with_places` can selectinload places and Place without N+1 queries
 
-#### Scenario: Model modules import cleanly
-
-- **WHEN** all five model modules are imported
-- **THEN** no `relationship()` calls exist in those files
+#### Scenario: No schema migration for relationships
+- **WHEN** relationships are added for Trip/TripPlace/Place
+- **THEN** no new table columns are introduced and no Alembic revision is required for this change
 
 ### Requirement: Trips domain includes TripEditEvent audit model
 

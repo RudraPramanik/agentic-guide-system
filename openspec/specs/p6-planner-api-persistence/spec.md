@@ -33,13 +33,13 @@ The prompt MUST include:
 ### Requirement: Trip persistence with Unit of Work and guest ownership
 The system MUST implement `TripRepository` and `TripService.save_from_state(state, user_id, session_id) → Trip | None` such that Trip + TripPlace rows are written in **one transaction**. Partial TripPlace failure MUST roll back the entire save (no Trip without its places). Field mapping MUST follow the v2 locked mapping (including `TripPlace.polyline` from `leg_polyline`). Empty clarification/abort with no usable schedule MUST NOT create a Trip row (`None`).
 
-Unauthenticated access to a trip MUST require the `wandr_session` cookie to **exactly match** `Trip.session_id`; mismatch or missing cookie MUST return **403** (same class of failure as an authenticated user accessing another user’s trip). Guests with matching session MAY access trips where `user_id IS NULL` prior to claim.
+Unauthenticated access to a trip MUST require the `wandr_session` cookie to **exactly match** `Trip.session_id`; mismatch or missing cookie MUST return **403** (same class of failure as an authenticated user accessing another user’s trip). Guests with matching session MAY access trips where `user_id IS NULL` prior to claim. Step **6.1** MUST deliver the service/repository/schemas/exceptions surface (`save_from_state`, `assert_can_access`, `claim_for_user`) unit-testable with a DB session and MUST NOT register trips HTTP routes.
 
-The system MUST implement `TripService.claim_for_user(trip, user_id, session_id)` and `POST /api/v1/trips/{id}/claim` (`require_auth`): succeed only when `trip.user_id IS NULL` and session matches; otherwise **403** (session) or **409** (`TripAlreadyClaimedError`).
+The system MUST implement `TripService.claim_for_user(trip, user_id, session_id)`. `POST /api/v1/trips/{id}/claim` (`require_auth`) MUST be registered in step **6.3** (not 6.1): succeed only when `trip.user_id IS NULL` and session matches; otherwise **403** (session) or **409** (`TripAlreadyClaimedError`).
 
 #### Scenario: Save then reload includes all stops
 - **WHEN** `save_from_state` is called with a complete itinerary state
-- **THEN** a `trip_id` is returned and `get_with_places` returns every persisted stop
+- **THEN** a Trip is returned and `get_with_places` returns every persisted stop
 
 #### Scenario: Guest session mismatch is forbidden
 - **WHEN** an unauthenticated client requests a trip whose `session_id` does not match `wandr_session`
@@ -49,13 +49,17 @@ The system MUST implement `TripService.claim_for_user(trip, user_id, session_id)
 - **WHEN** a TripPlace insert fails mid-save
 - **THEN** no Trip row remains committed for that attempt
 
-#### Scenario: Claim after login
-- **WHEN** an authenticated user POSTs `/trips/{id}/claim` with matching `wandr_session` on an unclaimed trip
-- **THEN** the API returns 200 and `trip.user_id` equals that user
+#### Scenario: Claim after login (service)
+- **WHEN** `claim_for_user` is called with matching session on an unclaimed trip
+- **THEN** `trip.user_id` equals that user after commit
 
 #### Scenario: Re-claim is conflict
 - **WHEN** claim is attempted on a trip that already has `user_id` set
-- **THEN** the API returns HTTP 409
+- **THEN** `TripAlreadyClaimedError` is raised (HTTP 409 once the 6.3 route exists)
+
+#### Scenario: Step 6.1 has no trips HTTP yet
+- **WHEN** step 6.1 validation runs after trips service/repo land
+- **THEN** `TripService` exposes `save_from_state` and `claim_for_user` and trips router endpoints are still unregistered
 
 ### Requirement: Planner generate SSE HTTP endpoint with pre-graph floor
 The system MUST expose `POST /api/v1/planner/generate` accepting `PlanRequest(destination_id, raw_input, days?, base_lat?, base_lng?, accommodation_label?)` and returning `StreamingResponse` with `content-type: text/event-stream` and headers including `Cache-Control: no-cache` and `X-Accel-Buffering: no`.
@@ -67,6 +71,8 @@ The endpoint MUST use `optional_auth`. Omitted `base_lat`/`base_lng` MUST defaul
 SSE design MUST run generation as a background task; `on_event` pushes into an `asyncio.Queue`; the generator yields **non-terminal** events while the graph runs using `asyncio.wait_for(queue.get(), timeout=1.0)`; terminal events (`itinerary_done` / `error` / `clarification_needed`) MUST be buffered until the task completes; for usable `itinerary_done`, the router MUST call `save_from_state` then yield **exactly one** terminal frame enriched with `trip_id` when a Trip was saved. `request.is_disconnected()` MUST cancel the background task. Timeout/disconnect MUST close cleanly — never hang and never await-full-invoke-then-dump.
 
 `PlannerService` MUST remain free of FastAPI `Request`/`StreamingResponse` types; the router is the SSE adapter over `generate(..., on_event=...)`.
+
+Step **6.2** MUST deliver this HTTP SSE endpoint, settings keys `PLANNER_ABSOLUTE_MIN_PLACES` and `PLANNER_CACHE_TTL_SECONDS`, and a cache-lookup helper that may always miss. Real cache hit/set and Redis backends remain step **6.4**. Trips CRUD/GeoJSON/claim HTTP remain step **6.3**.
 
 #### Scenario: Stream emits while generation runs
 - **WHEN** a valid plan request is posted for a ready destination
@@ -87,6 +93,10 @@ SSE design MUST run generation as a background task; `on_event` pushes into an `
 #### Scenario: Disconnect cancels server work
 - **WHEN** the client disconnects mid-stream
 - **THEN** the background generation task is cancelled (no continued unbounded LLM spend for that request)
+
+#### Scenario: Step 6.2 registers generate without trips HTTP
+- **WHEN** step 6.2 validation runs after the planner router lands
+- **THEN** `planner/generate` is registered and trips claim/CRUD routes remain unregistered
 
 ### Requirement: Trips CRUD and GeoJSON
 The system MUST expose:

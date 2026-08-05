@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-05 · **Phase:** P6 in progress · **Next step:** P6.1 (see `docs/steps/step6.md`)
+**Last updated:** 2026-08-05 · **Phase:** P6 in progress · **Next step:** P6.3 (see `docs/steps/step6.md`)
 
 ---
 
 ## Current state (one line)
 
-P6.0 done — `route_polyline` + schedule day-dict shape with leg/day polylines; pytest 171; Next P6.1 (trips CRUD + `/planner/generate` still stubs).
+P6.2 done — `POST /planner/generate` SSE (floor 409, terminal buffer + `trip_id` save, proxy headers); Next P6.3 (trips HTTP CRUD + GeoJSON + claim).
 
 ---
 
@@ -87,13 +87,19 @@ P6.0 done — `route_polyline` + schedule day-dict shape with leg/day polylines;
 | 5.13 | ✅ Done | `tests/planner/test_tool_loop.py` — ★ cases incl. stuck/timeout/concurrent ctx (162 suite) |
 | 5.14 | ✅ Done | `scripts/test_agent.py` live smoke sections 1–8 PASS (provider via `LLM_*` env; not vendor-locked) |
 | 6.0 | ✅ Done | `route_polyline` + OptimizeResult polylines; schedule day-dict shape with `leg_polyline`/`day_polyline` |
+| 6.1 | ✅ Done | trips exceptions/schemas/repo/service — `save_from_state` UoW, ownership, `claim_for_user` |
+| 6.2 | ✅ Done | planner schemas + SSE `/generate` — floor 409, terminal buffer + save, proxy headers |
 ---
 
 ## Implemented modules (real code)
 
 | Module | Exports / notes |
 |--------|-----------------|
-| `src/config.py` | `get_settings()` — Qdrant/embeddings/enrich concurrency, OAuth, JWT, rate limits, geo, CORS origins |
+| `src/config.py` | `get_settings()` — Qdrant/embeddings/enrich concurrency, OAuth, JWT, rate limits, geo, CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `PLANNER_CACHE_TTL_SECONDS` |
+| `src/planner/schemas.py` | `PlanRequest` (destination_id, raw_input, optional days/base/accommodation_label) |
+| `src/planner/cache.py` | `maybe_get_cached_state` always-miss stub; `_replay_cached` deferred to 6.4 |
+| `src/planner/router.py` | `POST /generate` SSE — floor check, queue+task, terminal buffer → `save_from_state` + `trip_id`, proxy headers |
+| `src/destinations/exceptions.py` | + `DestinationNotReadyError` (409 `destination_not_ready`) |
 | `src/travel_engine/protocols.py` | `RouteLeg`, `RoutingProvider` (`travel_matrix` + `route_polyline`), `legs_to_lookup` — pure, no I/O |
 | `src/travel_engine/travel_rules.py` | Caps, structural durations, interest weights, `visit_duration_min` |
 | `src/travel_engine/place_selector.py` | `PlaceCandidate`, `TripPreferences`, `ScoredPlace`, `score_place`, `select_places`, `explain_selection` |
@@ -150,10 +156,14 @@ P6.0 done — `route_polyline` + schedule day-dict shape with leg/day polylines;
 | `src/search/embeddings.py` | MiniLM lifespan load; `embed_text` / `embed_batch` |
 | `src/search/places_index.py` | upsert, `search_places`, `count_indexed` |
 | `src/geo/*` | geocoder, overpass, osrm |
-| `src/trips/models.py` | Trip / TripPlace / TripEditEvent |
+| `src/trips/models.py` | Trip / TripPlace / TripEditEvent (+ `Trip.places` / `TripPlace.place` relationships for eager load) |
+| `src/trips/exceptions.py` | `TripNotFoundError`, `TripForbiddenError`, `TripAlreadyClaimedError` (409) |
+| `src/trips/schemas.py` | `TripOut` / `TripPlaceOut` (timing, polyline, joined lat/lng) |
+| `src/trips/repository.py` | `TripRepository` — list_by_user/session, `get_with_places`, flush-only place insert |
+| `src/trips/service.py` | `save_from_state` UoW, `assert_can_access`, `claim_for_user` (no PlannerService / HTTP) |
 | `src/evaluation/models.py` | TripEvaluation |
 
-**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **171** when DB up (incl. tool_loop + chat_with_tools + polyline)
+**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/`, `tests/trips/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **178+** when DB up (incl. generate SSE floor/headers + tool_loop + polyline + save_from_state/claim)
 
 **Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_p4_smoke.py`, `scripts/test_agent.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
 
@@ -163,7 +173,9 @@ P6.0 done — `route_polyline` + schedule day-dict shape with leg/day polylines;
 
 ## Stubs only (do not assume implemented)
 
-trips HTTP CRUD + planner HTTP `/planner/generate` SSE (P6.1+); evaluation HTTP still stub (generation persist via repo/service is **real**); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + **PlannerService.generate** (5.1–5.14) are **real**. Route geometry (`route_polyline`, schedule polylines) **real** (6.0). Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4; packing aligned with validator for morning/travel).
+trips HTTP CRUD + GeoJSON/claim router still stub (P6.3); planner **HTTP SSE** `/planner/generate` **real** (6.2); cache hit/set still stub until 6.4 (`maybe_get_cached_state` always misses). trips **repo/service/schemas/exceptions** **real** (6.1). evaluation HTTP still stub (generation persist via repo/service is **real**); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + **PlannerService.generate** (5.1–5.14) are **real**. Route geometry (`route_polyline`, schedule polylines) **real** (6.0). Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4; packing aligned with validator for morning/travel).
+
+**Deployment / frontend notes (P6.2):** reverse proxy MUST disable response buffering for `/api/v1/planner/generate` (nginx: `proxy_buffering off;`). Frontend must use `fetch()` + manual SSE parsing — native `EventSource` is GET-only and cannot POST.
 
 ---
 
@@ -180,6 +192,7 @@ trips HTTP CRUD + planner HTTP `/planner/generate` SSE (P6.1+); evaluation HTTP 
 | GET | `/api/v1/destinations/{id}/readiness` | None (`search_available` = live Qdrant flag) |
 | GET | `/api/v1/places?destination_id=` | None (paginated; unknown destination → 404) |
 | GET | `/api/v1/places/{id}` | None |
+| POST | `/api/v1/planner/generate` | Optional (SSE; floor 409 if place_count low; `wandr_session` cookie) |
 
 ---
 

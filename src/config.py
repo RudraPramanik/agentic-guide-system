@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     PLANNER_GENERATION_TIMEOUT_SECONDS: int = 45
     PLANNER_MIN_READINESS_SCORE: float = 0.3
     PLANNER_AGENT_PHASE_STUCK_LIMIT: int = 3
+    # Absolute floor before graph/cache (HTTP 409); soft readiness stays in-graph
+    PLANNER_ABSOLUTE_MIN_PLACES: int = 10
+    # Planner result cache TTL — used from P6.4; declared now
+    PLANNER_CACHE_TTL_SECONDS: int = 3600
 
     # Observability
     LANGFUSE_PUBLIC_KEY: str = ""

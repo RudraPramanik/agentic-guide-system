@@ -1,7 +1,7 @@
 ﻿"""PlannerService — generation runner with emit bridge + wait_for ceiling (P5.12).
 
-HTTP StreamingResponse / SSE queue is P6. Happy-path may double-write TripEvaluation
-(graph node + service); accepted for P5 append-only analytics.
+HTTP SSE adapter lives in planner/router.py (P6). Happy-path may double-write
+TripEvaluation (graph node + service); accepted for P5 append-only analytics.
 """
 
 from __future__ import annotations

@@ -37,7 +37,7 @@ After the winning stop order is chosen (including after any drop-retry), `optimi
 ### Requirement: Schedule state persists polyline fields into TripPlace
 Planner tools that materialize day schedules from `OptimizeResult` MUST emit `TravelState.schedule` as a list of **day dicts** (not bare stop lists). Each day dict MUST include `day`, `stops` (flat stop dicts with at least `place_id`, timing fields, and `leg_polyline`), `total_travel_min`, and `day_polyline`. `leg_polyline` on stop `i` MUST come from `OptimizeResult.leg_polylines[i]`; `day_polyline` MUST come from `OptimizeResult.day_polyline`.
 
-`TripService.save_from_state` MUST map `stop["leg_polyline"]` onto `TripPlace.polyline` (implemented in step 6.1). GeoJSON builders MUST emit LineString features from persisted polylines when present, and Point-only features for a day when all polylines are None (implemented in step 6.3). Step 6.0 MUST leave schedule carrying these fields so 6.1/6.3 do not re-call OSRM.
+`TripService.save_from_state` (step **6.1**) MUST map `stop["leg_polyline"]` onto `TripPlace.polyline`. Aggregate `day_polyline` is NOT persisted as its own DB column in 6.1 (no invented column). GeoJSON builders MUST emit LineString features from persisted per-stop polylines when present, and Point-only features for a day when all polylines are None (implemented in step 6.3). Step 6.0 MUST leave schedule carrying these fields so 6.1/6.3 do not re-call OSRM.
 
 #### Scenario: build_schedule day dict includes polylines
 - **WHEN** `build_schedule` runs after a successful `build_route` whose optimize results include polylines

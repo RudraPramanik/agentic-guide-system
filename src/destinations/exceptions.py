@@ -1,6 +1,6 @@
 """Destination domain exceptions."""
 
-from src.core.exceptions import NotFoundError
+from src.core.exceptions import NotFoundError, WandrError
 
 
 class DestinationNotFoundError(NotFoundError):
@@ -17,4 +17,16 @@ class DestinationNotFoundError(NotFoundError):
         super().__init__(
             message="Destination not found",
             details=details or None,
+        )
+
+
+class DestinationNotReadyError(WandrError):
+    """place_count below PLANNER_ABSOLUTE_MIN_PLACES — refuse generation (409)."""
+
+    def __init__(self, place_count: int) -> None:
+        super().__init__(
+            code="destination_not_ready",
+            message="Destination does not have enough places for planning",
+            status_code=409,
+            details={"place_count": place_count},
         )

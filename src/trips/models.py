@@ -1,14 +1,20 @@
 ﻿"""Trips domain SQLAlchemy models."""
 
+from __future__ import annotations
+
 import enum
 import uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy import ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PgUUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.database.base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
+
+if TYPE_CHECKING:
+    from src.places.models import Place
 
 
 class TripStatus(str, enum.Enum):
@@ -42,6 +48,13 @@ class Trip(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
         nullable=False,
     )
 
+    places: Mapped[list[TripPlace]] = relationship(
+        "TripPlace",
+        back_populates="trip",
+        order_by="TripPlace.day_number, TripPlace.order_in_day",
+        cascade="all, delete-orphan",
+    )
+
     __table_args__ = (
         Index("ix_trips_user_created", "user_id", "created_at"),
     )
@@ -72,6 +85,9 @@ class TripPlace(Base, UUIDMixin, TimestampMixin):
     suggested_start_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
     arrival_note: Mapped[str | None] = mapped_column(String(512), nullable=True)
     polyline: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    trip: Mapped[Trip] = relationship("Trip", back_populates="places")
+    place: Mapped[Place] = relationship("Place")
 
     __table_args__ = (
         Index("ix_trip_places_trip_day", "trip_id", "day_number"),
