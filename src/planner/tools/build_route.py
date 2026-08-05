@@ -87,6 +87,8 @@ async def run(
                 "total_travel_min": result.total_travel_min,
                 "dropped_stops": dropped,
                 "still_over_budget": result.still_over_budget,
+                "leg_polylines": list(result.leg_polylines),
+                "day_polyline": result.day_polyline,
             }
         )
 

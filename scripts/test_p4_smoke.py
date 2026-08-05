@@ -77,6 +77,11 @@ class _FakeRoutingProvider:
                 )
         return legs
 
+    async def route_polyline(
+        self, waypoints: list[tuple[float, float]]
+    ) -> str | None:
+        return f"poly_{len(waypoints)}pts"
+
 
 def _ok(msg: str) -> None:
     print(f"  [OK] {msg}")

@@ -26,6 +26,18 @@ class RoutingProvider(Protocol):
         """
         ...
 
+    async def route_polyline(
+        self, waypoints: list[tuple[float, float]]
+    ) -> str | None:
+        """
+        Encoded polyline for a route through waypoints IN ORDER (2+ points).
+
+        Returns None if unavailable (haversine fallback / missing geometry / soft
+        failure). Never raises. Used AFTER route order is chosen — not during
+        travel_matrix permutation search.
+        """
+        ...
+
 
 def legs_to_lookup(legs: list[RouteLeg]) -> dict[tuple[UUID, UUID], RouteLeg]:
     """Index legs by (from_place_id, to_place_id). Last write wins on duplicates."""

@@ -51,3 +51,18 @@ class OsrmRoutingProvider:
             if i != j
         ]
         return list(await asyncio.gather(*tasks))
+
+    async def route_polyline(
+        self, waypoints: list[tuple[float, float]]
+    ) -> str | None:
+        """Thin wrapper over geo.osrm.get_route — fail-soft, never raises."""
+        try:
+            result = await get_route(waypoints)
+        except Exception:
+            return None
+        if result.fallback_used:
+            return None
+        poly = result.encoded_polyline
+        if not poly:
+            return None
+        return poly

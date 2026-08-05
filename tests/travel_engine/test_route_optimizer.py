@@ -40,12 +40,16 @@ def _scored(
 
 @pytest.mark.asyncio
 async def test_empty_day_short_circuits():
-    result = await optimize_route([], 0.0, 0.0, FakeRoutingProvider())
+    fake = FakeRoutingProvider()
+    result = await optimize_route([], 0.0, 0.0, fake)
     assert result.ordered == []
     assert result.legs == []
     assert result.total_travel_min == 0
     assert result.dropped_stops == []
     assert result.still_over_budget is False
+    assert result.leg_polylines == []
+    assert result.day_polyline is None
+    assert fake.polyline_call_count == 0
 
 
 @pytest.mark.asyncio
@@ -65,6 +69,22 @@ async def test_fake_matrix_complete_ordered_day():
     assert fake.call_count == 1
     assert result.dropped_stops == []
     assert result.still_over_budget is False
+    assert len(result.leg_polylines) == 3
+    assert all(p is not None for p in result.leg_polylines)
+    assert result.day_polyline == "poly_4pts"
+    # N leg calls + 1 day = 4; not proportional to permutations
+    assert fake.polyline_call_count == 4
+
+
+@pytest.mark.asyncio
+async def test_polyline_all_none_soft_fail():
+    places = [_scored(n) for n in ("A", "B", "C")]
+    fake = FakeRoutingProvider(polyline_for=lambda _w: None)
+    result = await optimize_route(places, 0.0, 0.0, fake)
+    assert len(result.ordered) == 3
+    assert result.leg_polylines == [None, None, None]
+    assert result.day_polyline is None
+    assert fake.polyline_call_count == 4
 
 
 @pytest.mark.asyncio
@@ -111,6 +131,9 @@ async def test_over_budget_records_dropped_stops():
     assert result.still_over_budget is True
     # matrix once per attempt: initial + 3 drops = 4
     assert fake.call_count == 4
+    # geometry only for final single stop: 1 leg + 1 day
+    assert fake.polyline_call_count == 2
+    assert len(result.leg_polylines) == 1
 
 
 @pytest.mark.asyncio

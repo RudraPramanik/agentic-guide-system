@@ -146,7 +146,14 @@ def _build_itinerary(
             }
             if isinstance(day, dict):
                 # Preserve structure fields; never rewrite stop order/times/coords
-                for key in ("stops", "places", "total_distance_km", "total_travel_min", "polyline"):
+                for key in (
+                    "stops",
+                    "places",
+                    "total_distance_km",
+                    "total_travel_min",
+                    "polyline",
+                    "day_polyline",
+                ):
                     if key in day:
                         entry[key] = day[key]
             days_out.append(entry)

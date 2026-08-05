@@ -22,11 +22,14 @@ class FakeRoutingProvider:
         *,
         default_duration_min: int = 30,
         default_distance_km: float = 1.0,
+        polyline_for: Callable[[list[tuple[float, float]]], str | None] | None = None,
     ) -> None:
         self._duration_for = duration_for
         self._default_duration_min = default_duration_min
         self._default_distance_km = default_distance_km
+        self._polyline_for = polyline_for
         self.call_count = 0
+        self.polyline_call_count = 0
 
     async def travel_matrix(
         self, waypoints: list[tuple[UUID, float, float]]
@@ -51,3 +54,11 @@ class FakeRoutingProvider:
                     )
                 )
         return legs
+
+    async def route_polyline(
+        self, waypoints: list[tuple[float, float]]
+    ) -> str | None:
+        self.polyline_call_count += 1
+        if self._polyline_for is not None:
+            return self._polyline_for(waypoints)
+        return f"poly_{len(waypoints)}pts"

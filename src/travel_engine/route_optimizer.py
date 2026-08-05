@@ -37,6 +37,8 @@ class OptimizeResult(BaseModel):
     total_travel_min: int = 0
     dropped_stops: list[DroppedStop] = Field(default_factory=list)
     still_over_budget: bool = False
+    leg_polylines: list[str | None] = Field(default_factory=list)
+    day_polyline: str | None = None
 
 
 def _leg_duration(
@@ -123,6 +125,28 @@ def _pick_lowest_scored(remaining: list[ScoredPlace]) -> ScoredPlace:
     return min(remaining, key=lambda s: (s.score, s.place.name, str(s.place.id)))
 
 
+async def _populate_polylines(
+    ordered: list[ScoredPlace],
+    base_lat: float,
+    base_lng: float,
+    routing: RoutingProvider,
+) -> tuple[list[str | None], str | None]:
+    """Geometry for the final ordered day only — at most len(ordered)+1 calls."""
+    if not ordered:
+        return [], None
+    waypoints_final: list[tuple[float, float]] = [
+        (base_lat, base_lng),
+        *[(sp.place.lat, sp.place.lng) for sp in ordered],
+    ]
+    leg_polylines: list[str | None] = []
+    for i in range(len(ordered)):
+        leg_polylines.append(
+            await routing.route_polyline(waypoints_final[i : i + 2])
+        )
+    day_polyline = await routing.route_polyline(waypoints_final)
+    return leg_polylines, day_polyline
+
+
 async def optimize_route(
     day_places: list[ScoredPlace],
     base_lat: float,
@@ -138,6 +162,9 @@ async def optimize_route(
 
     ``legs`` is the full pairwise matrix from the final attempt (not only the
     consecutive chain) so schedule morning-only reorder can look up any hop.
+
+    After the winning order is final, populates leg_polylines / day_polyline
+    via route_polyline (not during permutation search or discarded retries).
     """
     if not day_places:
         return OptimizeResult()
@@ -160,21 +187,31 @@ async def optimize_route(
         under_budget = total <= MAX_DAILY_TRAVEL_MIN
 
         if under_budget or len(remaining) <= 1:
+            leg_polylines, day_polyline = await _populate_polylines(
+                ordered, base_lat, base_lng, routing
+            )
             return OptimizeResult(
                 ordered=ordered,
                 legs=legs,
                 total_travel_min=total if ordered else 0,
                 dropped_stops=dropped,
                 still_over_budget=bool(ordered) and not under_budget,
+                leg_polylines=leg_polylines,
+                day_polyline=day_polyline,
             )
 
         if drops_done >= MAX_ROUTE_DROP_ATTEMPTS:
+            leg_polylines, day_polyline = await _populate_polylines(
+                ordered, base_lat, base_lng, routing
+            )
             return OptimizeResult(
                 ordered=ordered,
                 legs=legs,
                 total_travel_min=total if ordered else 0,
                 dropped_stops=dropped,
                 still_over_budget=True,
+                leg_polylines=leg_polylines,
+                day_polyline=day_polyline,
             )
 
         victim = _pick_lowest_scored(remaining)

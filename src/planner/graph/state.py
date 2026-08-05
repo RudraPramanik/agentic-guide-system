@@ -7,6 +7,23 @@ FORBIDDEN on TravelState: db, routing, ToolContext, AsyncSession, httpx clients.
 Thread those via config[\"configurable\"][\"tool_context\"] only.
 `max_replan_attempts` default comes from get_settings().PLANNER_MAX_REPLAN_ATTEMPTS
 at graph invoke time.
+
+`schedule` runtime contract (P6.0 — list of day dicts, not list[list[stop]]):
+  {
+    "day": int,
+    "stops": [
+      {
+        "place_id": str, "name": str, "lat": float, "lng": float, "category": str,
+        "order": int, "travel_time_min": int, "visit_duration_min": int,
+        "suggested_start_time": str, "arrival_note": str | None,
+        "leg_polyline": str | None,
+      },
+      ...
+    ],
+    "total_distance_km": float,
+    "total_travel_min": int,
+    "day_polyline": str | None,
+  }
 """
 
 from __future__ import annotations
@@ -50,7 +67,7 @@ class TravelState(TypedDict, total=False):
     used_osrm_fallback: bool
     readiness_score: float | None
 
-    # Working data
+    # Working data — schedule: list of day dicts (see module docstring)
     candidate_pois: list[Any]
     ranked_pois: list[Any]
     route: list[Any]

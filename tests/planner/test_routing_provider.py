@@ -123,3 +123,40 @@ async def test_matrix_respects_concurrency_and_beats_serial():
     assert peak <= concurrency
     # Allow small scheduling overhead; still well under serial cost.
     assert elapsed < serial_floor * 0.7
+
+
+@pytest.mark.asyncio
+async def test_route_polyline_returns_geometry():
+    provider = OsrmRoutingProvider()
+    mock_result = RouteResult(
+        distance_km=1.0,
+        duration_min=10.0,
+        encoded_polyline="encoded_abc",
+        fallback_used=False,
+    )
+    with patch(
+        "src.planner.routing_provider.get_route",
+        new_callable=AsyncMock,
+        return_value=mock_result,
+    ):
+        assert await provider.route_polyline([(0.0, 0.0), (0.1, 0.1)]) == "encoded_abc"
+
+
+@pytest.mark.asyncio
+async def test_route_polyline_fallback_and_errors_are_none():
+    provider = OsrmRoutingProvider()
+    with patch(
+        "src.planner.routing_provider.get_route",
+        new_callable=AsyncMock,
+        return_value=RouteResult(
+            distance_km=1.0, duration_min=10.0, fallback_used=True
+        ),
+    ):
+        assert await provider.route_polyline([(0.0, 0.0), (0.1, 0.1)]) is None
+
+    with patch(
+        "src.planner.routing_provider.get_route",
+        new_callable=AsyncMock,
+        side_effect=ValueError("need 2"),
+    ):
+        assert await provider.route_polyline([(0.0, 0.0)]) is None
