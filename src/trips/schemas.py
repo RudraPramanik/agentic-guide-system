@@ -7,6 +7,7 @@ from datetime import datetime
 
 from geoalchemy2.shape import to_shape
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.orm import attributes
 
 from src.trips.models import Trip, TripPlace, TripStatus
 
@@ -70,10 +71,15 @@ class TripOut(BaseModel):
 
     @classmethod
     def from_trip(cls, trip: Trip) -> TripOut:
-        places = [
-            TripPlaceOut.from_trip_place(tp)
-            for tp in (getattr(trip, "places", None) or [])
-        ]
+        # Avoid async MissingGreenlet when places were not eagerly loaded (e.g. list).
+        state = attributes.instance_state(trip)
+        if "places" in state.unloaded:
+            place_outs: list[TripPlaceOut] = []
+        else:
+            place_outs = [
+                TripPlaceOut.from_trip_place(tp)
+                for tp in (getattr(trip, "places", None) or [])
+            ]
         return cls(
             id=trip.id,
             user_id=trip.user_id,
@@ -84,5 +90,5 @@ class TripOut(BaseModel):
             status=trip.status,
             created_at=trip.created_at,
             updated_at=trip.updated_at,
-            places=places,
+            places=place_outs,
         )

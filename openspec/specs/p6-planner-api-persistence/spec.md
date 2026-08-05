@@ -33,9 +33,9 @@ The prompt MUST include:
 ### Requirement: Trip persistence with Unit of Work and guest ownership
 The system MUST implement `TripRepository` and `TripService.save_from_state(state, user_id, session_id) → Trip | None` such that Trip + TripPlace rows are written in **one transaction**. Partial TripPlace failure MUST roll back the entire save (no Trip without its places). Field mapping MUST follow the v2 locked mapping (including `TripPlace.polyline` from `leg_polyline`). Empty clarification/abort with no usable schedule MUST NOT create a Trip row (`None`).
 
-Unauthenticated access to a trip MUST require the `wandr_session` cookie to **exactly match** `Trip.session_id`; mismatch or missing cookie MUST return **403** (same class of failure as an authenticated user accessing another user’s trip). Guests with matching session MAY access trips where `user_id IS NULL` prior to claim. Step **6.1** MUST deliver the service/repository/schemas/exceptions surface (`save_from_state`, `assert_can_access`, `claim_for_user`) unit-testable with a DB session and MUST NOT register trips HTTP routes.
+Unauthenticated access to a trip MUST require the `wandr_session` cookie to **exactly match** `Trip.session_id`; mismatch or missing cookie MUST return **403** (same class of failure as an authenticated user accessing another user’s trip). Guests with matching session MAY access trips where `user_id IS NULL` prior to claim. Step **6.1** delivered the service/repository/schemas/exceptions surface (`save_from_state`, `assert_can_access`, `claim_for_user`) unit-testable with a DB session.
 
-The system MUST implement `TripService.claim_for_user(trip, user_id, session_id)`. `POST /api/v1/trips/{id}/claim` (`require_auth`) MUST be registered in step **6.3** (not 6.1): succeed only when `trip.user_id IS NULL` and session matches; otherwise **403** (session) or **409** (`TripAlreadyClaimedError`).
+The system MUST implement `TripService.claim_for_user(trip, user_id, session_id)`. `POST /api/v1/trips/{id}/claim` (`require_auth`) MUST be registered in step **6.3**: succeed only when `trip.user_id IS NULL` and session matches; otherwise **403** (session) or **409** (`TripAlreadyClaimedError`). Step **6.3** MUST also register trips list/get/geojson/delete HTTP per the locked auth matrix.
 
 #### Scenario: Save then reload includes all stops
 - **WHEN** `save_from_state` is called with a complete itinerary state
@@ -55,11 +55,11 @@ The system MUST implement `TripService.claim_for_user(trip, user_id, session_id)
 
 #### Scenario: Re-claim is conflict
 - **WHEN** claim is attempted on a trip that already has `user_id` set
-- **THEN** `TripAlreadyClaimedError` is raised (HTTP 409 once the 6.3 route exists)
+- **THEN** `TripAlreadyClaimedError` is raised (HTTP 409 via the 6.3 claim route)
 
-#### Scenario: Step 6.1 has no trips HTTP yet
-- **WHEN** step 6.1 validation runs after trips service/repo land
-- **THEN** `TripService` exposes `save_from_state` and `claim_for_user` and trips router endpoints are still unregistered
+#### Scenario: Step 6.3 registers trips HTTP including claim
+- **WHEN** step 6.3 validation runs after the trips router lands
+- **THEN** trips CRUD, geojson, and claim routes are registered on the app
 
 ### Requirement: Planner generate SSE HTTP endpoint with pre-graph floor
 The system MUST expose `POST /api/v1/planner/generate` accepting `PlanRequest(destination_id, raw_input, days?, base_lat?, base_lng?, accommodation_label?)` and returning `StreamingResponse` with `content-type: text/event-stream` and headers including `Cache-Control: no-cache` and `X-Accel-Buffering: no`.
@@ -72,7 +72,7 @@ SSE design MUST run generation as a background task; `on_event` pushes into an `
 
 `PlannerService` MUST remain free of FastAPI `Request`/`StreamingResponse` types; the router is the SSE adapter over `generate(..., on_event=...)`.
 
-Step **6.2** MUST deliver this HTTP SSE endpoint, settings keys `PLANNER_ABSOLUTE_MIN_PLACES` and `PLANNER_CACHE_TTL_SECONDS`, and a cache-lookup helper that may always miss. Real cache hit/set and Redis backends remain step **6.4**. Trips CRUD/GeoJSON/claim HTTP remain step **6.3**.
+Step **6.2** delivered this HTTP SSE endpoint, settings keys `PLANNER_ABSOLUTE_MIN_PLACES` and `PLANNER_CACHE_TTL_SECONDS`, and a cache-lookup helper that may always miss. Real cache hit/set and Redis backends remain step **6.4**. Trips CRUD/GeoJSON/claim HTTP are delivered in step **6.3**.
 
 #### Scenario: Stream emits while generation runs
 - **WHEN** a valid plan request is posted for a ready destination
@@ -94,19 +94,19 @@ Step **6.2** MUST deliver this HTTP SSE endpoint, settings keys `PLANNER_ABSOLUT
 - **WHEN** the client disconnects mid-stream
 - **THEN** the background generation task is cancelled (no continued unbounded LLM spend for that request)
 
-#### Scenario: Step 6.2 registers generate without trips HTTP
-- **WHEN** step 6.2 validation runs after the planner router lands
-- **THEN** `planner/generate` is registered and trips claim/CRUD routes remain unregistered
+#### Scenario: Step 6.2 registered generate before trips HTTP
+- **WHEN** step 6.2 validation ran after the planner router landed (historical gate)
+- **THEN** `planner/generate` was registered while trips claim/CRUD routes were still unregistered until 6.3
 
 ### Requirement: Trips CRUD and GeoJSON
 The system MUST expose:
 - `GET /api/v1/trips` → `PaginatedResponse[TripOut]` with `require_auth`
 - `GET /api/v1/trips/{id}` → `ApiResponse[TripOut]` with `optional_auth` + ownership
-- `GET /api/v1/trips/{id}/geojson` → GeoJSON FeatureCollection (public)
+- `GET /api/v1/trips/{id}/geojson` → GeoJSON FeatureCollection (public; not wrapped in `ApiResponse`)
 - `DELETE /api/v1/trips/{id}` → 204 with `require_auth` + ownership
 - `POST /api/v1/trips/{id}/claim` → `ApiResponse[TripOut]` with `require_auth` + session match + unclaimed
 
-GeoJSON MUST be built from persisted trip data (no live OSRM on read) and MUST include LineString features when polylines exist. Accessing another user’s trip or guest session mismatch MUST return **403**. Anonymous DELETE is forbidden by design.
+GeoJSON MUST be built from persisted trip data via `TripService.build_geojson` (no live OSRM on read) and MUST include LineString features when polylines decode successfully; all-None polylines MUST still yield valid Point features. Accessing another user’s trip or guest session mismatch MUST return **403**. Anonymous DELETE is forbidden by design. Step **6.3** MUST deliver this HTTP surface.
 
 #### Scenario: GeoJSON is map-renderable
 - **WHEN** `GET /api/v1/trips/{id}/geojson` is called for a saved trip with polylines/coords
@@ -115,6 +115,10 @@ GeoJSON MUST be built from persisted trip data (no live OSRM on read) and MUST i
 #### Scenario: List requires auth
 - **WHEN** an unauthenticated client calls `GET /api/v1/trips`
 - **THEN** the API returns 401
+
+#### Scenario: Claim HTTP restored
+- **WHEN** an authenticated owner session claims an unclaimed trip
+- **THEN** the API returns 200 with `TripOut.user_id` set; wrong session → 403; re-claim → 409
 
 ### Requirement: Swappable cache and rate-limit backends with fallbacks
 The system MUST select rate-limit and planner-cache backends via Protocols and settings:

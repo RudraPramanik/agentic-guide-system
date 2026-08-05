@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-05 · **Phase:** P6 in progress · **Next step:** P6.3 (see `docs/steps/step6.md`)
+**Last updated:** 2026-08-05 · **Phase:** P6 in progress · **Next step:** P6.4 (see `docs/steps/step6.md`)
 
 ---
 
 ## Current state (one line)
 
-P6.2 done — `POST /planner/generate` SSE (floor 409, terminal buffer + `trip_id` save, proxy headers); Next P6.3 (trips HTTP CRUD + GeoJSON + claim).
+P6.3 done — trips HTTP CRUD + public GeoJSON + claim; Next P6.4 (Redis rate limit + planner CacheBackend).
 
 ---
 
@@ -89,6 +89,7 @@ P6.2 done — `POST /planner/generate` SSE (floor 409, terminal buffer + `trip_i
 | 6.0 | ✅ Done | `route_polyline` + OptimizeResult polylines; schedule day-dict shape with `leg_polyline`/`day_polyline` |
 | 6.1 | ✅ Done | trips exceptions/schemas/repo/service — `save_from_state` UoW, ownership, `claim_for_user` |
 | 6.2 | ✅ Done | planner schemas + SSE `/generate` — floor 409, terminal buffer + save, proxy headers |
+| 6.3 | ✅ Done | trips HTTP CRUD + GeoJSON + claim (`build_geojson`, ownership 403, claim 200/403/409) |
 ---
 
 ## Implemented modules (real code)
@@ -160,10 +161,12 @@ P6.2 done — `POST /planner/generate` SSE (floor 409, terminal buffer + `trip_i
 | `src/trips/exceptions.py` | `TripNotFoundError`, `TripForbiddenError`, `TripAlreadyClaimedError` (409) |
 | `src/trips/schemas.py` | `TripOut` / `TripPlaceOut` (timing, polyline, joined lat/lng) |
 | `src/trips/repository.py` | `TripRepository` — list_by_user/session, `get_with_places`, flush-only place insert |
-| `src/trips/service.py` | `save_from_state` UoW, `assert_can_access`, `claim_for_user` (no PlannerService / HTTP) |
+| `src/trips/service.py` | `save_from_state` UoW, `assert_can_access`, `claim_for_user`, `build_geojson`, get/list/soft-delete/claim HTTP helpers (no PlannerService) |
+| `src/trips/polyline.py` | Pure Google-encoded polyline decode (no package; invalid → `[]`) |
+| `src/trips/router.py` | CRUD + public `/geojson` + `/claim`; DELETE require_auth intentional vs guest GET |
 | `src/evaluation/models.py` | TripEvaluation |
 
-**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/`, `tests/trips/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **178+** when DB up (incl. generate SSE floor/headers + tool_loop + polyline + save_from_state/claim)
+**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/`, `tests/trips/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **180+** when DB up (incl. trips HTTP geojson/claim/ownership + generate SSE + save_from_state)
 
 **Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_p4_smoke.py`, `scripts/test_agent.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
 
@@ -173,9 +176,9 @@ P6.2 done — `POST /planner/generate` SSE (floor 409, terminal buffer + `trip_i
 
 ## Stubs only (do not assume implemented)
 
-trips HTTP CRUD + GeoJSON/claim router still stub (P6.3); planner **HTTP SSE** `/planner/generate` **real** (6.2); cache hit/set still stub until 6.4 (`maybe_get_cached_state` always misses). trips **repo/service/schemas/exceptions** **real** (6.1). evaluation HTTP still stub (generation persist via repo/service is **real**); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + **PlannerService.generate** (5.1–5.14) are **real**. Route geometry (`route_polyline`, schedule polylines) **real** (6.0). Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4; packing aligned with validator for morning/travel).
+trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/generate` **real** (6.2); cache hit/set still stub until 6.4 (`maybe_get_cached_state` always misses). trips **repo/service/schemas/exceptions** **real** (6.1). evaluation HTTP still stub (generation persist via repo/service is **real**); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + **PlannerService.generate** (5.1–5.14) are **real**. Route geometry (`route_polyline`, schedule polylines) **real** (6.0). Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4; packing aligned with validator for morning/travel).
 
-**Deployment / frontend notes (P6.2):** reverse proxy MUST disable response buffering for `/api/v1/planner/generate` (nginx: `proxy_buffering off;`). Frontend must use `fetch()` + manual SSE parsing — native `EventSource` is GET-only and cannot POST.
+**Deployment / frontend notes (P6.2–6.3):** reverse proxy MUST disable response buffering for `/api/v1/planner/generate` (nginx: `proxy_buffering off;`). Frontend must use `fetch()` + manual SSE parsing — native `EventSource` is GET-only and cannot POST. After login, retain `wandr_session` cookie to `POST /trips/{id}/claim`.
 
 ---
 
@@ -193,6 +196,11 @@ trips HTTP CRUD + GeoJSON/claim router still stub (P6.3); planner **HTTP SSE** `
 | GET | `/api/v1/places?destination_id=` | None (paginated; unknown destination → 404) |
 | GET | `/api/v1/places/{id}` | None |
 | POST | `/api/v1/planner/generate` | Optional (SSE; floor 409 if place_count low; `wandr_session` cookie) |
+| GET | `/api/v1/trips` | Required |
+| GET | `/api/v1/trips/{id}` | Optional + ownership (guest session or owner) |
+| GET | `/api/v1/trips/{id}/geojson` | Public FeatureCollection |
+| DELETE | `/api/v1/trips/{id}` | Required + ownership (no anonymous delete) |
+| POST | `/api/v1/trips/{id}/claim` | Required + session match + unclaimed |
 
 ---
 

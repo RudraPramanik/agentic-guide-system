@@ -1,14 +1,22 @@
-﻿"""Trip service — save_from_state UoW, ownership, and claim. No FastAPI / PlannerService."""
+﻿"""Trip service — save_from_state UoW, ownership, claim, GeoJSON, HTTP helpers."""
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any
 from uuid import UUID
 
+from geoalchemy2.shape import to_shape
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.trips.exceptions import TripAlreadyClaimedError, TripForbiddenError
+from src.core.pagination import PageParams
+from src.trips.exceptions import (
+    TripAlreadyClaimedError,
+    TripForbiddenError,
+    TripNotFoundError,
+)
 from src.trips.models import Trip, TripStatus
+from src.trips.polyline import decode_polyline
 from src.trips.repository import TripRepository
 
 
@@ -36,6 +44,20 @@ def _schedule_usable(schedule: Any) -> bool:
         if isinstance(stops, list) and len(stops) > 0:
             return True
     return False
+
+
+def _concat_day_coords(
+    leg_coords: list[list[tuple[float, float]]],
+) -> list[list[float]]:
+    """Merge leg (lat,lng) lists into GeoJSON [lng,lat] ring, deduping shared endpoints."""
+    merged: list[list[float]] = []
+    for coords in leg_coords:
+        for lat, lng in coords:
+            point = [lng, lat]
+            if merged and merged[-1] == point:
+                continue
+            merged.append(point)
+    return merged
 
 
 class TripService:
@@ -148,5 +170,126 @@ class TripService:
         trip.user_id = user_id
         await self.session.flush()
         await self.session.commit()
-        await self.session.refresh(trip)
+        loaded = await self.repo.get_with_places(trip.id)
+        assert loaded is not None
+        return loaded
+
+    async def get_for_access(
+        self,
+        trip_id: UUID,
+        *,
+        user_id: UUID | None,
+        session_id: str | None,
+    ) -> Trip:
+        """Load trip with places or 404; then enforce ownership (403)."""
+        trip = await self.repo.get_with_places(trip_id)
+        if trip is None:
+            raise TripNotFoundError(trip_id=str(trip_id))
+        self.assert_can_access(trip, user_id=user_id, session_id=session_id)
         return trip
+
+    async def get_trip_or_404(self, trip_id: UUID) -> Trip:
+        """Load trip with places for public readers (e.g. geojson), or 404."""
+        trip = await self.repo.get_with_places(trip_id)
+        if trip is None:
+            raise TripNotFoundError(trip_id=str(trip_id))
+        return trip
+
+    async def list_for_user(
+        self,
+        user_id: UUID,
+        params: PageParams,
+    ) -> tuple[list[Trip], int]:
+        return await self.repo.list_by_user(user_id, params)
+
+    async def soft_delete_for_user(
+        self,
+        trip_id: UUID,
+        user_id: UUID,
+        session_id: str | None = None,
+    ) -> None:
+        """Auth-only delete: ownership check then soft-delete + commit."""
+        trip = await self.repo.get_with_places(trip_id)
+        if trip is None:
+            raise TripNotFoundError(trip_id=str(trip_id))
+        self.assert_can_access(trip, user_id=user_id, session_id=session_id)
+        await self.repo.soft_delete(trip_id)
+        await self.session.commit()
+
+    async def claim_trip(
+        self,
+        trip_id: UUID,
+        user_id: UUID,
+        session_id: str,
+    ) -> Trip:
+        """Load trip (404 if missing) then claim_for_user."""
+        trip = await self.repo.get_with_places(trip_id)
+        if trip is None:
+            raise TripNotFoundError(trip_id=str(trip_id))
+        return await self.claim_for_user(trip, user_id, session_id)
+
+    def build_geojson(self, trip: Trip) -> dict[str, Any]:
+        """
+        Build a GeoJSON FeatureCollection from an already-loaded trip.
+        Points always; LineStrings when polylines decode. Never raises for None polylines.
+        No network I/O.
+        """
+        features: list[dict[str, Any]] = []
+        day_legs: dict[int, list[list[tuple[float, float]]]] = defaultdict(list)
+
+        places = list(getattr(trip, "places", None) or [])
+        places.sort(key=lambda tp: (tp.day_number, tp.order_in_day))
+
+        for tp in places:
+            name: str | None = None
+            lat: float | None = None
+            lng: float | None = None
+            place = getattr(tp, "place", None)
+            if place is not None:
+                name = place.name
+                point = to_shape(place.location)
+                lat = float(point.y)
+                lng = float(point.x)
+
+            if lat is not None and lng is not None:
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [lng, lat],
+                        },
+                        "properties": {
+                            "name": name,
+                            "day": tp.day_number,
+                            "order": tp.order_in_day,
+                            "suggested_start_time": tp.suggested_start_time,
+                            "place_id": str(tp.place_id),
+                            "trip_place_id": str(tp.id),
+                        },
+                    }
+                )
+
+            decoded = decode_polyline(tp.polyline)
+            if decoded:
+                day_legs[tp.day_number].append(decoded)
+
+        for day_number, legs in sorted(day_legs.items()):
+            coords = _concat_day_coords(legs)
+            if len(coords) < 2:
+                continue
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": coords,
+                    },
+                    "properties": {
+                        "day": day_number,
+                        "trip_id": str(trip.id),
+                    },
+                }
+            )
+
+        return {"type": "FeatureCollection", "features": features}
