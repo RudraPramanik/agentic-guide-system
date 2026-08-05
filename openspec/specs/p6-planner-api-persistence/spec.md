@@ -129,6 +129,8 @@ Planner cache MUST store a JSON-serializable `TravelState` subset sufficient for
 
 Routers and domain services MUST NOT import Redis client libraries directly; only backend modules may.
 
+Steps **6.4–6.5** deliver these backends, the real cache hit/set path, the P6 ship checklist / smoke / import guards, and the context P6-complete stamp (Next → P7.1) only after validations pass.
+
 Changing `LLM_MODEL` MUST require zero application code changes (existing LLM gateway). Swapping routing implementations MUST continue to go through `RoutingProvider`.
 
 #### Scenario: Same cacheable input hits cache and still persists
@@ -143,6 +145,10 @@ Changing `LLM_MODEL` MUST require zero application code changes (existing LLM ga
 - **WHEN** a client exceeds 10 req/min (default) on `/api/v1/planner/generate`
 - **THEN** the API returns 429 with `Retry-After` and `ErrorResponse`
 
+#### Scenario: Empty REDIS_URL stays in-memory without docker Redis
+- **WHEN** `REDIS_URL` is empty in local/MVP compose
+- **THEN** both rate limit and planner cache use in-memory backends and require no Redis service
+
 ### Requirement: Backend ship checklist and import guards
 P6 completion MUST verify the blueprint P6.5 checklist items relevant to shipped code: envelopes, destinations/places happy paths, SSE generate with single terminal/`trip_id`, GeoJSON (LineString when available), claim flow, resilience flags, evaluation rows, pytest green, no litellm outside `core/llm/client.py`, no geo imports inside `travel_engine/`, no tool-impl imports in graph nodes, no redis imports in planner/trips routers, no `StreamingResponse` in `planner/service.py`, and `LLM_MODEL` swap without code changes.
 
@@ -155,3 +161,7 @@ P6 completion MUST verify the blueprint P6.5 checklist items relevant to shipped
 #### Scenario: Provider swap via env
 - **WHEN** `LLM_MODEL` is changed in environment/settings
 - **THEN** no application source changes are required for the new model to be used by the LLM gateway
+
+#### Scenario: Full suite and smoke pass before context stamp
+- **WHEN** `python -m pytest tests/ -v` and `python scripts/test_p6_smoke.py` both succeed
+- **THEN** `docs/context.md` may mark P6 complete and set Next → P7.1

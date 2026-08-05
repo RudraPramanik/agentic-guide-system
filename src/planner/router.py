@@ -19,7 +19,11 @@ from src.core.security.jwt import TokenPayload
 from src.core.security.permissions import optional_auth
 from src.destinations.exceptions import DestinationNotReadyError
 from src.destinations.service import DestinationService
-from src.planner.cache import _replay_cached, maybe_get_cached_state
+from src.planner.cache import (
+    _replay_cached,
+    maybe_get_cached_state,
+    maybe_set_cached_state,
+)
 from src.planner.schemas import PlanRequest
 from src.planner.service import PlannerService
 from src.trips.service import TripService
@@ -56,7 +60,6 @@ async def generate_plan(
     if dest.place_count < settings.PLANNER_ABSOLUTE_MIN_PLACES:
         raise DestinationNotReadyError(place_count=dest.place_count)
 
-    # Floor passed — cache lookup may run (P6.2 always misses)
     base_lat = body.base_lat if body.base_lat is not None else float(dest.lat)
     base_lng = body.base_lng if body.base_lng is not None else float(dest.lng)
     user_id: UUID | None = payload.user_id if payload else None
@@ -68,8 +71,9 @@ async def generate_plan(
             queue.put_nowait((event, data))
 
         cached_state = await maybe_get_cached_state(body, base_lat, base_lng)
+        from_cache = cached_state is not None
 
-        if cached_state is not None:
+        if from_cache:
             task = asyncio.create_task(_replay_cached(cached_state, on_event))
         else:
             task = asyncio.create_task(
@@ -123,6 +127,11 @@ async def generate_plan(
                                 **data,
                                 "accommodation_label": body.accommodation_label,
                             }
+                        # Best-effort cache write after fresh success only
+                        if not from_cache:
+                            await maybe_set_cached_state(
+                                body, base_lat, base_lng, final_state
+                            )
                 yield sse_frame(event, data)
         finally:
             if not task.done():

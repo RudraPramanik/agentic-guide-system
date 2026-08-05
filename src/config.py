@@ -35,8 +35,10 @@ class Settings(BaseSettings):
     PLACES_EMBEDDING_MODEL_LOAD_TIMEOUT_SECONDS: float = 120.0
     ENRICH_BATCH_LLM_CONCURRENCY: int = 3
 
-    # Cache
+    # Cache / Redis backends (empty REDIS_URL → in-memory rate limit + planner cache)
     REDIS_URL: str = ""
+    REDIS_CONNECT_TIMEOUT_SECONDS: float = 1.0
+    REDIS_SOCKET_TIMEOUT_SECONDS: float = 1.0
 
     # LLM
     LLM_MODEL: str = "nvidia_nim/meta/llama-3.1-8b-instruct"

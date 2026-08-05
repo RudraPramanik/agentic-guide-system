@@ -19,3 +19,4 @@ shapely==2.1.2   # geometry construction for PostGIS seed/test scripts — step 
 qdrant-client==1.15.1     # vector search for P3 semantic retrieval — AsyncQdrantClient used throughout
 sentence-transformers==5.1.2   # embeddings for place knowledge layer
 langgraph==0.2.76  # P5.6 — phase-gated planner agent graph; pin verified via hello-world configurable passthrough
+redis==5.3.1  # P6.4 — optional REDIS_URL backends for rate limit + planner cache (empty URL → in-memory)

@@ -68,9 +68,9 @@ The backend SHALL implement a `RateLimiterBackend` protocol with `InMemoryRateLi
 
 ### Requirement: Redis RateLimiterBackend when REDIS_URL is set
 
-When `get_settings().REDIS_URL` is a non-empty URL, `get_rate_limiter()` MUST return a Redis-backed implementation of `RateLimiterBackend` that preserves the same `is_allowed(key, limit, window) → (allowed, remaining)` contract as `InMemoryRateLimiter`. When `REDIS_URL` is empty, the system MUST continue using `InMemoryRateLimiter`.
+When `get_settings().REDIS_URL` is a non-empty URL, `get_rate_limiter()` MUST return a Redis-backed implementation of `RateLimiterBackend` that preserves the same `is_allowed(key, limit, window) → (allowed, remaining)` contract as `InMemoryRateLimiter` (sliding-window semantics preferred). When `REDIS_URL` is empty, the system MUST continue using `InMemoryRateLimiter`.
 
-Redis client usage MUST live only in the rate-limit backend module (or a dedicated `src/core/cache/` / redis helper module). Middleware MUST depend only on the Protocol. Redis timeouts MUST be explicit; Redis errors MUST fail open (request proceeds + warning logged) — same as the existing in-memory error boundary.
+Redis client usage MUST live only in the rate-limit backend module (or a dedicated `src/core/cache/` / redis helper module). Middleware MUST depend only on the Protocol. Redis timeouts MUST be explicit; Redis errors MUST fail open (request proceeds + warning logged) — same as the existing in-memory error boundary. Step **6.4** delivers this selection (no longer deferred as unimplemented).
 
 #### Scenario: Empty REDIS_URL keeps in-memory limiter
 

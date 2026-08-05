@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-05 · **Phase:** P6 in progress · **Next step:** P6.4 (see `docs/steps/step6.md`)
+**Last updated:** 2026-08-06 · **Phase:** P6 complete · **Next step:** P7.1 (see `docs/blueprint_final.md` §P7)
 
 ---
 
 ## Current state (one line)
 
-P6.3 done — trips HTTP CRUD + public GeoJSON + claim; Next P6.4 (Redis rate limit + planner CacheBackend).
+P6 done — Redis/in-memory rate limit + planner CacheBackend (cache hits still persist); Next P7.1 (trip edit/replan).
 
 ---
 
@@ -90,16 +90,20 @@ P6.3 done — trips HTTP CRUD + public GeoJSON + claim; Next P6.4 (Redis rate li
 | 6.1 | ✅ Done | trips exceptions/schemas/repo/service — `save_from_state` UoW, ownership, `claim_for_user` |
 | 6.2 | ✅ Done | planner schemas + SSE `/generate` — floor 409, terminal buffer + save, proxy headers |
 | 6.3 | ✅ Done | trips HTTP CRUD + GeoJSON + claim (`build_geojson`, ownership 403, claim 200/403/409) |
+| 6.4 | ✅ Done | `CacheBackend` + Redis/InMemory rate limiter; planner MVP cache hit still persists new trip |
+| 6.5 | ✅ Done | P6 pytest gaps + `scripts/test_p6_smoke.py` + import guards; Next → P7.1 |
 ---
 
 ## Implemented modules (real code)
 
 | Module | Exports / notes |
 |--------|-----------------|
-| `src/config.py` | `get_settings()` — Qdrant/embeddings/enrich concurrency, OAuth, JWT, rate limits, geo, CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `PLANNER_CACHE_TTL_SECONDS` |
+| `src/config.py` | `get_settings()` — Qdrant/embeddings/enrich concurrency, OAuth, JWT, rate limits, geo, CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `PLANNER_CACHE_TTL_SECONDS`, `REDIS_URL` + Redis timeouts |
+| `src/core/cache/backends.py` | `CacheBackend` Protocol; `InMemoryCacheBackend` / `RedisCacheBackend`; `get_cache_backend()` |
+| `src/core/middleware/rate_limit.py` | `InMemoryRateLimiter` / `RedisRateLimiter`; `get_rate_limiter()` selects on `REDIS_URL`; fail-open |
 | `src/planner/schemas.py` | `PlanRequest` (destination_id, raw_input, optional days/base/accommodation_label) |
-| `src/planner/cache.py` | `maybe_get_cached_state` always-miss stub; `_replay_cached` deferred to 6.4 |
-| `src/planner/router.py` | `POST /generate` SSE — floor check, queue+task, terminal buffer → `save_from_state` + `trip_id`, proxy headers |
+| `src/planner/cache.py` | MVP key + `maybe_get_cached_state` / `maybe_set_cached_state` / `_replay_cached` (skip tool loop; still feeds `save_from_state`) |
+| `src/planner/router.py` | `POST /generate` SSE — floor check, queue+task, terminal buffer → `save_from_state` + `trip_id`, cache set on fresh success, proxy headers |
 | `src/destinations/exceptions.py` | + `DestinationNotReadyError` (409 `destination_not_ready`) |
 | `src/travel_engine/protocols.py` | `RouteLeg`, `RoutingProvider` (`travel_matrix` + `route_polyline`), `legs_to_lookup` — pure, no I/O |
 | `src/travel_engine/travel_rules.py` | Caps, structural durations, interest weights, `visit_duration_min` |
@@ -140,7 +144,7 @@ P6.3 done — trips HTTP CRUD + public GeoJSON + claim; Next P6.4 (Redis rate li
 | `src/core/security/jwt.py` | `TokenPayload`, `create_access_token()`, `verify_token()` |
 | `src/core/security/permissions.py` | `require_auth`, `optional_auth`, `get_current_user_id` |
 | `src/core/middleware/logging.py` | `RequestLoggingMiddleware` |
-| `src/core/middleware/rate_limit.py` | `RateLimitMiddleware`, path limits |
+| `src/core/middleware/rate_limit.py` | `RateLimitMiddleware`, path limits, Redis/InMemory backends |
 | `src/main.py` | lifespan: DB ping + Qdrant ensure + embedding load; CORSMiddleware; routers |
 | `alembic/env.py` | Async Alembic + model imports |
 | `alembic/versions/001_enable_postgis.py` | PostGIS + uuid-ossp |
@@ -166,19 +170,19 @@ P6.3 done — trips HTTP CRUD + public GeoJSON + claim; Next P6.4 (Redis rate li
 | `src/trips/router.py` | CRUD + public `/geojson` + `/claim`; DELETE require_auth intentional vs guest GET |
 | `src/evaluation/models.py` | TripEvaluation |
 
-**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/`, `tests/trips/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **180+** when DB up (incl. trips HTTP geojson/claim/ownership + generate SSE + save_from_state)
+**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/`, `tests/trips/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **202** when DB up (incl. cache backends, Redis limiter fail-open, SSE cache-hit new trip_id, trips HTTP)
 
-**Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_p4_smoke.py`, `scripts/test_agent.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
+**Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_p4_smoke.py`, `scripts/test_agent.py`, `scripts/test_p6_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
 
-**Known limitations / TODO (P6):** geocoder cache + Nominatim throttle are per-process; rate limiter is in-memory — back both with Redis when `REDIS_URL` is wired. Pre-bake sentence-transformers model in Docker images (`SENTENCE_TRANSFORMERS_HOME`) so production skips cold download.
+**Known limitations / TODO (post-P6):** geocoder cache + Nominatim throttle are per-process; empty `REDIS_URL` keeps rate limit + planner cache in-memory (not shared across workers) — set `REDIS_URL` for multi-worker prod. Pre-bake sentence-transformers model in Docker images (`SENTENCE_TRANSFORMERS_HOME`) so production skips cold download.
 
 ---
 
 ## Stubs only (do not assume implemented)
 
-trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/generate` **real** (6.2); cache hit/set still stub until 6.4 (`maybe_get_cached_state` always misses). trips **repo/service/schemas/exceptions** **real** (6.1). evaluation HTTP still stub (generation persist via repo/service is **real**); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + **PlannerService.generate** (5.1–5.14) are **real**. Route geometry (`route_polyline`, schedule polylines) **real** (6.0). Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4; packing aligned with validator for morning/travel).
+trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/generate` **real** (6.2); planner cache + Redis/in-memory backends **real** (6.4). evaluation HTTP still stub (generation persist via repo/service is **real**); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + **PlannerService.generate** (5.1–5.14) are **real**. Route geometry (`route_polyline`, schedule polylines) **real** (6.0). Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4). **P7** trip edit/replan HTTP ops still stubs.
 
-**Deployment / frontend notes (P6.2–6.3):** reverse proxy MUST disable response buffering for `/api/v1/planner/generate` (nginx: `proxy_buffering off;`). Frontend must use `fetch()` + manual SSE parsing — native `EventSource` is GET-only and cannot POST. After login, retain `wandr_session` cookie to `POST /trips/{id}/claim`.
+**Deployment / frontend notes (P6):** reverse proxy MUST disable response buffering for `/api/v1/planner/generate` (nginx: `proxy_buffering off;`). Frontend must use `fetch()` + manual SSE parsing — native `EventSource` is GET-only and cannot POST. After login, retain `wandr_session` cookie to `POST /trips/{id}/claim`. Empty `REDIS_URL` → in-memory rate limit + planner cache (no Redis in compose for MVP).
 
 ---
 

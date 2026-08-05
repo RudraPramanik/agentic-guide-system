@@ -1,4 +1,4 @@
-﻿"""In-memory rate limit middleware — fail-open on backend errors."""
+﻿"""Rate limit middleware — InMemory / Redis backends, fail-open on errors."""
 
 from __future__ import annotations
 
@@ -17,9 +17,11 @@ from src.core.responses import ErrorResponse
 
 log = structlog.get_logger()
 
+_REDIS_RL_PREFIX = "wandr:rl:"
+
 
 class RateLimiterBackend(Protocol):
-    """Extension point for P6 RedisRateLimiter when REDIS_URL is set."""
+    """InMemory (dev) or RedisRateLimiter when REDIS_URL is set."""
 
     async def is_allowed(self, key: str, limit: int, window: int) -> tuple[bool, int]: ...
 
@@ -28,7 +30,6 @@ class InMemoryRateLimiter:
     """
     Sliding window rate limiter backed by in-memory dict.
     Safe for single-process async use. NOT shared across workers.
-    For multi-worker prod: replace with RedisRateLimiter (P6 via REDIS_URL).
     """
 
     def __init__(self) -> None:
@@ -42,7 +43,6 @@ class InMemoryRateLimiter:
             cutoff = now - window
             self._windows[key] = [t for t in self._windows[key] if t > cutoff]
 
-            # Drop stale keys to bound memory in long-running dev servers
             stale_keys = [k for k, timestamps in self._windows.items() if not timestamps]
             for stale_key in stale_keys:
                 del self._windows[stale_key]
@@ -55,12 +55,68 @@ class InMemoryRateLimiter:
             return True, limit - count - 1
 
 
-_limiter: RateLimiterBackend = InMemoryRateLimiter()
+class RedisRateLimiter:
+    """
+    Sliding-window limiter using a Redis ZSET of request timestamps.
+    Raises on Redis errors so middleware fail-open can catch them.
+    """
+
+    def __init__(self, client: object) -> None:
+        self._client = client
+
+    async def is_allowed(self, key: str, limit: int, window: int) -> tuple[bool, int]:
+        now = time.time()
+        cutoff = now - window
+        redis_key = f"{_REDIS_RL_PREFIX}{key}"
+        pipe = self._client.pipeline()  # type: ignore[attr-defined]
+        pipe.zremrangebyscore(redis_key, 0, cutoff)
+        pipe.zcard(redis_key)
+        results = await pipe.execute()
+        count = int(results[1])
+        if count >= limit:
+            return False, 0
+
+        member = f"{now}:{id(asyncio.current_task())}"
+        pipe2 = self._client.pipeline()  # type: ignore[attr-defined]
+        pipe2.zadd(redis_key, {member: now})
+        pipe2.expire(redis_key, max(int(window) + 1, 1))
+        await pipe2.execute()
+        return True, limit - count - 1
+
+
+_limiter: RateLimiterBackend | None = None
+
+
+def _build_redis_client():
+    from redis.asyncio import Redis
+
+    settings = get_settings()
+    return Redis.from_url(
+        settings.REDIS_URL,
+        socket_connect_timeout=settings.REDIS_CONNECT_TIMEOUT_SECONDS,
+        socket_timeout=settings.REDIS_SOCKET_TIMEOUT_SECONDS,
+        decode_responses=True,
+    )
 
 
 def get_rate_limiter() -> RateLimiterBackend:
-    """Return the process-wide rate limiter backend (swappable in tests / P6)."""
+    """Return the process-wide rate limiter (InMemory if REDIS_URL empty)."""
+    global _limiter
+    if _limiter is not None:
+        return _limiter
+
+    settings = get_settings()
+    if settings.REDIS_URL:
+        _limiter = RedisRateLimiter(_build_redis_client())
+    else:
+        _limiter = InMemoryRateLimiter()
     return _limiter
+
+
+def _reset_rate_limiter_for_tests(backend: RateLimiterBackend | None = None) -> None:
+    """Test helper — force a backend or clear so next get_rate_limiter() rebuilds."""
+    global _limiter
+    _limiter = backend
 
 
 def _route_limit_table() -> list[tuple[str, int, int]]:
@@ -111,7 +167,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         try:
             allowed, remaining = await get_rate_limiter().is_allowed(key, limit, window)
         except Exception as exc:
-            # Fail open — never block users because of a limiter bug
+            # Fail open — never block users because of a limiter bug / Redis down
             log.warning("rate_limiter.error", error=str(exc))
             allowed, remaining = True, -1
 

@@ -1,6 +1,6 @@
 ## Purpose
 
-P6.2 planner HTTP SSE generate — PlanRequest schema, absolute min-places floor, StreamingResponse adapter over PlannerService with terminal-event buffering and trip save enrichment. Cache hit/set deferred to 6.4 (always-miss stub in 6.2).
+P6.2–6.4 planner HTTP SSE generate — PlanRequest schema, absolute min-places floor, StreamingResponse adapter over PlannerService with terminal-event buffering, trip save enrichment, and real CacheBackend hit/set (cache hits still persist a new trip).
 
 ## Requirements
 
@@ -30,7 +30,9 @@ SSE event names MUST include at least: `preferences_done`, `phase_changed`, `too
 
 Generation MUST run as a background task. `on_event` MUST enqueue `(event, data)` into an `asyncio.Queue`. The generator MUST yield non-terminal events while running, using `asyncio.wait_for(queue.get(), timeout=1.0)`. Terminal events (`itinerary_done`, `error`, `clarification_needed`) MUST be buffered and MUST NOT be yielded until the task completes. For buffered `itinerary_done` with a recoverable final state, the router MUST call `TripService.save_from_state` and enrich the payload with `trip_id` when a Trip is saved, then yield **exactly one** terminal frame. `error` and `clarification_needed` MUST yield without trip save. Client disconnect MUST cancel the background task. The response MUST ensure a `wandr_session` cookie (create if missing).
 
-Settings MUST include `PLANNER_ABSOLUTE_MIN_PLACES` (default 10) and `PLANNER_CACHE_TTL_SECONDS` (default 3600). Step 6.2 MAY call a cache lookup helper that always misses; real cache hit/set is out of scope until 6.4.
+Settings MUST include `PLANNER_ABSOLUTE_MIN_PLACES` (default 10) and `PLANNER_CACHE_TTL_SECONDS` (default 3600).
+
+On cache hit, the background task MUST be `_replay_cached` (not `PlannerService.generate`); on miss, `PlannerService.generate`. Persistence MUST use the same `save_from_state` path for both. After a successful fresh generation suitable for caching, the router (or planner cache helper invoked from the router) MUST best-effort write the cacheable state subset.
 
 Rate limiting for this path MUST continue to use the existing middleware path table (do not add a second limiter in the router).
 
@@ -58,9 +60,6 @@ Rate limiting for this path MUST continue to use the existing middleware path ta
 - **WHEN** a generate response is returned
 - **THEN** headers include `Cache-Control: no-cache` and `X-Accel-Buffering: no`
 
-### Requirement: Cache miss stub until Redis backends
-Until step 6.4, `maybe_get_cached_state` MUST return `None` (always miss) so the router always takes the fresh `PlannerService.generate` path. The helper MUST exist so 6.4 can wire `CacheBackend` without rewriting the SSE loop.
-
-#### Scenario: Six-two always generates fresh
-- **WHEN** generate is called twice with identical PlanRequest bodies in step 6.2
-- **THEN** both invocations run `PlannerService.generate` (no cache-hit replay)
+#### Scenario: Cache hit still persists via same save path
+- **WHEN** `maybe_get_cached_state` returns a usable cached state
+- **THEN** the router runs `_replay_cached` and still calls `save_from_state` for buffered `itinerary_done`
