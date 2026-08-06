@@ -101,6 +101,7 @@ def test_late_morning_viewpoint_error():
     result = validate_trip(TripItinerary(days=[day]))
     assert result.passed is False
     assert any("morning-only" in e for e in result.errors)
+    assert any(e.startswith("morning_slot_violation: ") for e in result.errors)
 
 
 def test_no_anchor_error():

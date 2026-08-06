@@ -107,8 +107,9 @@ def check_morning_slots(itinerary: TripItinerary) -> list[str]:
             start_min = _parse_hhmm(stop.suggested_start_time)
             if order > 2 or start_min > latest:
                 errors.append(
-                    f"day {day_i}: morning-only place '{stop.place.name}' "
-                    f"in slot {order} starting {stop.suggested_start_time} "
+                    f"morning_slot_violation: day {day_i}: morning-only place "
+                    f"'{stop.place.name}' in slot {order} starting "
+                    f"{stop.suggested_start_time} "
                     f"(must be order ≤2 and start ≤ {MORNING_SLOT_LATEST_START})"
                 )
     return errors

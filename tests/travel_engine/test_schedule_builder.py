@@ -139,3 +139,38 @@ def test_excess_morning_only_omitted_from_timed_day():
     assert {s.place.name for s in morning} == {"V0", "V1"}
     assert any(s.place.name == "Museum" for s in schedule)
     assert not any(s.place.name == "V2" for s in schedule)
+
+
+def test_preserve_order_keeps_morning_only_in_slot_3():
+    early = _scored("Museum", category="museum", score=1.0)
+    mid = _scored("Park", category="park", score=1.0)
+    late_view = _scored("Tiger Hill", category="viewpoint", score=2.0)
+    stops = [early, mid, late_view]
+    schedule = build_day_schedule(
+        stops, _consecutive_legs(stops, hop_min=5), preserve_order=True
+    )
+    assert [s.place.name for s in schedule] == ["Museum", "Park", "Tiger Hill"]
+    assert schedule[2].place.category == "viewpoint"
+
+
+def test_default_still_morning_extracts():
+    late_view = _scored("Tiger Hill", category="viewpoint", score=2.0)
+    early = _scored("Museum", category="museum", score=1.0)
+    mid = _scored("Park", category="park", score=1.0)
+    stops = [early, mid, late_view]
+    schedule = build_day_schedule(stops, _pairwise_legs(stops, hop_min=5))
+    assert schedule[0].place.name == "Tiger Hill"
+
+
+def test_preserve_order_still_inserts_lunch_gap():
+    stops = [
+        _scored("A", category="trailhead"),
+        _scored("B", category="museum"),
+        _scored("C", category="museum"),
+        _scored("D", category="museum"),
+    ]
+    schedule = build_day_schedule(
+        stops, _consecutive_legs(stops, hop_min=30), preserve_order=True
+    )
+    notes = [s.arrival_note for s in schedule if s.arrival_note]
+    assert any(n and "lunch" in n for n in notes)

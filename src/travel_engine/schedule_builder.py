@@ -89,12 +89,17 @@ def _hop_duration(
 def build_day_schedule(
     ordered_stops: list[ScoredPlace],
     route_legs: list[RouteLeg],
+    *,
+    preserve_order: bool = False,
 ) -> list[ScheduledStop]:
     """
     Assign naive suggested_start_time for each stop.
 
     Common path: len(route_legs) == len(ordered_stops) consecutive chain
     (base→first, …). Larger lists are treated as lookup-complete.
+
+    When preserve_order=True (P7 reorder), skip morning-only extract/omit and
+    time stops in the given order. Default False keeps generation behavior.
     """
     if not ordered_stops:
         return []
@@ -106,7 +111,11 @@ def build_day_schedule(
         )
 
     lookup = legs_to_lookup(route_legs)
-    order = _extract_morning_first(ordered_stops)
+    order = (
+        list(ordered_stops)
+        if preserve_order
+        else _extract_morning_first(ordered_stops)
+    )
 
     for frm, to in _required_hops(order):
         if (frm, to) not in lookup:

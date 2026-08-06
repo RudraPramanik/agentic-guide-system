@@ -107,3 +107,10 @@ class EvaluationService:
             "validation_warnings": validation_warnings,
         }
         return await self.repo.create_generation(data)
+
+    async def mark_trip_edited(self, trip_id: UUID) -> None:
+        """Flag latest TripEvaluation as user_edited. Never writes TripEditEvent.
+
+        Missing evaluation is a no-op — edit UoW must still succeed.
+        """
+        await self.repo.mark_user_edited(trip_id)

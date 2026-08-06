@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-06 · **Phase:** P7 in progress · **Next step:** P7.2 (see `docs/steps/step7.md` §7.2)
+**Last updated:** 2026-08-06 · **Phase:** P7 in progress · **Next step:** P7.3 (see `docs/steps/step7.md` §7.3)
 
 ---
 
 ## Current state (one line)
 
-P7.1 done — public `populate_leg_polylines` (optimize keeps full pairwise legs); Next 7.2 (TripService day surgery + preserve-order schedule).
+P7.2 done — TripService day surgery + preserve-order schedule; Next 7.3 (edit HTTP + rate limit).
 
 ---
 
@@ -94,6 +94,7 @@ P7.1 done — public `populate_leg_polylines` (optimize keeps full pairwise legs
 | 6.5 | ✅ Done | P6 pytest gaps + `scripts/test_p6_smoke.py` + import guards; Next → P7.1 |
 | 7.0 | ✅ Done | `save_from_state` base prefs + `_resolve_base` (prefs → Destination); no migration |
 | 7.1 | ✅ Done | Public `populate_leg_polylines`; `optimize_route` calls it; legs stay full pairwise |
+| 7.2 | ✅ Done | TripService edit ops + preserve-order schedule; TripEditEvent UoW; thin `mark_trip_edited` |
 ---
 
 ## Implemented modules (real code)
@@ -112,8 +113,8 @@ P7.1 done — public `populate_leg_polylines` (optimize keeps full pairwise legs
 | `src/travel_engine/place_selector.py` | `PlaceCandidate`, `TripPreferences`, `ScoredPlace`, `score_place`, `select_places`, `explain_selection` |
 | `src/travel_engine/day_allocator.py` | `allocate_days` — cluster + caps/budget + morning≤2/day + soft geo spill |
 | `src/travel_engine/route_optimizer.py` | `optimize_route` — full-matrix legs; drop until under travel or 1 stop; public `populate_leg_polylines` for winning/fixed order |
-| `src/travel_engine/schedule_builder.py` | `build_day_schedule` — morning extract ≤2; excess morning omitted |
-| `src/travel_engine/trip_validator.py` | `validate_trip`, `ValidationResult`, `DayPlan`, `TripItinerary` — pure CoR rules |
+| `src/travel_engine/schedule_builder.py` | `build_day_schedule` — morning extract ≤2; `preserve_order=True` skips extract (P7 reorder) |
+| `src/travel_engine/trip_validator.py` | `validate_trip`, `ValidationResult`, `DayPlan`, `TripItinerary` — pure CoR rules; morning errors prefixed `morning_slot_violation:` |
 | `src/planner/routing_provider.py` | `OsrmRoutingProvider` — `travel_matrix` + fail-soft `route_polyline` via `geo/osrm.get_route` |
 | `src/planner/tools/schemas.py` | `AgentPhase`, `PHASE_TOOLS`, `ToolResult` (+`fallback_used`), `ToolContext`, 12 input models |
 | `src/planner/tools/registry.py` | 12-tool `TOOL_REGISTRY`, phase/precondition `execute_tool`, re-exports orchestration helpers |
@@ -129,8 +130,8 @@ P7.1 done — public `populate_leg_polylines` (optimize keeps full pairwise legs
 | `src/planner/graph/nodes/record_evaluation.py` | Best-effort `EvaluationService.record_generation`; warning on DB fail |
 | `src/planner/graph/builder.py` | Compiled graph singleton — agent→executor unconditional; bookends on `plan_complete` |
 | `src/planner/service.py` | `PlannerService.generate` — fresh ToolContext, emit/`last_known_state`, `wait_for`, recursion ceiling |
-| `src/evaluation/repository.py` | `EvaluationRepository` — flush-only TripEvaluation create |
-| `src/evaluation/service.py` | `record_generation(state)` maps TravelState → TripEvaluation columns |
+| `src/evaluation/repository.py` | `EvaluationRepository` — flush-only TripEvaluation create + `mark_user_edited` |
+| `src/evaluation/service.py` | `record_generation(state)` + thin `mark_trip_edited` (flag-only; no TripEditEvent) |
 | `src/planner/tools/schemas.py` | + `DEFAULT_TOOL_BY_PHASE` (nudge / LLM-fail defaults) |
 | `src/planner/tools/registry.py` | + `parse_tool_input`; re-exports `run_stuck_detector` |
 | `src/planner/tools/orchestration.py` | + unconditional `run_stuck_detector` |
@@ -164,15 +165,15 @@ P7.1 done — public `populate_leg_polylines` (optimize keeps full pairwise legs
 | `src/search/places_index.py` | upsert, `search_places`, `count_indexed` |
 | `src/geo/*` | geocoder, overpass, osrm |
 | `src/trips/models.py` | Trip / TripPlace / TripEditEvent (+ `Trip.places` / `TripPlace.place` relationships for eager load) |
-| `src/trips/exceptions.py` | `TripNotFoundError`, `TripForbiddenError`, `TripAlreadyClaimedError` (409) |
-| `src/trips/schemas.py` | `TripOut` / `TripPlaceOut` (timing, polyline, joined lat/lng) |
-| `src/trips/repository.py` | `TripRepository` — list_by_user/session, `get_with_places`, flush-only place insert |
-| `src/trips/service.py` | `save_from_state` UoW (prefs include `base_lat`/`base_lng` when present), `_resolve_base`, `assert_can_access`, `claim_for_user`, `build_geojson`, get/list/soft-delete/claim HTTP helpers (no PlannerService) |
+| `src/trips/exceptions.py` | `TripNotFoundError`, `TripForbiddenError`, `TripAlreadyClaimedError` (409), `TripEditValidationError` (422), `TripStopConflictError` (409), `TripStopNotFoundError` (404) |
+| `src/trips/schemas.py` | `TripOut` / `TripPlaceOut`; `ReorderStopsIn` / `AddStopIn` (HTTP in 7.3) |
+| `src/trips/repository.py` | `TripRepository` — list/get_with_places, flush-only place insert/delete, sole `insert_edit_event` |
+| `src/trips/service.py` | `save_from_state` UoW; `_resolve_base`; ownership/claim/GeoJSON; day surgery `reorder_stops` / `remove_stop` / `add_stop` / `reoptimize_day` (RoutingProvider DI; no PlannerService); TripEditEvent + `mark_trip_edited` in same UoW |
 | `src/trips/polyline.py` | Pure Google-encoded polyline decode (no package; invalid → `[]`) |
 | `src/trips/router.py` | CRUD + public `/geojson` + `/claim`; DELETE require_auth intentional vs guest GET |
 | `src/evaluation/models.py` | TripEvaluation |
 
-**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/`, `tests/trips/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **202** when DB up (incl. cache backends, Redis limiter fail-open, SSE cache-hit new trip_id, trips HTTP)
+**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/`, `tests/trips/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **209** when DB up (incl. trip edit Fake ops, preserve-order schedule, cache backends, Redis limiter fail-open, SSE cache-hit new trip_id, trips HTTP)
 
 **Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_p4_smoke.py`, `scripts/test_agent.py`, `scripts/test_p6_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
 
@@ -182,7 +183,7 @@ P7.1 done — public `populate_leg_polylines` (optimize keeps full pairwise legs
 
 ## Stubs only (do not assume implemented)
 
-trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/generate` **real** (6.2); planner cache + Redis/in-memory backends **real** (6.4). evaluation HTTP still stub (generation persist via repo/service is **real**); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + **PlannerService.generate** (5.1–5.14) are **real**. Route geometry (`route_polyline`, schedule polylines) **real** (6.0); shared `populate_leg_polylines` **real** (7.1). Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4). **P7** trip edit/replan HTTP ops + preserve-order schedule still stubs (7.2+).
+trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/generate` **real** (6.2); planner cache + Redis/in-memory backends **real** (6.4). evaluation HTTP still stub (generation persist + thin `mark_trip_edited` **real**); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + **PlannerService.generate** (5.1–5.14) are **real**. Route geometry (`route_polyline`, schedule polylines) **real** (6.0); shared `populate_leg_polylines` **real** (7.1); TripService day surgery + preserve-order schedule **real** (7.2). Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4). **P7** edit HTTP routes + user-keyed rate limit still stubs (7.3+).
 
 **Deployment / frontend notes (P6):** reverse proxy MUST disable response buffering for `/api/v1/planner/generate` (nginx: `proxy_buffering off;`). Frontend must use `fetch()` + manual SSE parsing — native `EventSource` is GET-only and cannot POST. After login, retain `wandr_session` cookie to `POST /trips/{id}/claim`. Empty `REDIS_URL` → in-memory rate limit + planner cache (no Redis in compose for MVP).
 

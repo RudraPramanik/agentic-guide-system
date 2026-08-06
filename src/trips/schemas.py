@@ -92,3 +92,11 @@ class TripOut(BaseModel):
             updated_at=trip.updated_at,
             places=place_outs,
         )
+
+
+class ReorderStopsIn(BaseModel):
+    place_ids: list[uuid.UUID]
+
+
+class AddStopIn(BaseModel):
+    place_id: uuid.UUID

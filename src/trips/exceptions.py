@@ -25,3 +25,43 @@ class TripAlreadyClaimedError(WandrError):
             status_code=409,
             details=details,
         )
+
+
+class TripEditValidationError(WandrError):
+    """422 — validation or business rule failed; trip unchanged."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "trip_edit_validation_failed",
+        details: dict | None = None,
+    ) -> None:
+        super().__init__(
+            code=code,
+            message=message,
+            status_code=422,
+            details=details or {},
+        )
+
+
+class TripStopConflictError(WandrError):
+    """409 — place already on trip."""
+
+    def __init__(self, message: str = "stop already on trip") -> None:
+        super().__init__(
+            code="stop_already_on_trip",
+            message=message,
+            status_code=409,
+        )
+
+
+class TripStopNotFoundError(WandrError):
+    """404 — place_id not on that day."""
+
+    def __init__(self, message: str = "stop not found on this day") -> None:
+        super().__init__(
+            code="stop_not_found_on_day",
+            message=message,
+            status_code=404,
+        )

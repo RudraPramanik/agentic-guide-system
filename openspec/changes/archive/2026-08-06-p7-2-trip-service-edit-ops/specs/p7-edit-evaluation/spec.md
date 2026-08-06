@@ -1,8 +1,4 @@
-## Purpose
-
-P7 evaluation linkage on trip edits — `mark_trip_edited` flag-only (v2.1). TripService owns `TripEditEvent` creation.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: mark_trip_edited is flag-only
 
