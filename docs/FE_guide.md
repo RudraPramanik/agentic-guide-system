@@ -58,10 +58,22 @@ Prod: app.<domain> ──credentials──▶  api.<domain>   ◀── hosted D
 | Theme | next-themes | Light/dark (optional) |
 | Toasts | Sonner | Errors, claim/edit feedback |
 | Dates | date-fns | Lightweight formatting |
-| Maps | MapLibre GL + OSM-compatible tiles | Trip GeoJSON + polylines |
+| Maps | MapLibre GL JS + MapTiler (see below) | Trip overlay GeoJSON |
 | Markdown (optional) | react-markdown + remark-gfm | Day narrative prose only |
 | Tests | Vitest + RTL; Playwright smoke | Unit + e2e smoke |
 | Lint | ESLint + Prettier | FE repo standards |
+
+### Map stack (explicit)
+
+| Layer | Recommendation |
+|-------|----------------|
+| Renderer | MapLibre GL JS |
+| Tile Provider | MapTiler (free tier) |
+| Fallback | OpenStreetMap public tiles (**development only**) |
+| Data Format | GeoJSON from FastAPI (`GET /trips/{id}/geojson` — §15) |
+| Future | Self-hosted tiles or another provider |
+
+Do **not** use OSM public tiles as the production basemap. Google Maps JS stays deferred as primary SDK (§3).
 
 **Quality (light):** Husky/lint-staged optional. Sentry optional. PostHog deferred.
 
@@ -91,7 +103,10 @@ Prod: app.<domain> ──credentials──▶  api.<domain>   ◀── hosted D
 | Variable | Example | Notes |
 |----------|---------|--------|
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | API origin, no trailing slash |
-| (optional) map tile URL / key | OSM public or MapTiler later | Not required for first local map |
+| `NEXT_PUBLIC_MAP_STYLE_URL` | MapTiler style JSON URL (often includes `?key=…`) | **Recommended** basemap for real/staging/prod |
+| (optional) OSM / local style URL | Public OSM-compatible style or raster tiles | **Development only** when MapTiler is unset |
+
+Prefer one style URL over scattering keys. If you build the MapTiler URL in code, a `NEXT_PUBLIC_MAPTILER_KEY` is acceptable — still FE-only. Never put MapTiler (or any tile) credentials in backend `.env`.
 
 **Never put in the frontend:** `DATABASE_URL`, `REDIS_URL`, `QDRANT_*`, `LLM_*`, `GEMINI_API_KEY`, `SECRET_KEY`, OAuth client secrets.
 
@@ -504,7 +519,7 @@ type AddStopIn = { place_id: string };
 
 ## 15. GeoJSON map contract (`GET /trips/{id}/geojson`)
 
-Public raw GeoJSON (not `ApiResponse`). Built by `TripService.build_geojson`.
+Itinerary overlay data for MapLibre (basemap tiles are MapTiler / OSM-dev — §2). Public raw GeoJSON (not `ApiResponse`). Built by `TripService.build_geojson`.
 
 ```ts
 type TripGeoJson = {
@@ -580,4 +595,4 @@ Exact numbers are config-driven (`RATE_LIMIT_*` in settings); treat the table as
 
 ---
 
-*Source decisions: OpenSpec changes `frontend-stack-guide`, `fe-api-contract-guide`. Input draft: `docs/fe_suggestins.md`.*
+*Source decisions: OpenSpec changes `frontend-stack-guide`, `fe-api-contract-guide`, `fe-guide-map-tiles`. Input draft: `docs/fe_suggestins.md`.*
