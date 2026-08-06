@@ -198,6 +198,8 @@ trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/
 
 ## Live endpoints
 
+> FE stack + API navigation contract: `docs/FE_guide.md` (auth matrix, DTOs, SSE, GeoJSON, error codes).
+
 | Method | Path | Auth |
 |--------|------|------|
 | GET | `/api/v1/health` | None |

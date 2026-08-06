@@ -2,9 +2,20 @@
 
 > **Canonical FE contract** for the separate Next.js app (sibling repo, not a monorepo).  
 > Draft brainstorming lives in `docs/fe_suggestins.md` — **this file is the locked subset**.  
-> Live API routes: `docs/context.md` → Live endpoints. Update this guide when routes change.
+> Live API routes: `docs/context.md` → Live endpoints. Update this guide when routes or public DTOs change.
 
 **Non-goals of this document:** scaffolding the Next.js app inside this API repo; changing FastAPI code; frontend hosting/VPS SOP.
+
+### API contract — source of truth
+
+| Priority | Source | Role |
+|----------|--------|------|
+| 1 | Live routers + `src/*/schemas.py` | Canonical |
+| 2 | OpenAPI at `{API}/docs` | Machine-readable companion |
+| 3 | `docs/context.md` → Live endpoints | Auth matrix checkpoint |
+| 4 | **This file** | FE-oriented mirror (stack + navigation) |
+
+If this guide disagrees with Python schemas or `/docs`, **schemas win**. Update the API-contract sections of this file in the same PR (or immediately after) when public routes/DTOs change.
 
 ---
 
@@ -122,7 +133,7 @@ Prod: same registrable domain (`app.` + `api.`).
 
 ## 6. Response envelopes
 
-Most JSON endpoints use:
+Most single-resource JSON endpoints use `ApiResponse[T]`:
 
 ```ts
 // success
@@ -132,15 +143,24 @@ Most JSON endpoints use:
 { success: false, code: string, message: string, details?: object }
 ```
 
-Paginated list endpoints use `PaginatedResponse` (see backend `src/core/pagination.py`).
+**Envelope exceptions (branch the client):**
 
-**Exception:** `POST /api/v1/planner/generate` streams **SSE frames**, not `ApiResponse`.
+| Response | Shape |
+|----------|--------|
+| `GET /places`, `GET /trips` | Bare `PaginatedResponse[T]` — **not** wrapped in `ApiResponse` |
+| `GET /destinations/search` | `ApiResponse<DestinationOut[]>` (array in `data`) |
+| `GET /trips/{id}/geojson` | Raw GeoJSON `FeatureCollection` — **not** `ApiResponse` |
+| `POST /planner/generate` | SSE frames — **not** `ApiResponse` |
+| `DELETE /trips/{id}` | HTTP **204** empty body |
+
+Pagination query defaults: `page=1`, `size=20` (`size` max 100). See §14 for `PaginatedResponse` fields.
 
 Build one shared `lib/api/client.ts` that:
 
 - prefixes `NEXT_PUBLIC_API_URL`
 - sets `credentials: "include"`
 - parses success/error envelopes
+- has separate parsers for pagination / GeoJSON / SSE
 - throws typed errors on `success: false` or non-OK HTTP
 
 ---
@@ -148,7 +168,8 @@ Build one shared `lib/api/client.ts` that:
 ## 7. Planner SSE contract
 
 Endpoint: `POST /api/v1/planner/generate`  
-Body (see `PlanRequest`): `destination_id`, `raw_input`, optional days/base/accommodation fields.
+Auth: **Optional** (guest via `wandr_session`; sets/creates session cookie on response).  
+Body: `PlanRequest` — see §14.
 
 **Do not use** the browser `EventSource` API — it is GET-only.
 
@@ -160,12 +181,32 @@ data: <json>
 
 ```
 
+### Progress vs terminal
+
 | Kind | Events |
 |------|--------|
-| Progress (examples) | `preferences_done`, `phase_changed`, `tool_started` / `tool_done` / `tool_batch_done`, … |
-| Terminal | `itinerary_done` (may include `trip_id`), `error`, `clarification_needed` |
+| Progress | `preferences_done`, `phase_changed`, `tool_started`, `tool_done`, `tool_batch_done`, `validation_done`, … |
+| Terminal (buffer until end; exactly one yielded) | `itinerary_done`, `error`, `clarification_needed` |
 
-On success path, persist runs server-side; terminal `itinerary_done` is enriched with `trip_id` when save succeeds. Floor check: low destination `place_count` → HTTP **409** `destination_not_ready` (before stream).
+**Pre-stream failure:** destination `place_count` below planner floor → HTTP **409** `{ success: false, code: "destination_not_ready", … }` — **no SSE**.
+
+**Cache replay:** may emit `preferences_done` / `phase_changed` / `itinerary_done` **without** `tool_started` / `tool_done`. Treat missing tool events as normal.
+
+**After success:** prefer navigating to the trip via `trip_id` on `itinerary_done`, then `GET /trips/{id}` (+ `/geojson`). Do not treat the full SSE itinerary blob as the long-term UI model.
+
+### Representative `data` keys (illustrative)
+
+| Event | Typical `data` |
+|-------|----------------|
+| `preferences_done` | `{ interests, budget, days, include_offbeat, include_trekking }` |
+| `phase_changed` | `{ phase: string, from_cache?: boolean }` |
+| `tool_done` | `{ name: string, ok: boolean, code?: string \| null, ms: number }` |
+| `tool_batch_done` | `{}` (may accompany state internally; FE can show “batch done”) |
+| `itinerary_done` | `{ itinerary?, days?, from_cache?, trip_id?, accommodation_label? }` — `trip_id` added after save |
+| `error` | `{ code: "generation_timeout" \| "graph_recursion_limit" \| string }` |
+| `clarification_needed` | question / clarification payload (terminal; no trip save) |
+
+Ignore unknown event names (log in dev). Spec catalog may include `tool_started` / `validation_done` even when a given run omits them.
 
 Proxy note (prod): reverse proxy must not buffer this path (see `docs/context.md` / production blueprint).
 
@@ -173,58 +214,63 @@ Optional later: Vercel AI SDK only if you add a true chat surface — **not** as
 
 ---
 
-## 8. Domain API modules ↔ live endpoints
+## 8. Domain API modules ↔ live endpoints (auth matrix)
 
-Organize `lib/api/` by Wandr domains (not Chat/Notebook/Workspace):
+Organize `lib/api/` by Wandr domains (not Chat/Notebook/Workspace).  
+Auth vocabulary: **None** | **Optional** | **Required** (+ ownership notes).
+
+### Ops
+
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| GET | `/api/v1/health` | None | Smoke / ops |
 
 ### `auth`
 
-| Method | Path |
-|--------|------|
-| GET | `/api/v1/auth/google` |
-| GET | `/api/v1/auth/callback` (Google → API; see §11 gap) |
-| GET | `/api/v1/auth/me` |
-| POST | `/api/v1/auth/logout` |
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| GET | `/api/v1/auth/google` | None | Start OAuth (redirect or not-configured message) |
+| GET | `/api/v1/auth/callback` | None | Google → API only; see §11 gap |
+| GET | `/api/v1/auth/me` | Optional | Guest or cookie/Bearer → `AuthMeResponse` |
+| POST | `/api/v1/auth/logout` | None | Clears cookies; use `credentials: "include"` |
 
 ### `destinations`
 
-| Method | Path |
-|--------|------|
-| GET | `/api/v1/destinations/search?q=` |
-| GET | `/api/v1/destinations/{id}/readiness` |
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| GET | `/api/v1/destinations/search?q=` | None | `q` min length 2; rate limit **20/min/IP**; `ApiResponse<DestinationOut[]>` |
+| GET | `/api/v1/destinations/{id}/readiness` | None | `DestinationReadinessOut` — use `tier` / score / pcts (not a `search_available` field) |
 
 ### `places`
 
-| Method | Path |
-|--------|------|
-| GET | `/api/v1/places?destination_id=` |
-| GET | `/api/v1/places/{id}` |
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| GET | `/api/v1/places?destination_id=` | None | Bare `PaginatedResponse<PlaceOut>`; unknown destination → 404 |
+| GET | `/api/v1/places/{id}` | None | `ApiResponse<PlaceOut>` |
 
 ### `planner`
 
-| Method | Path |
-|--------|------|
-| POST | `/api/v1/planner/generate` (SSE) |
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| POST | `/api/v1/planner/generate` | Optional | SSE; floor 409 `destination_not_ready`; sets `wandr_session`; planner rate limit **10/min** |
 
 ### `trips`
 
-| Method | Path |
-|--------|------|
-| GET | `/api/v1/trips` |
-| GET | `/api/v1/trips/{id}` |
-| GET | `/api/v1/trips/{id}/geojson` |
-| DELETE | `/api/v1/trips/{id}` |
-| POST | `/api/v1/trips/{id}/claim` |
-| PATCH | `/api/v1/trips/{id}/days/{day}/stops/reorder` |
-| DELETE | `/api/v1/trips/{id}/days/{day}/stops/{place_id}` |
-| POST | `/api/v1/trips/{id}/days/{day}/stops` |
-| POST | `/api/v1/trips/{id}/days/{day}/reoptimize` |
-
-Also available: `GET /api/v1/health` (ops/smoke).
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| GET | `/api/v1/trips` | Required | Bare `PaginatedResponse<TripOut>` for authenticated user |
+| GET | `/api/v1/trips/{id}` | Optional + ownership | Guest session **or** owner |
+| GET | `/api/v1/trips/{id}/geojson` | None (public) | Raw `FeatureCollection` — see §15 |
+| DELETE | `/api/v1/trips/{id}` | Required + ownership | **No anonymous delete**; HTTP 204 |
+| POST | `/api/v1/trips/{id}/claim` | Required | Session must match; unclaimed only |
+| PATCH | `/api/v1/trips/{id}/days/{day}/stops/reorder` | Required + owner | Body `ReorderStopsIn`; trip-edit rate limit |
+| DELETE | `/api/v1/trips/{id}/days/{day}/stops/{place_id}` | Required + owner | Trip-edit rate limit |
+| POST | `/api/v1/trips/{id}/days/{day}/stops` | Required + owner | Body `AddStopIn`; trip-edit rate limit |
+| POST | `/api/v1/trips/{id}/days/{day}/reoptimize` | Required + owner | Trip-edit rate limit |
 
 Wrap each module with TanStack Query hooks (`useQuery` / `useMutation` + invalidation on edit/claim).
 
-**Evaluation HTTP** is still stub on the backend — do not invent FE screens that call it.
+**Evaluation HTTP** is still stub on the backend — do **not** invent FE screens or `lib/api/evaluation` modules that call it.
 
 ---
 
@@ -233,7 +279,7 @@ Wrap each module with TanStack Query hooks (`useQuery` / `useMutation` + invalid
 ```
 [Search destination]
         ↓
-[Readiness] place_count / search_available
+[Readiness] tier / score / place_count / enriched_pct / indexed_pct / message
         ↓
 [Compose] raw_input (+ optional days / base)
         ↓
@@ -245,6 +291,8 @@ Wrap each module with TanStack Query hooks (`useQuery` / `useMutation` + invalid
         ↓
 [Claim] after Google login                   (auth + wandr_session)
 ```
+
+Gate generate on readiness **tier** / message (and handle 409 `destination_not_ready`). There is **no** `search_available` boolean on the readiness JSON — Qdrant availability is folded into scoring / `indexed_pct` server-side.
 
 This is **not** a multi-turn chat notebook as the primary shell. Progress UI should surface planner phases/tools; the durable artifact is the **trip**.
 
@@ -259,6 +307,7 @@ docker compose up -d          # PostGIS :5433, Qdrant :6335 only
 # configure .env (DATABASE_URL, LLM_*, CORS includes http://localhost:3000)
 uvicorn src.main:app --reload --port 8000
 # seed + enrich + index at least one destination (see docs/context.md scripts)
+# OpenAPI: http://localhost:8000/docs
 ```
 
 In the **FE** repo:
@@ -322,4 +371,213 @@ Prefer feature folders over dumping everything under `components/` as the app gr
 
 ---
 
-*Source decisions: OpenSpec change `frontend-stack-guide`. Input draft: `docs/fe_suggestins.md`.*
+## 14. DTO sketches (TypeScript mirrors)
+
+> **Illustrative mirrors** of `src/*/schemas.py` + `src/core/responses.py` / `pagination.py`.  
+> Field names match the backend. If drift appears, **Python schemas + `/docs` win**.
+
+```ts
+// Envelopes
+type ApiResponse<T> = {
+  success: true;
+  data: T;
+  message?: string | null;
+};
+
+type ErrorResponse = {
+  success: false;
+  code: string;
+  message: string;
+  details?: Record<string, unknown> | null;
+};
+
+type PaginatedResponse<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  size: number;
+  pages: number;
+  has_next: boolean;
+  has_prev: boolean;
+};
+
+// Query: page >= 1 (default 1), size 1..100 (default 20)
+
+// Auth — src/auth/schemas.py
+type UserOut = {
+  id: string; // UUID
+  email: string;
+  name: string;
+  avatar_url: string | null;
+  is_active: boolean;
+  created_at: string; // ISO datetime
+};
+
+type AuthMeResponse = {
+  is_guest: boolean;
+  session_id: string;
+  user: UserOut | null;
+};
+
+// Destinations — src/destinations/schemas.py
+type DestinationOut = {
+  id: string;
+  name: string;
+  country: string;
+  display_name: string;
+  lat: number;
+  lng: number;
+  place_count: number;
+  created_at: string;
+};
+
+type DestinationReadinessOut = {
+  destination_id: string;
+  score: number;
+  tier: "ready" | "limited" | "sparse";
+  place_count: number;
+  enriched_pct: number;
+  indexed_pct: number;
+  message: string | null;
+};
+
+// Places — src/places/schemas.py
+type PlaceOut = {
+  id: string;
+  osm_id: string;
+  name: string;
+  category: string;
+  tags: Record<string, unknown>;
+  summary: string | null;
+  lat: number;
+  lng: number;
+  destination_id: string;
+  created_at: string;
+};
+
+// Planner — src/planner/schemas.py
+type PlanRequest = {
+  destination_id: string;
+  raw_input: string; // min length 1
+  days?: number | null;
+  base_lat?: number | null;
+  base_lng?: number | null;
+  accommodation_label?: string | null; // display-only; not a Trip column
+};
+
+// Trips — src/trips/schemas.py
+type TripStatus = "draft" | "complete" | "failed";
+
+type TripPlaceOut = {
+  id: string;
+  place_id: string;
+  day_number: number;
+  order_in_day: number;
+  travel_time_min: number;
+  visit_duration_min: number;
+  suggested_start_time: string | null;
+  arrival_note: string | null;
+  polyline: string | null;
+  name: string | null;
+  lat: number | null;
+  lng: number | null;
+};
+
+type TripOut = {
+  id: string;
+  user_id: string | null;
+  session_id: string;
+  destination_id: string;
+  days: number;
+  preferences: Record<string, unknown>;
+  status: TripStatus;
+  created_at: string;
+  updated_at: string;
+  places: TripPlaceOut[]; // may be empty on list endpoints
+};
+
+type ReorderStopsIn = { place_ids: string[] };
+type AddStopIn = { place_id: string };
+```
+
+---
+
+## 15. GeoJSON map contract (`GET /trips/{id}/geojson`)
+
+Public raw GeoJSON (not `ApiResponse`). Built by `TripService.build_geojson`.
+
+```ts
+type TripGeoJson = {
+  type: "FeatureCollection";
+  features: Array<TripPointFeature | TripLineFeature>;
+};
+
+// Point — stop markers (coordinates are GeoJSON [lng, lat])
+type TripPointFeature = {
+  type: "Feature";
+  geometry: { type: "Point"; coordinates: [number, number] }; // [lng, lat]
+  properties: {
+    name: string | null;
+    day: number;
+    order: number;
+    suggested_start_time: string | null;
+    place_id: string;
+    trip_place_id: string;
+  };
+};
+
+// LineString — concatenated day legs when polylines decode
+type TripLineFeature = {
+  type: "Feature";
+  geometry: { type: "LineString"; coordinates: [number, number][] };
+  properties: {
+    day: number;
+    trip_id: string;
+  };
+};
+```
+
+MapLibre: use Point features for markers; LineString features for day routes. Missing polylines → points only (never invent coordinates).
+
+---
+
+## 16. Error codes & rate limits (UX)
+
+### HTTP / JSON `ErrorResponse.code` (branch toasts on these)
+
+| Code | Typical HTTP | When |
+|------|--------------|------|
+| `destination_not_ready` | 409 | Generate refused — not enough places |
+| `not_found` | 404 | Unknown destination / place / trip |
+| `unauthorized` | 401 | Missing/invalid auth where Required |
+| `forbidden` | 403 | Ownership / claim failure |
+| `rate_limit_exceeded` | 429 | Middleware or trip-edit limiter |
+| `validation_error` | 422 | Bad query/body |
+| `external_service_error` | 502 | Upstream geo/etc. |
+| `llm_unavailable` | 503 | LLM gateway down |
+| `db_unavailable` | 503 | DB health |
+| `internal_error` | 500 | Unhandled |
+
+Also handle non-JSON failures (network, CORS, proxy buffering on SSE).
+
+### SSE terminal `error` codes
+
+| Code | Meaning |
+|------|---------|
+| `generation_timeout` | Graph hit `PLANNER_GENERATION_TIMEOUT_SECONDS` |
+| `graph_recursion_limit` | Recursion bound exceeded |
+
+### UX-visible rate limits (defaults from settings / context)
+
+| Route | Limit (default) |
+|-------|-----------------|
+| `GET /destinations/search` | **20/min/IP** |
+| `POST /planner/generate` | **10/min** |
+| Trip day-edit routes | **20/min** (trip-edit limiter) |
+| Default API paths | 60/min (middleware default) |
+
+Exact numbers are config-driven (`RATE_LIMIT_*` in settings); treat the table as UX guidance and re-check `/docs` or settings if limits feel wrong.
+
+---
+
+*Source decisions: OpenSpec changes `frontend-stack-guide`, `fe-api-contract-guide`. Input draft: `docs/fe_suggestins.md`.*
