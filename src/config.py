@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     QDRANT_URL: str = "http://localhost:6335"
     QDRANT_API_KEY: str = ""
     QDRANT_PLACES_COLLECTION: str = "places"
+    # local = MiniLM in-process (dev); hosted = LiteLLM embedding API (prod)
+    PLACES_EMBEDDING_BACKEND: str = "local"
+    # Dim must match backend model + Qdrant collection (MiniLM 384; gemini/text-embedding-004 → 768)
     PLACES_EMBEDDING_DIM: int = 384
     QDRANT_OPERATION_TIMEOUT_SECONDS: float = 5.0
     QDRANT_OPERATION_MAX_RETRIES: int = 2
@@ -34,6 +37,8 @@ class Settings(BaseSettings):
     # First download of MiniLM often exceeds 30s on cold cache — allow headroom locally.
     PLACES_EMBEDDING_MODEL_LOAD_TIMEOUT_SECONDS: float = 120.0
     ENRICH_BATCH_LLM_CONCURRENCY: int = 3
+    # Gemini / Google AI key for LiteLLM gemini/* embeddings (and optional Gemini chat)
+    GEMINI_API_KEY: str = ""
 
     # Cache / Redis backends (empty REDIS_URL → in-memory rate limit + planner cache)
     REDIS_URL: str = ""

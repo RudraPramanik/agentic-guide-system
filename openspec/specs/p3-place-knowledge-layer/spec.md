@@ -40,21 +40,30 @@ Default availability MUST be False until a successful ensure.
 The project SHALL provide `src/search/embeddings.py` with `ensure_embedding_model_loaded()`, `is_embeddings_available()`, `embed_text(text)`, and `embed_batch(texts)`.
 
 The embedding module MUST:
-- Load the model from lifespan via `ensure_embedding_model_loaded()` (bounded timeout, fail-soft) — NOT implicitly at import time.
-- Offload every `SentenceTransformer.encode(...)` call with `asyncio.to_thread(...)`.
+- Initialize from lifespan via `ensure_embedding_model_loaded()` (bounded timeout where applicable, fail-soft) — NOT implicitly at import time.
+- Select behavior from `PLACES_EMBEDDING_BACKEND`:
+  - `hosted`: call `src/core/llm/client.py` embedding helpers; no local SentenceTransformer.
+  - `local`: load SentenceTransformer and offload every `encode(...)` with `asyncio.to_thread(...)`.
 - If unavailable: `embed_text` returns `[]`; `embed_batch` returns `[[] for _ in texts]` (parallel-array contract, never a bare `[]`).
+- Successful vectors MUST have length equal to `get_settings().PLACES_EMBEDDING_DIM` (production hosted Gemini typically 768).
 
-#### Scenario: Successful model load returns a vector
-- **WHEN** `embed_text("sunrise photography")` is called and the model is available
+Qdrant collection creation MUST continue to use `PLACES_EMBEDDING_DIM` from settings so hosted cutover recreates/indexes at the new size.
+
+#### Scenario: Successful embed returns configured dim
+- **WHEN** `embed_text("sunrise photography")` is called and embeddings are available
 - **THEN** it returns a list of floats with length equal to `PLACES_EMBEDDING_DIM`
 
-#### Scenario: Model unavailable preserves batch shape
+#### Scenario: Unavailable preserves batch shape
 - **WHEN** embeddings are unavailable and `embed_batch(["a", "b"])` is called
 - **THEN** the result equals `[[], []]` and does not raise
 
-#### Scenario: Encode does not block the event loop
-- **WHEN** `embed_text` runs concurrently with another coroutine while encode is slow
+#### Scenario: Local encode does not block the event loop
+- **WHEN** backend is `local` and `embed_text` runs concurrently with another coroutine while encode is slow
 - **THEN** the other coroutine can make progress (encode is offloaded via `to_thread`)
+
+#### Scenario: Hosted path does not require MiniLM
+- **WHEN** `PLACES_EMBEDDING_BACKEND=hosted` during lifespan
+- **THEN** embeddings may become available without constructing SentenceTransformer
 
 ### Requirement: LLM-based place enrichment is re-runnable with distinct failure modes
 The project SHALL extend `PlaceService` with `_call_llm_and_parse(place)` and `enrich_place(place)`.

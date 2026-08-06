@@ -1,0 +1,26 @@
+# Build context exclusions for production API image.
+.git
+.github
+.cursor
+.venv
+venv
+__pycache__
+**/__pycache__
+*.pyc
+.env
+.env.*
+!.env.example
+.pytest_cache
+.mypy_cache
+.ruff_cache
+htmlcov
+.coverage
+tests
+docs
+openspec
+*.md
+!README.md
+docker-compose.yml
+docker-compose.prod.yml
+deploy
+agent-transcripts

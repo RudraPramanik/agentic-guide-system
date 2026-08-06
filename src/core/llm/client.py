@@ -138,3 +138,61 @@ async def chat_with_tools(
             code="llm_unavailable",
             message=f"LLM call failed after retries: {type(e).__name__}",
         ) from e
+
+
+def _embedding_api_key(settings) -> str:
+    """Prefer GEMINI_API_KEY for gemini/* embed models; else LLM_API_KEY."""
+    model = settings.PLACES_EMBEDDING_MODEL
+    if model.startswith("gemini/") and settings.GEMINI_API_KEY:
+        return settings.GEMINI_API_KEY
+    if settings.GEMINI_API_KEY:
+        return settings.GEMINI_API_KEY
+    return settings.LLM_API_KEY
+
+
+@_llm_retry
+async def embed_texts(
+    texts: list[str],
+    model: str | None = None,
+) -> list[list[float]]:
+    """
+    Hosted embeddings via LiteLLM. Returns one vector per input, in order.
+    Raises WandrLLMError after retries — callers (search/embeddings) must fail-soft.
+    """
+    if not texts:
+        return []
+    try:
+        settings = get_settings()
+        embed_model = model or settings.PLACES_EMBEDDING_MODEL
+        response = await litellm.aembedding(
+            model=embed_model,
+            input=texts,
+            api_key=_embedding_api_key(settings),
+            timeout=settings.LLM_TIMEOUT_SECONDS,
+            dimensions=settings.PLACES_EMBEDDING_DIM,
+        )
+
+        def _index(row: object) -> int:
+            if isinstance(row, dict):
+                return int(row["index"])
+            return int(getattr(row, "index"))
+
+        def _embedding(row: object) -> list[float]:
+            raw = row["embedding"] if isinstance(row, dict) else getattr(row, "embedding")
+            return list(raw)
+
+        data = sorted(response.data, key=_index)
+        return [_embedding(row) for row in data]
+    except litellm.RateLimitError as e:
+        retry_after = getattr(e, "retry_after", None) or 5
+        await asyncio.sleep(float(retry_after))
+        raise
+    except litellm.Timeout:
+        raise
+    except WandrLLMError:
+        raise
+    except Exception as e:
+        raise WandrLLMError(
+            code="llm_unavailable",
+            message=f"Embedding call failed after retries: {type(e).__name__}",
+        ) from e

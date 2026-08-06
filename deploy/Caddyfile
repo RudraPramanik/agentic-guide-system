@@ -1,0 +1,17 @@
+# Replace api.example.com with your API hostname (DNS A/AAAA → this VPS).
+# Caddy obtains TLS automatically.
+
+{$WANDR_API_HOST:api.example.com} {
+	encode gzip
+
+	# Planner SSE — do not buffer the event stream
+	handle /api/v1/planner/generate {
+		reverse_proxy api:8000 {
+			flush_interval -1
+		}
+	}
+
+	handle {
+		reverse_proxy api:8000
+	}
+}
