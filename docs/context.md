@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-06 · **Phase:** P7 in progress · **Next step:** P7.1 (see `docs/steps/step7.md` §7.1)
+**Last updated:** 2026-08-06 · **Phase:** P7 in progress · **Next step:** P7.2 (see `docs/steps/step7.md` §7.2)
 
 ---
 
 ## Current state (one line)
 
-P7.0 done — `save_from_state` persists `base_lat`/`base_lng` in preferences + `_resolve_base`; Next 7.1 (shared polyline helper).
+P7.1 done — public `populate_leg_polylines` (optimize keeps full pairwise legs); Next 7.2 (TripService day surgery + preserve-order schedule).
 
 ---
 
@@ -93,6 +93,7 @@ P7.0 done — `save_from_state` persists `base_lat`/`base_lng` in preferences + 
 | 6.4 | ✅ Done | `CacheBackend` + Redis/InMemory rate limiter; planner MVP cache hit still persists new trip |
 | 6.5 | ✅ Done | P6 pytest gaps + `scripts/test_p6_smoke.py` + import guards; Next → P7.1 |
 | 7.0 | ✅ Done | `save_from_state` base prefs + `_resolve_base` (prefs → Destination); no migration |
+| 7.1 | ✅ Done | Public `populate_leg_polylines`; `optimize_route` calls it; legs stay full pairwise |
 ---
 
 ## Implemented modules (real code)
@@ -110,7 +111,7 @@ P7.0 done — `save_from_state` persists `base_lat`/`base_lng` in preferences + 
 | `src/travel_engine/travel_rules.py` | Caps, structural durations, interest weights, `visit_duration_min` |
 | `src/travel_engine/place_selector.py` | `PlaceCandidate`, `TripPreferences`, `ScoredPlace`, `score_place`, `select_places`, `explain_selection` |
 | `src/travel_engine/day_allocator.py` | `allocate_days` — cluster + caps/budget + morning≤2/day + soft geo spill |
-| `src/travel_engine/route_optimizer.py` | `optimize_route` — full-matrix legs; drop until under travel or 1 stop; `leg_polylines`/`day_polyline` post-order |
+| `src/travel_engine/route_optimizer.py` | `optimize_route` — full-matrix legs; drop until under travel or 1 stop; public `populate_leg_polylines` for winning/fixed order |
 | `src/travel_engine/schedule_builder.py` | `build_day_schedule` — morning extract ≤2; excess morning omitted |
 | `src/travel_engine/trip_validator.py` | `validate_trip`, `ValidationResult`, `DayPlan`, `TripItinerary` — pure CoR rules |
 | `src/planner/routing_provider.py` | `OsrmRoutingProvider` — `travel_matrix` + fail-soft `route_polyline` via `geo/osrm.get_route` |
@@ -181,7 +182,7 @@ P7.0 done — `save_from_state` persists `base_lat`/`base_lng` in preferences + 
 
 ## Stubs only (do not assume implemented)
 
-trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/generate` **real** (6.2); planner cache + Redis/in-memory backends **real** (6.4). evaluation HTTP still stub (generation persist via repo/service is **real**); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + **PlannerService.generate** (5.1–5.14) are **real**. Route geometry (`route_polyline`, schedule polylines) **real** (6.0). Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4). **P7** trip edit/replan HTTP ops still stubs.
+trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/generate` **real** (6.2); planner cache + Redis/in-memory backends **real** (6.4). evaluation HTTP still stub (generation persist via repo/service is **real**); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + **PlannerService.generate** (5.1–5.14) are **real**. Route geometry (`route_polyline`, schedule polylines) **real** (6.0); shared `populate_leg_polylines` **real** (7.1). Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4). **P7** trip edit/replan HTTP ops + preserve-order schedule still stubs (7.2+).
 
 **Deployment / frontend notes (P6):** reverse proxy MUST disable response buffering for `/api/v1/planner/generate` (nginx: `proxy_buffering off;`). Frontend must use `fetch()` + manual SSE parsing — native `EventSource` is GET-only and cannot POST. After login, retain `wandr_session` cookie to `POST /trips/{id}/claim`. Empty `REDIS_URL` → in-memory rate limit + planner cache (no Redis in compose for MVP).
 

@@ -1,8 +1,4 @@
-## Purpose
-
-Canonical P7 Cursor build contract (`docs/steps/step7.md` v2.1) — planning SoT for Edit & Replan implementation batches.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Canonical P7 Cursor build contract v2.1
 

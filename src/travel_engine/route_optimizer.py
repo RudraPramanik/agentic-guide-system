@@ -125,13 +125,23 @@ def _pick_lowest_scored(remaining: list[ScoredPlace]) -> ScoredPlace:
     return min(remaining, key=lambda s: (s.score, s.place.name, str(s.place.id)))
 
 
-async def _populate_polylines(
+async def populate_leg_polylines(
     ordered: list[ScoredPlace],
     base_lat: float,
     base_lng: float,
     routing: RoutingProvider,
 ) -> tuple[list[str | None], str | None]:
-    """Geometry for the final ordered day only — at most len(ordered)+1 calls."""
+    """
+    Geometry for an ALREADY-DECIDED order (no permutation search).
+
+    Returns:
+      - leg_polylines: aligned to ordered; index i = polyline INTO ordered[i]
+      - day_polyline: aggregate for base + all stops
+
+    Callers: optimize_route (winning order) and P7 reorder fixed-order path.
+    At most len(ordered)+1 route_polyline calls; soft-fail None does not raise.
+    Does NOT change OptimizeResult.legs — that stays the full pairwise matrix.
+    """
     if not ordered:
         return [], None
     waypoints_final: list[tuple[float, float]] = [
@@ -164,7 +174,7 @@ async def optimize_route(
     consecutive chain) so schedule morning-only reorder can look up any hop.
 
     After the winning order is final, populates leg_polylines / day_polyline
-    via route_polyline (not during permutation search or discarded retries).
+    via populate_leg_polylines (not during permutation search or discarded retries).
     """
     if not day_places:
         return OptimizeResult()
@@ -187,7 +197,7 @@ async def optimize_route(
         under_budget = total <= MAX_DAILY_TRAVEL_MIN
 
         if under_budget or len(remaining) <= 1:
-            leg_polylines, day_polyline = await _populate_polylines(
+            leg_polylines, day_polyline = await populate_leg_polylines(
                 ordered, base_lat, base_lng, routing
             )
             return OptimizeResult(
@@ -201,7 +211,7 @@ async def optimize_route(
             )
 
         if drops_done >= MAX_ROUTE_DROP_ATTEMPTS:
-            leg_polylines, day_polyline = await _populate_polylines(
+            leg_polylines, day_polyline = await populate_leg_polylines(
                 ordered, base_lat, base_lng, routing
             )
             return OptimizeResult(

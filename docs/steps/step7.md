@@ -2,8 +2,7 @@
 > Blueprint SoT: [`docs/blueprint_final.md`](../blueprint_final.md) **v6.1** — Phase P7 (2 days · 4 blueprint steps, expanded here to **7.0–7.6**)
 > Built-so-far context: [`docs/context.md`](../context.md) · Guardrails: [`AGENT.md`](../../AGENT.md)
 > **Canonical P7 build contract (single SoT for implementation).** Produced by OpenSpec change
-> `harden-p7-step7-prompt` (supersedes v1 from `design-p7-edit-replan`). Historical review notes:
-> [`docs/step7_critics.md`](../step7_critics.md) — **not** the build contract.
+> `harden-p7-step7-prompt` (supersedes v1 from `design-p7-edit-replan`).
 >
 > **v2.1 changelog (vs v1):** resolves TripEditEvent ownership contradiction; shares polyline
 > population without collapsing `OptimizeResult.legs` to consecutive-only; persists polylines via
