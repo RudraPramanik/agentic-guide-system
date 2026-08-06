@@ -1,4 +1,4 @@
-﻿"""Trips HTTP router — CRUD + GeoJSON + claim (P6.3)."""
+﻿"""Trips HTTP router — CRUD + GeoJSON + claim (P6.3) + day-edit (P7.3)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,8 @@ from src.core.pagination import PageParams, PaginatedResponse, paginate
 from src.core.responses import ApiResponse
 from src.core.security.jwt import TokenPayload
 from src.core.security.permissions import optional_auth, require_auth
-from src.trips.schemas import TripOut
+from src.trips.dependencies import rate_limit_trip_edit
+from src.trips.schemas import AddStopIn, ReorderStopsIn, TripOut
 from src.trips.service import TripService
 
 router = APIRouter(prefix="/api/v1/trips", tags=["trips"])
@@ -86,4 +87,57 @@ async def claim_trip(
     """Claim an anonymous trip after login (session must match; unclaimed only)."""
     session_id = request.cookies.get(COOKIE_SESSION) or ""
     trip = await TripService(db).claim_trip(trip_id, payload.user_id, session_id)
+    return ApiResponse(data=TripOut.from_trip(trip))
+
+
+@router.patch("/{trip_id}/days/{day}/stops/reorder")
+async def reorder_day_stops(
+    trip_id: uuid.UUID,
+    day: int,
+    body: ReorderStopsIn,
+    payload: TokenPayload = Depends(rate_limit_trip_edit),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[TripOut]:
+    trip = await TripService(db).reorder_stops(
+        trip_id, day, body.place_ids, payload.user_id
+    )
+    return ApiResponse(data=TripOut.from_trip(trip))
+
+
+@router.delete("/{trip_id}/days/{day}/stops/{place_id}")
+async def remove_day_stop(
+    trip_id: uuid.UUID,
+    day: int,
+    place_id: uuid.UUID,
+    payload: TokenPayload = Depends(rate_limit_trip_edit),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[TripOut]:
+    trip = await TripService(db).remove_stop(
+        trip_id, day, place_id, payload.user_id
+    )
+    return ApiResponse(data=TripOut.from_trip(trip))
+
+
+@router.post("/{trip_id}/days/{day}/stops")
+async def add_day_stop(
+    trip_id: uuid.UUID,
+    day: int,
+    body: AddStopIn,
+    payload: TokenPayload = Depends(rate_limit_trip_edit),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[TripOut]:
+    trip = await TripService(db).add_stop(
+        trip_id, day, body.place_id, payload.user_id
+    )
+    return ApiResponse(data=TripOut.from_trip(trip))
+
+
+@router.post("/{trip_id}/days/{day}/reoptimize")
+async def reoptimize_day(
+    trip_id: uuid.UUID,
+    day: int,
+    payload: TokenPayload = Depends(rate_limit_trip_edit),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[TripOut]:
+    trip = await TripService(db).reoptimize_day(trip_id, day, payload.user_id)
     return ApiResponse(data=TripOut.from_trip(trip))

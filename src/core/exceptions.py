@@ -88,3 +88,19 @@ class WandrLLMError(WandrError):
             status_code=503,
             details=details,
         )
+
+
+class RateLimitedError(WandrError):
+    """Too many requests (429). Raised by dependency-based limiters (e.g. trip edit)."""
+
+    def __init__(
+        self,
+        message: str = "Too many requests. Retry later.",
+        details: dict | None = None,
+    ) -> None:
+        super().__init__(
+            code="rate_limit_exceeded",
+            message=message,
+            status_code=429,
+            details=details,
+        )

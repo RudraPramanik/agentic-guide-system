@@ -5,7 +5,7 @@ Trips FastAPI HTTP surface for P6.3 — CRUD, public GeoJSON FeatureCollection, 
 ## Requirements
 
 ### Requirement: Trips HTTP auth matrix and registration
-The system SHALL register `src/trips/router.py` on the FastAPI app with prefix `/api/v1/trips` and expose exactly these 6.3 endpoints (no P7 edit routes):
+The system SHALL register `src/trips/router.py` on the FastAPI app with prefix `/api/v1/trips` and expose the P6.3 CRUD/GeoJSON/claim endpoints **plus** the P7.3 day-scoped edit endpoints:
 
 | Method | Path | Auth | Response |
 |--------|------|------|----------|
@@ -14,12 +14,16 @@ The system SHALL register `src/trips/router.py` on the FastAPI app with prefix `
 | GET | `/{id}/geojson` | public | GeoJSON FeatureCollection (not `ApiResponse`) |
 | DELETE | `/{id}` | `require_auth` + ownership | HTTP 204 |
 | POST | `/{id}/claim` | `require_auth` + session match + unclaimed | `ApiResponse[TripOut]` |
+| PATCH | `/{id}/days/{day}/stops/reorder` | `require_auth` + owner + `rate_limit_trip_edit` | `ApiResponse[TripOut]` |
+| DELETE | `/{id}/days/{day}/stops/{place_id}` | `require_auth` + owner + `rate_limit_trip_edit` | `ApiResponse[TripOut]` |
+| POST | `/{id}/days/{day}/stops` | `require_auth` + owner + `rate_limit_trip_edit` | `ApiResponse[TripOut]` |
+| POST | `/{id}/days/{day}/reoptimize` | `require_auth` + owner + `rate_limit_trip_edit` | `ApiResponse[TripOut]` |
 
-Router MUST call `TripService` only (never repository/DB). DELETE asymmetry vs guest GET MUST be commented in code as intentional (no anonymous destructive actions). Soft-delete MUST use `BaseRepository.soft_delete`.
+Router MUST call `TripService` only (never repository/DB). DELETE asymmetry vs guest GET MUST remain commented in code as intentional (no anonymous destructive actions). Soft-delete MUST use `BaseRepository.soft_delete`. Edit routes MUST NOT use `optional_auth`. P6.3 route behavior MUST remain unchanged aside from coexistence with the new edit paths.
 
-#### Scenario: Trips routes registered including claim
-- **WHEN** the app is created after step 6.3
-- **THEN** route paths include trips list/get/geojson/delete and `claim`
+#### Scenario: Trips routes registered including claim and edits
+- **WHEN** the app is created after step 7.3
+- **THEN** route paths include trips list/get/geojson/delete, `claim`, and the four day-scoped edit endpoints
 
 #### Scenario: List requires authentication
 - **WHEN** an unauthenticated client calls `GET /api/v1/trips`
@@ -36,6 +40,10 @@ Router MUST call `TripService` only (never repository/DB). DELETE asymmetry vs g
 #### Scenario: Anonymous delete forbidden
 - **WHEN** an unauthenticated client calls `DELETE /api/v1/trips/{id}`
 - **THEN** the API returns 401
+
+#### Scenario: Edit routes reject optional guest auth
+- **WHEN** an unauthenticated client calls any of the four edit endpoints
+- **THEN** the API returns 401 (not 403-via-guest-session)
 
 ### Requirement: Public GeoJSON FeatureCollection from persisted data
 The system SHALL implement `TripService.build_geojson(trip)` and `GET /api/v1/trips/{id}/geojson` that returns a GeoJSON `FeatureCollection` built only from already-loaded TripPlace / Place fields (no live OSRM, httpx, or `src/geo` network calls on read).

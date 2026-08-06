@@ -88,6 +88,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_DESTINATIONS_SEARCH_REQUESTS: int = 20
     RATE_LIMIT_DESTINATIONS_SEARCH_WINDOW_SECONDS: int = 60
     RATE_LIMIT_DESTINATIONS_SEARCH_PATH: str = "/api/v1/destinations/search"
+    # User-keyed trip edit dependency (not path-table); middleware IP default may still apply
+    RATE_LIMIT_TRIP_EDIT_REQUESTS: int = 20
+    RATE_LIMIT_TRIP_EDIT_WINDOW_SECONDS: int = 60
 
     # CORS (credentialed; explicit origins only — never "*" with credentials)
     CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]
