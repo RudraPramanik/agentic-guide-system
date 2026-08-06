@@ -15,7 +15,7 @@ from src.places.models import Place
 from src.trips.exceptions import TripAlreadyClaimedError, TripForbiddenError
 from src.trips.models import Trip, TripStatus
 from src.trips.repository import TripRepository
-from src.trips.service import TripService
+from src.trips.service import TripService, _preferences_from_state
 
 
 async def _seed_dest_and_places(db_session, n_places: int = 2) -> tuple[Destination, list[Place]]:
@@ -82,6 +82,100 @@ def _complete_state(dest_id: uuid.UUID, places: list[Place]) -> dict:
             }
         ],
     }
+
+
+@pytest.mark.asyncio
+async def test_save_from_state_persists_base_prefs(db_session) -> None:
+    dest, places = await _seed_dest_and_places(db_session, n_places=1)
+    svc = TripService(db_session)
+    state = _complete_state(dest.id, places)
+    state["base_lat"] = 27.05
+    state["base_lng"] = 88.27
+
+    trip = await svc.save_from_state(state, user_id=None, session_id="sess-base")
+    assert trip is not None
+    assert trip.preferences["base_lat"] == 27.05
+    assert trip.preferences["base_lng"] == 88.27
+    assert trip.preferences["interests"] == ["nature"]
+
+
+@pytest.mark.asyncio
+async def test_save_from_state_omits_base_when_absent(db_session) -> None:
+    dest, places = await _seed_dest_and_places(db_session, n_places=1)
+    svc = TripService(db_session)
+    trip = await svc.save_from_state(
+        _complete_state(dest.id, places),
+        user_id=None,
+        session_id="sess-no-base",
+    )
+    assert trip is not None
+    assert "base_lat" not in trip.preferences
+    assert "base_lng" not in trip.preferences
+
+
+def test_preferences_from_state_includes_base_when_coercible() -> None:
+    prefs = _preferences_from_state(
+        {
+            "interests": ["nature"],
+            "budget": "moderate",
+            "include_offbeat": False,
+            "include_trekking": False,
+            "base_lat": "27.05",
+            "base_lng": 88.27,
+        }
+    )
+    assert prefs["base_lat"] == 27.05
+    assert prefs["base_lng"] == 88.27
+    assert prefs["interests"] == ["nature"]
+
+
+def test_preferences_from_state_omits_base_when_incomplete() -> None:
+    prefs = _preferences_from_state(
+        {
+            "interests": [],
+            "budget": None,
+            "include_offbeat": None,
+            "include_trekking": None,
+            "base_lat": 27.0,
+            # base_lng missing
+        }
+    )
+    assert "base_lat" not in prefs
+    assert "base_lng" not in prefs
+
+    prefs_bad = _preferences_from_state(
+        {
+            "interests": [],
+            "budget": None,
+            "include_offbeat": None,
+            "include_trekking": None,
+            "base_lat": "nope",
+            "base_lng": 88.0,
+        }
+    )
+    assert "base_lat" not in prefs_bad
+    assert "base_lng" not in prefs_bad
+
+
+def test_resolve_base_prefs_win() -> None:
+    trip = Trip(preferences={"base_lat": 1.5, "base_lng": 2.5})
+    dest = Destination(lat=27.0, lng=88.0)
+    assert TripService._resolve_base(trip, dest) == (1.5, 2.5)
+
+
+def test_resolve_base_falls_back_to_destination() -> None:
+    dest = Destination(lat=27.041, lng=88.263)
+    trip_missing = Trip(preferences={"interests": []})
+    assert TripService._resolve_base(trip_missing, dest) == (27.041, 88.263)
+
+    trip_none_prefs = Trip(preferences=None)
+    assert TripService._resolve_base(trip_none_prefs, dest) == (27.041, 88.263)
+
+    trip_non_numeric = Trip(preferences={"base_lat": "x", "base_lng": "y"})
+    assert TripService._resolve_base(trip_non_numeric, dest) == (27.041, 88.263)
+
+    trip_bool = Trip(preferences={"base_lat": True, "base_lng": False})
+    assert TripService._resolve_base(trip_bool, dest) == (27.041, 88.263)
 
 
 @pytest.mark.asyncio

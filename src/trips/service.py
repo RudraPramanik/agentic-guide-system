@@ -46,6 +46,51 @@ def _schedule_usable(schedule: Any) -> bool:
     return False
 
 
+def _coerce_base_float(value: Any) -> float | None:
+    """Return float if value coerces; None if missing or not coercible."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _preferences_from_state(state: dict[str, Any]) -> dict[str, Any]:
+    preferences: dict[str, Any] = {
+        "interests": state.get("interests") or [],
+        "budget": state.get("budget"),
+        "include_offbeat": state.get("include_offbeat"),
+        "include_trekking": state.get("include_trekking"),
+    }
+    base_lat = _coerce_base_float(state.get("base_lat"))
+    base_lng = _coerce_base_float(state.get("base_lng"))
+    if base_lat is not None and base_lng is not None:
+        preferences["base_lat"] = base_lat
+        preferences["base_lng"] = base_lng
+    return preferences
+
+
+def _resolve_base(trip: Trip, destination: Any) -> tuple[float, float]:
+    """
+    Prefer trip.preferences base_lat/base_lng when both are numeric (non-bool).
+    Else destination.lat / destination.lng.
+
+    Trips saved before P7.0 omit base prefs — destination centroid is the
+    known MVP fallback for edit-time routing.
+    """
+    prefs = trip.preferences or {}
+    lat, lng = prefs.get("base_lat"), prefs.get("base_lng")
+    if (
+        isinstance(lat, (int, float))
+        and not isinstance(lat, bool)
+        and isinstance(lng, (int, float))
+        and not isinstance(lng, bool)
+    ):
+        return float(lat), float(lng)
+    return float(destination.lat), float(destination.lng)
+
+
 def _concat_day_coords(
     leg_coords: list[list[tuple[float, float]]],
 ) -> list[list[float]]:
@@ -65,6 +110,11 @@ class TripService:
         self.session = session
         self.repo = TripRepository(session)
 
+    @staticmethod
+    def _resolve_base(trip: Trip, destination: Any) -> tuple[float, float]:
+        """Delegate to module helper — prefs base wins, else destination centroid."""
+        return _resolve_base(trip, destination)
+
     async def save_from_state(
         self,
         state: dict[str, Any],
@@ -80,12 +130,7 @@ class TripService:
             return None
 
         destination_id = _as_uuid(state["destination_id"])
-        preferences = {
-            "interests": state.get("interests") or [],
-            "budget": state.get("budget"),
-            "include_offbeat": state.get("include_offbeat"),
-            "include_trekking": state.get("include_trekking"),
-        }
+        preferences = _preferences_from_state(state)
         status = _trip_status(state)
 
         place_rows: list[dict[str, Any]] = []

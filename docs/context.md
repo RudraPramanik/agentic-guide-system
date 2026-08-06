@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-06 · **Phase:** P6 complete · **Next step:** P7.1 (see `docs/blueprint_final.md` §P7)
+**Last updated:** 2026-08-06 · **Phase:** P7 in progress · **Next step:** P7.1 (see `docs/steps/step7.md` §7.1)
 
 ---
 
 ## Current state (one line)
 
-P6 done — Redis/in-memory rate limit + planner CacheBackend (cache hits still persist); Next P7.1 (trip edit/replan).
+P7.0 done — `save_from_state` persists `base_lat`/`base_lng` in preferences + `_resolve_base`; Next 7.1 (shared polyline helper).
 
 ---
 
@@ -92,6 +92,7 @@ P6 done — Redis/in-memory rate limit + planner CacheBackend (cache hits still 
 | 6.3 | ✅ Done | trips HTTP CRUD + GeoJSON + claim (`build_geojson`, ownership 403, claim 200/403/409) |
 | 6.4 | ✅ Done | `CacheBackend` + Redis/InMemory rate limiter; planner MVP cache hit still persists new trip |
 | 6.5 | ✅ Done | P6 pytest gaps + `scripts/test_p6_smoke.py` + import guards; Next → P7.1 |
+| 7.0 | ✅ Done | `save_from_state` base prefs + `_resolve_base` (prefs → Destination); no migration |
 ---
 
 ## Implemented modules (real code)
@@ -165,7 +166,7 @@ P6 done — Redis/in-memory rate limit + planner CacheBackend (cache hits still 
 | `src/trips/exceptions.py` | `TripNotFoundError`, `TripForbiddenError`, `TripAlreadyClaimedError` (409) |
 | `src/trips/schemas.py` | `TripOut` / `TripPlaceOut` (timing, polyline, joined lat/lng) |
 | `src/trips/repository.py` | `TripRepository` — list_by_user/session, `get_with_places`, flush-only place insert |
-| `src/trips/service.py` | `save_from_state` UoW, `assert_can_access`, `claim_for_user`, `build_geojson`, get/list/soft-delete/claim HTTP helpers (no PlannerService) |
+| `src/trips/service.py` | `save_from_state` UoW (prefs include `base_lat`/`base_lng` when present), `_resolve_base`, `assert_can_access`, `claim_for_user`, `build_geojson`, get/list/soft-delete/claim HTTP helpers (no PlannerService) |
 | `src/trips/polyline.py` | Pure Google-encoded polyline decode (no package; invalid → `[]`) |
 | `src/trips/router.py` | CRUD + public `/geojson` + `/claim`; DELETE require_auth intentional vs guest GET |
 | `src/evaluation/models.py` | TripEvaluation |
