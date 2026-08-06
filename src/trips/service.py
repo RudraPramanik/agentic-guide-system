@@ -405,9 +405,12 @@ class TripService:
         scheduled_ids = {stop.place.id for stop in scheduled}
 
         try:
+            # SQL DELETE — not session.delete(): Trip.places has cascade
+            # delete-orphan, which resurrects ORM-deleted children still in the
+            # parent's collection on flush.
             for pid, tp in list(existing_by_place.items()):
                 if pid not in scheduled_ids:
-                    await self.session.delete(tp)
+                    await self.repo.delete_trip_place(trip.id, pid, day)
                     del existing_by_place[pid]
 
             new_rows: list[dict[str, Any]] = []
@@ -466,6 +469,8 @@ class TripService:
             await self.session.rollback()
             raise
 
+        # Drop stale identity-map collections (expire_on_commit=False in tests)
+        self.session.expire(trip, ["places"])
         loaded = await self.repo.get_with_places(trip.id)
         assert loaded is not None
         return loaded

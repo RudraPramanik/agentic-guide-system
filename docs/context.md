@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-06 · **Phase:** P7 in progress · **Next step:** P7.4 (see `docs/steps/step7.md` §7.4)
+**Last updated:** 2026-08-06 · **Phase:** P7 in progress · **Next step:** P7.5 (see `docs/steps/step7.md` §7.5)
 
 ---
 
 ## Current state (one line)
 
-P7.3 done — trips edit HTTP + user-keyed rate limit; Next 7.4 (full edit/replan pytest).
+P7.4 done — full edit/replan pytest (`test_edit_replan.py`); Next 7.5 (evaluation polish).
 
 ---
 
@@ -96,6 +96,7 @@ P7.3 done — trips edit HTTP + user-keyed rate limit; Next 7.4 (full edit/repla
 | 7.1 | ✅ Done | Public `populate_leg_polylines`; `optimize_route` calls it; legs stay full pairwise |
 | 7.2 | ✅ Done | TripService edit ops + preserve-order schedule; TripEditEvent UoW; thin `mark_trip_edited` |
 | 7.3 | ✅ Done | trips edit HTTP (4 routes) + `rate_limit_trip_edit` + `RateLimitedError` 429 |
+| 7.4 | ✅ Done | `tests/trips/test_edit_replan.py` — 20 locked scenarios + persist SQL-delete fix |
 ---
 
 ## Implemented modules (real code)
@@ -169,13 +170,13 @@ P7.3 done — trips edit HTTP + user-keyed rate limit; Next 7.4 (full edit/repla
 | `src/trips/exceptions.py` | `TripNotFoundError`, `TripForbiddenError`, `TripAlreadyClaimedError` (409), `TripEditValidationError` (422), `TripStopConflictError` (409), `TripStopNotFoundError` (404) |
 | `src/trips/schemas.py` | `TripOut` / `TripPlaceOut`; `ReorderStopsIn` / `AddStopIn` |
 | `src/trips/repository.py` | `TripRepository` — list/get_with_places, flush-only place insert/delete, sole `insert_edit_event` |
-| `src/trips/service.py` | `save_from_state` UoW; `_resolve_base`; ownership/claim/GeoJSON; day surgery `reorder_stops` / `remove_stop` / `add_stop` / `reoptimize_day` (RoutingProvider DI; no PlannerService); TripEditEvent + `mark_trip_edited` in same UoW |
+| `src/trips/service.py` | `save_from_state` UoW; `_resolve_base`; ownership/claim/GeoJSON; day surgery `reorder_stops` / `remove_stop` / `add_stop` / `reoptimize_day` (RoutingProvider DI; no PlannerService); TripEditEvent + `mark_trip_edited` in same UoW; persist uses SQL `delete_trip_place` (avoids cascade resurrect) |
 | `src/trips/polyline.py` | Pure Google-encoded polyline decode (no package; invalid → `[]`) |
 | `src/trips/dependencies.py` | `rate_limit_trip_edit` — user-keyed `{user_id}:trip_edit`; fail-open; dual OK with middleware IP |
 | `src/trips/router.py` | CRUD + GeoJSON + claim + four day-edit routes (`require_auth` via rate-limit dep); DELETE require_auth intentional vs guest GET |
 | `src/evaluation/models.py` | TripEvaluation |
 
-**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/`, `tests/trips/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **215** when DB up (incl. trip edit HTTP auth/429, Fake ops, preserve-order schedule, cache backends, Redis limiter fail-open, SSE cache-hit new trip_id, trips CRUD)
+**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/`, `tests/trips/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **244** when DB up (incl. `test_edit_replan` 20-scenario matrix, trip edit HTTP auth/429, Fake ops, preserve-order schedule, cache backends, Redis limiter fail-open, SSE cache-hit new trip_id, trips CRUD)
 
 **Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_p4_smoke.py`, `scripts/test_agent.py`, `scripts/test_p6_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
 
@@ -185,7 +186,7 @@ P7.3 done — trips edit HTTP + user-keyed rate limit; Next 7.4 (full edit/repla
 
 ## Stubs only (do not assume implemented)
 
-trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/generate` **real** (6.2); planner cache + Redis/in-memory backends **real** (6.4). evaluation HTTP still stub (generation persist + thin `mark_trip_edited` **real**); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + `PlannerService.generate` (5.1–5.14) are **real**. Route geometry (`route_polyline`, schedule polylines) **real** (6.0); shared `populate_leg_polylines` **real** (7.1); TripService day surgery + preserve-order schedule **real** (7.2); trips edit HTTP + user-keyed `rate_limit_trip_edit` **real** (7.3). Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4). **P7** full edit/replan pytest suite still pending (7.4+).
+trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/generate` **real** (6.2); planner cache + Redis/in-memory backends **real** (6.4). evaluation HTTP still stub (generation persist + thin `mark_trip_edited` **real**; 7.5 polish pending); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + `PlannerService.generate` (5.1–5.14) are **real**. Route geometry (`route_polyline`, schedule polylines) **real** (6.0); shared `populate_leg_polylines` **real** (7.1); TripService day surgery + preserve-order schedule **real** (7.2); trips edit HTTP + user-keyed `rate_limit_trip_edit` **real** (7.3); full edit/replan pytest **real** (7.4). Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4). **P7** remaining: 7.5 evaluation polish, 7.6 smoke/context close-out.
 
 **Deployment / frontend notes (P6):** reverse proxy MUST disable response buffering for `/api/v1/planner/generate` (nginx: `proxy_buffering off;`). Frontend must use `fetch()` + manual SSE parsing — native `EventSource` is GET-only and cannot POST. After login, retain `wandr_session` cookie to `POST /trips/{id}/claim`. Empty `REDIS_URL` → in-memory rate limit + planner cache (no Redis in compose for MVP).
 
