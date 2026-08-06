@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-06 · **Phase:** P7 in progress · **Next step:** P7.5 (see `docs/steps/step7.md` §7.5)
+**Last updated:** 2026-08-06 · **Phase:** P7 in progress · **Next step:** P7.6 (see `docs/steps/step7.md` §7.6)
 
 ---
 
 ## Current state (one line)
 
-P7.4 done — full edit/replan pytest (`test_edit_replan.py`); Next 7.5 (evaluation polish).
+P7.5 done — `mark_trip_edited` flag polish (`get_latest_for_trip` + evaluation-arg `mark_user_edited`); Next 7.6 (smoke/context close-out).
 
 ---
 
@@ -97,6 +97,7 @@ P7.4 done — full edit/replan pytest (`test_edit_replan.py`); Next 7.5 (evaluat
 | 7.2 | ✅ Done | TripService edit ops + preserve-order schedule; TripEditEvent UoW; thin `mark_trip_edited` |
 | 7.3 | ✅ Done | trips edit HTTP (4 routes) + `rate_limit_trip_edit` + `RateLimitedError` 429 |
 | 7.4 | ✅ Done | `tests/trips/test_edit_replan.py` — 20 locked scenarios + persist SQL-delete fix |
+| 7.5 | ✅ Done | `EvaluationService.mark_trip_edited` flag polish — `get_latest_for_trip` + `mark_user_edited(evaluation)` |
 ---
 
 ## Implemented modules (real code)
@@ -132,8 +133,8 @@ P7.4 done — full edit/replan pytest (`test_edit_replan.py`); Next 7.5 (evaluat
 | `src/planner/graph/nodes/record_evaluation.py` | Best-effort `EvaluationService.record_generation`; warning on DB fail |
 | `src/planner/graph/builder.py` | Compiled graph singleton — agent→executor unconditional; bookends on `plan_complete` |
 | `src/planner/service.py` | `PlannerService.generate` — fresh ToolContext, emit/`last_known_state`, `wait_for`, recursion ceiling |
-| `src/evaluation/repository.py` | `EvaluationRepository` — flush-only TripEvaluation create + `mark_user_edited` |
-| `src/evaluation/service.py` | `record_generation(state)` + thin `mark_trip_edited` (flag-only; no TripEditEvent) |
+| `src/evaluation/repository.py` | `EvaluationRepository` — flush-only create; `get_latest_for_trip`; `mark_user_edited(evaluation)` |
+| `src/evaluation/service.py` | `record_generation(state)` + `mark_trip_edited` flag-only (no TripEditEvent; skip if missing/already flagged) |
 | `src/planner/tools/schemas.py` | + `DEFAULT_TOOL_BY_PHASE` (nudge / LLM-fail defaults) |
 | `src/planner/tools/registry.py` | + `parse_tool_input`; re-exports `run_stuck_detector` |
 | `src/planner/tools/orchestration.py` | + unconditional `run_stuck_detector` |
@@ -176,7 +177,7 @@ P7.4 done — full edit/replan pytest (`test_edit_replan.py`); Next 7.5 (evaluat
 | `src/trips/router.py` | CRUD + GeoJSON + claim + four day-edit routes (`require_auth` via rate-limit dep); DELETE require_auth intentional vs guest GET |
 | `src/evaluation/models.py` | TripEvaluation |
 
-**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/`, `tests/trips/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **244** when DB up (incl. `test_edit_replan` 20-scenario matrix, trip edit HTTP auth/429, Fake ops, preserve-order schedule, cache backends, Redis limiter fail-open, SSE cache-hit new trip_id, trips CRUD)
+**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/`, `tests/trips/`, `tests/evaluation/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **248** when DB up (incl. `test_mark_trip_edited` flag scenarios, `test_edit_replan` 20-scenario matrix, trip edit HTTP auth/429, Fake ops, preserve-order schedule, cache backends, Redis limiter fail-open, SSE cache-hit new trip_id, trips CRUD)
 
 **Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_p4_smoke.py`, `scripts/test_agent.py`, `scripts/test_p6_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
 
@@ -186,7 +187,7 @@ P7.4 done — full edit/replan pytest (`test_edit_replan.py`); Next 7.5 (evaluat
 
 ## Stubs only (do not assume implemented)
 
-trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/generate` **real** (6.2); planner cache + Redis/in-memory backends **real** (6.4). evaluation HTTP still stub (generation persist + thin `mark_trip_edited` **real**; 7.5 polish pending); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + `PlannerService.generate` (5.1–5.14) are **real**. Route geometry (`route_polyline`, schedule polylines) **real** (6.0); shared `populate_leg_polylines` **real** (7.1); TripService day surgery + preserve-order schedule **real** (7.2); trips edit HTTP + user-keyed `rate_limit_trip_edit` **real** (7.3); full edit/replan pytest **real** (7.4). Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4). **P7** remaining: 7.5 evaluation polish, 7.6 smoke/context close-out.
+trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/generate` **real** (6.2); planner cache + Redis/in-memory backends **real** (6.4). evaluation HTTP still stub (generation persist + locked flag-only `mark_trip_edited` **real**); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + `PlannerService.generate` (5.1–5.14) are **real**. Route geometry (`route_polyline`, schedule polylines) **real** (6.0); shared `populate_leg_polylines` **real** (7.1); TripService day surgery + preserve-order schedule **real** (7.2); trips edit HTTP + user-keyed `rate_limit_trip_edit` **real** (7.3); full edit/replan pytest **real** (7.4); evaluation flag polish **real** (7.5). Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4). **P7** remaining: 7.6 smoke/context close-out.
 
 **Deployment / frontend notes (P6):** reverse proxy MUST disable response buffering for `/api/v1/planner/generate` (nginx: `proxy_buffering off;`). Frontend must use `fetch()` + manual SSE parsing — native `EventSource` is GET-only and cannot POST. After login, retain `wandr_session` cookie to `POST /trips/{id}/claim`. Empty `REDIS_URL` → in-memory rate limit + planner cache (no Redis in compose for MVP).
 

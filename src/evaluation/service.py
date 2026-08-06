@@ -109,8 +109,11 @@ class EvaluationService:
         return await self.repo.create_generation(data)
 
     async def mark_trip_edited(self, trip_id: UUID) -> None:
-        """Flag latest TripEvaluation as user_edited. Never writes TripEditEvent.
+        """Flag only. Does NOT create TripEditEvent. No LLM. No planner.
 
-        Missing evaluation is a no-op — edit UoW must still succeed.
+        Looks up latest TripEvaluation for trip_id. Missing row or already
+        user_edited → no-op so the edit UoW still succeeds.
         """
-        await self.repo.mark_user_edited(trip_id)
+        evaluation = await self.repo.get_latest_for_trip(trip_id)
+        if evaluation is not None and not evaluation.user_edited:
+            await self.repo.mark_user_edited(evaluation)
