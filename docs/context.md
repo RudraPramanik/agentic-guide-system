@@ -192,13 +192,13 @@ P7 done + production packaging — VPS Docker API; hosted Gemini embeddings (`PL
 
 trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/generate` **real** (6.2); planner cache + Redis/in-memory backends **real** (6.4). evaluation HTTP still stub (generation persist + locked flag-only `mark_trip_edited` **real**); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + `PlannerService.generate` (5.1–5.14) are **real**. Route geometry (`route_polyline`, schedule polylines) **real** (6.0); shared `populate_leg_polylines` **real** (7.1); TripService day surgery + preserve-order schedule **real** (7.2); trips edit HTTP + user-keyed `rate_limit_trip_edit` **real** (7.3); full edit/replan pytest **real** (7.4); evaluation flag polish **real** (7.5); P7 smoke + context close-out **real** (7.6). Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4). **P7 complete** — do not claim evaluation HTTP done.
 
-**Deployment / frontend notes:** Operator SOP `docs/steps/blueprint_production.md` — VPS API Docker (`Dockerfile`, `docker-compose.prod.yml` api+Caddy); root `docker-compose.yml` is **dev-only**. Proxy MUST not buffer `/api/v1/planner/generate` (Caddy `flush_interval -1` / nginx `proxy_buffering off`). Frontend must use `fetch()` + manual SSE parsing — native `EventSource` is GET-only and cannot POST. After login, retain `wandr_session` cookie to `POST /trips/{id}/claim`. Empty `REDIS_URL` → in-memory rate limit + planner cache. **FE stack + integration contract:** `docs/FE_guide.md` (sibling Next.js repo; env-swappable `NEXT_PUBLIC_API_URL`).
+**Deployment / frontend notes:** Operator SOP `docs/steps/blueprint_production.md` — VPS API Docker (`Dockerfile`, `docker-compose.prod.yml` api+Caddy); root `docker-compose.yml` is **dev-only**. Proxy MUST not buffer `/api/v1/planner/generate` (Caddy `flush_interval -1` / nginx `proxy_buffering off`). Frontend must use `fetch()` + manual SSE parsing — native `EventSource` is GET-only and cannot POST. After login, retain `wandr_session` cookie to `POST /trips/{id}/claim`. Empty `REDIS_URL` → in-memory rate limit + planner cache. **FE stack + integration contract:** `docs/FE_guide.md` (sibling Next.js repo; env-swappable `NEXT_PUBLIC_API_URL`). **FE phased build bible:** `docs/blueprint_frontend.md` (principles, AGENT, F0–F7 — not a Progress-table phase).
 
 ---
 
 ## Live endpoints
 
-> FE stack + API navigation contract: `docs/FE_guide.md` (auth matrix, DTOs, SSE, GeoJSON, error codes).
+> FE stack + API navigation contract: `docs/FE_guide.md` (auth matrix, DTOs, SSE, GeoJSON, error codes). FE build phases: `docs/blueprint_frontend.md`.
 
 | Method | Path | Auth |
 |--------|------|------|
@@ -208,7 +208,7 @@ trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/
 | GET | `/api/v1/auth/me` | Optional (guest or cookie/Bearer) |
 | POST | `/api/v1/auth/logout` | None |
 | GET | `/api/v1/destinations/search?q=` | None (public catalog; rate limit 20/min/IP) |
-| GET | `/api/v1/destinations/{id}/readiness` | None (`search_available` = live Qdrant flag) |
+| GET | `/api/v1/destinations/{id}/readiness` | None (`tier` / score / pcts; Qdrant folded into scoring — no `search_available` on wire) |
 | GET | `/api/v1/places?destination_id=` | None (paginated; unknown destination → 404) |
 | GET | `/api/v1/places/{id}` | None |
 | POST | `/api/v1/planner/generate` | Optional (SSE; floor 409 if place_count low; `wandr_session` cookie) |
