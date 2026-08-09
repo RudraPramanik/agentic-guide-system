@@ -1,7 +1,7 @@
 # Wandr — Frontend stack & API integration guide
 
 > **Canonical FE contract** for the separate Next.js app (sibling repo, not a monorepo).  
-> **Phased build bible:** `docs/blueprint_frontend.md` (principles, FE AGENT, F0–F7, failure contracts).  
+> **Phased build bible (v1.1 SSOT):** `docs/blueprint_frontend.md` (principles, FE AGENT, F0–F7, failure contracts).  
 > Draft brainstorming lives in `docs/fe_suggestins.md` — **this file is the locked subset**.  
 > Live API routes: `docs/context.md` → Live endpoints. Update this guide when routes or public DTOs change.
 

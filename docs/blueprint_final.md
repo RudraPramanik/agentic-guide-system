@@ -1,7 +1,8 @@
 # Wandr — Backend Blueprint v6.1 (Definitive + P4 pre-flight merge)
 > Production-grade AI travel planner. Modular monolith. Thin vertical slices. Phase-gated tool-loop agent. Every step ends with a runnable proof.
 >
-> **This file is the single source of truth for the Planner.** The former addendum `docs/blueprint.md` was merged here (v6.1) and is no longer a competing design doc.
+> **This file is the single source of truth for the Planner / backend.** The former addendum `docs/blueprint.md` was merged here (v6.1) and is no longer a competing design doc.
+> **Frontend build bible (separate):** `docs/blueprint_frontend.md` · **FE wire contract:** `docs/FE_guide.md`.
 
 **Supersedes:** `wandr_blueprint_v4.md`, `wandr_blueprint_v5.md`, `wandr_blueprint_v5_1_tool_loop.md`, standalone `docs/blueprint.md` addendum (merged)
 
