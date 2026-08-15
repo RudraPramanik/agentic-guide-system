@@ -220,14 +220,14 @@ Run before starting P1. On Windows, use PowerShell equivalents where noted.
 | 9 | Responses | `from src.core.responses import ApiResponse, ErrorResponse` | OK |
 | 10 | Exceptions | `from src.core.exceptions import WandrError, NotFoundError, WandrLLMError` | OK |
 | 11 | Health | `GET /api/v1/health` | `{"success": true, "data": {"status": "ok", ...}}` |
-| 12 | Docker | `docker compose ps` | `wandr_postgres` healthy, `wandr_qdrant` running |
+| 12 | Docker | `docker compose ps` | `wandr_postgres` healthy, `wandr_qdrant` running, `wandr_redis` healthy, `wandr_api` up |
 
 **Run the app** (requires `.env` with `SECRET_KEY`, `DATABASE_URL`, `LLM_API_KEY`, `NOMINATIM_USER_AGENT`):
 
 ```bash
-docker compose up -d
-uvicorn src.main:app --reload
+docker compose up --build
 # Health: curl -s http://localhost:8000/api/v1/health | python -m json.tool
+# optional host uvicorn: stop compose `api`, then uvicorn src.main:app --reload
 ```
 
 Local dev notes:

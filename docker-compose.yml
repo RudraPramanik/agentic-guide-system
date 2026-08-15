@@ -1,4 +1,6 @@
 # Local dev only. Never used in production.
+# One command: docker compose up --build
+# Host pytest/scripts still use published ports (5433 / 6335 / 6380) via .env.
 
 services:
   postgres:
@@ -27,6 +29,66 @@ services:
     volumes:
       - wandr_qdrant_data:/qdrant/storage
 
+  redis:
+    image: redis:7-alpine
+    container_name: wandr_redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - wandr_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: wandr-api:dev
+    container_name: wandr_api
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://wandr:wandr@postgres:5432/wandr
+      QDRANT_URL: http://qdrant:6333
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src
+      - ./alembic:/app/alembic
+      - ./scripts:/app/scripts
+      - ./alembic.ini:/app/alembic.ini:ro
+      - huggingface_cache:/root/.cache/huggingface
+    # site-packages first so the alembic/ migrations dir does not shadow the CLI package
+    command:
+      - sh
+      - -c
+      - PYTHONPATH="/usr/local/lib/python3.12/site-packages:${PYTHONPATH:-/app}" alembic upgrade head && exec uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
+
 volumes:
   wandr_postgres_data:
   wandr_qdrant_data:
+  wandr_redis_data:
+  huggingface_cache:

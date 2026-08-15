@@ -1,4 +1,4 @@
-# Build context exclusions for production API image.
+# Build context exclusions for Dockerfile and Dockerfile.dev.
 .git
 .github
 .cursor

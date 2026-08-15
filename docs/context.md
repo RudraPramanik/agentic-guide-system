@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-06 · **Phase:** post-P7 · **Next step:** operator VPS deploy via `docs/steps/blueprint_production.md`
+**Last updated:** 2026-08-15 · **Phase:** post-P7 · **Next step:** operator VPS deploy via `docs/steps/blueprint_production.md`
 
 ---
 
 ## Current state (one line)
 
-P7 done + production packaging — VPS Docker API; hosted Gemini embeddings (`PLACES_EMBEDDING_BACKEND`); deploy SOP in `blueprint_production.md`.
+P7 done + production packaging; local backend is one Compose command (`docker compose up --build`) — PostGIS, Qdrant, Redis, uvicorn API on :8000.
 
 ---
 
@@ -192,7 +192,7 @@ P7 done + production packaging — VPS Docker API; hosted Gemini embeddings (`PL
 
 trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/generate` **real** (6.2); planner cache + Redis/in-memory backends **real** (6.4). evaluation HTTP still stub (generation persist + locked flag-only `mark_trip_edited` **real**); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + `PlannerService.generate` (5.1–5.14) are **real**. Route geometry (`route_polyline`, schedule polylines) **real** (6.0); shared `populate_leg_polylines` **real** (7.1); TripService day surgery + preserve-order schedule **real** (7.2); trips edit HTTP + user-keyed `rate_limit_trip_edit` **real** (7.3); full edit/replan pytest **real** (7.4); evaluation flag polish **real** (7.5); P7 smoke + context close-out **real** (7.6). Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4). **P7 complete** — do not claim evaluation HTTP done.
 
-**Deployment / frontend notes:** Operator SOP `docs/steps/blueprint_production.md` — VPS API Docker (`Dockerfile`, `docker-compose.prod.yml` api+Caddy); root `docker-compose.yml` is **dev-only**. Proxy MUST not buffer `/api/v1/planner/generate` (Caddy `flush_interval -1` / nginx `proxy_buffering off`). Frontend must use `fetch()` + manual SSE parsing — native `EventSource` is GET-only and cannot POST. After login, retain `wandr_session` cookie to `POST /trips/{id}/claim`. Empty `REDIS_URL` → in-memory rate limit + planner cache. **FE stack + integration contract:** `docs/FE_guide.md` (sibling Next.js repo; env-swappable `NEXT_PUBLIC_API_URL`). **FE phased build bible (v1.1 SSOT):** `docs/blueprint_frontend.md` (principles, AGENT, F0–F7 — not a Progress-table phase; do not use retired `front_blueprint_2.md`).
+**Deployment / frontend notes:** Operator SOP `docs/steps/blueprint_production.md` — VPS API Docker (`Dockerfile`, `docker-compose.prod.yml` api+Caddy); root `docker-compose.yml` is **dev-only** (PostGIS + Qdrant + Redis + API). Proxy MUST not buffer `/api/v1/planner/generate` (Caddy `flush_interval -1` / nginx `proxy_buffering off`). Frontend must use `fetch()` + manual SSE parsing — native `EventSource` is GET-only and cannot POST. After login, retain `wandr_session` cookie to `POST /trips/{id}/claim`. Empty `REDIS_URL` → in-memory rate limit + planner cache. **FE stack + integration contract:** `docs/FE_guide.md` (sibling Next.js repo; env-swappable `NEXT_PUBLIC_API_URL`). **FE phased build bible (v1.1 SSOT):** `docs/blueprint_frontend.md` (principles, AGENT, F0–F7 — not a Progress-table phase; do not use retired `front_blueprint_2.md`).
 
 ---
 
@@ -227,15 +227,16 @@ trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/
 ## Local dev quick ref
 
 ```bash
-docker compose up -d          # Postgres :5433, Qdrant :6335
-uvicorn src.main:app --reload
-# or: python -m uvicorn src.main:app --reload --port 8000
+docker compose up --build     # PostGIS :5433, Qdrant :6335, Redis :6380, API :8000 (uvicorn --reload)
 # browser: http://localhost:8000/docs  and  /api/v1/destinations/search?q=Darjeeling
+# optional host uvicorn (stop compose `api` first): uvicorn src.main:app --reload --port 8000
 python scripts/test_db_conn.py
 python scripts/test_p1_smoke.py
 python scripts/test_geocoder.py "Darjeeling"   # needs PYTHONPATH=project root if imports fail
 python scripts/test_overpass.py 27.041 88.263 30   # public Overpass may 504; override OVERPASS_API_URL if needed
-python scripts/seed_destination.py --destination "Darjeeling" --radius 30   # idempotent; exit 1 only on geocode miss
+# in-stack scripts (uses container env / Docker DNS):
+# docker compose exec api python scripts/seed_destination.py --destination "Darjeeling" --radius 30
+python scripts/seed_destination.py --destination "Darjeeling" --radius 30   # host; idempotent; exit 1 only on geocode miss
 python scripts/enrich_places.py --destination "Darjeeling" --limit 0   # LLM required
 python scripts/index_places.py --destination "Darjeeling" --limit 0    # Qdrant + embeddings
 python scripts/test_p2_smoke.py   # network + commits seed data to dev DB
@@ -243,12 +244,14 @@ python scripts/test_p4_smoke.py   # offline Fake travel_engine pipeline
 # OPTIONAL_LIVE_OSRM=1 python scripts/test_p4_smoke.py
 python scripts/test_p7_smoke.py   # offline Fake trip reorder + TripEditEvent + GeoJSON
 # OPTIONAL_LIVE_OSRM=1 python scripts/test_p7_smoke.py
-# alembic: local package named `alembic/` shadows CLI — run via site-packages alembic or path workaround
+# alembic: local package named `alembic/` shadows CLI — compose `api` runs `alembic upgrade head` on start
 python -m pytest tests/ -v
 ```
 
-- `DATABASE_URL=postgresql+asyncpg://wandr:wandr@localhost:5433/wandr` (port **5433**, not 5432)
-- `QDRANT_URL=http://localhost:6335`
+- `DATABASE_URL=postgresql+asyncpg://wandr:wandr@localhost:5433/wandr` (port **5433**, not 5432) — host tools; Compose `api` overrides to `postgres:5432`
+- `QDRANT_URL=http://localhost:6335` — host tools; Compose `api` overrides to `http://qdrant:6333`
+- Empty host `REDIS_URL` keeps in-memory backends for pytest; Compose `api` sets `redis://redis:6379/0` (published **6380**). Optional host uvicorn: `redis://localhost:6380/0`
+- Stop host uvicorn **and any other process on :8000** before `docker compose up` (port clash)
 - `.env` must have a **bare** `DATABASE_URL` value — no comment prefix on the same line
 - Geo: `NOMINATIM_BASE_URL`, `OVERPASS_API_URL`, `NOMINATIM_USER_AGENT` via `get_settings()`
 - Overpass: `read=90s` + retry on 5xx (amendment vs step `read=30`); failure → `[]`

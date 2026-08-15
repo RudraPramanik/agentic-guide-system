@@ -21,7 +21,7 @@ The production blueprint MUST list every external account/API to provision and e
 - **THEN** they see `PLACES_EMBEDDING_BACKEND`/`MODEL`/`DIM`, Gemini API key handling, and `GOOGLE_REDIRECT_URI` pointing at the HTTPS API callback path
 
 ### Requirement: Local compose remains development-only
-The existing root `docker-compose.yml` (PostGIS + Qdrant) MUST remain documented as local development infra only and MUST NOT be prescribed as the production data plane.
+The root `docker-compose.yml` (local PostGIS, Qdrant, Redis, and API) MUST remain documented as local development infra only and MUST NOT be prescribed as the production data plane.
 
 #### Scenario: Blueprint separates dev and prod compose
 - **WHEN** the blueprint describes containers on the VPS

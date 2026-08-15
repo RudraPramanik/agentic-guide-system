@@ -2,7 +2,7 @@
 
 > **Scope:** Backend API on a VPS. Postgres/PostGIS, Qdrant, Redis, chat LLM, and place embeddings are **hosted** (env URLs/keys).  
 > **Not in scope:** workers/queues, self-hosted DB/Qdrant/Redis on the box, frontend hosting, multi-worker scale-out.  
-> **Dev infra:** root `docker-compose.yml` (PostGIS + Qdrant) is **local development only** — never use it as the production data plane.
+> **Dev infra:** root `docker-compose.yml` (PostGIS + Qdrant + Redis + API) is **local development only** — never use it as the production data plane.
 
 **OpenSpec change:** `production-vps-hosted`  
 **Image:** `Dockerfile` + `requirements-prod.txt` (no MiniLM/torch)  
@@ -88,7 +88,7 @@ Create `.env.production` on the VPS (never commit secrets).
 
 Also see commented block at the bottom of `.env.example`.
 
-**Dev note:** local MiniLM uses `PLACES_EMBEDDING_BACKEND=local`, dim `384`, model `sentence-transformers/all-MiniLM-L6-v2` against root `docker-compose.yml`.
+**Dev note:** local MiniLM uses `PLACES_EMBEDDING_BACKEND=local`, dim `384`, model `sentence-transformers/all-MiniLM-L6-v2` against root `docker-compose.yml` (`docker compose up --build` starts PostGIS, Qdrant, Redis, and the API). That compose file is still **not** the VPS data plane.
 
 ---
 
@@ -167,7 +167,7 @@ Repeat per destination (or your batch process). Enrich first if summaries/tags m
 | `Dockerfile` | Prod API image |
 | `requirements-prod.txt` | Prod deps (no sentence-transformers) |
 | `docker-compose.prod.yml` | VPS: api + Caddy |
-| `docker-compose.yml` | **Dev only** PostGIS + Qdrant |
+| `docker-compose.yml` | **Dev only** PostGIS + Qdrant + Redis + API |
 | `deploy/Caddyfile` | TLS + SSE flush |
 | `deploy/nginx.conf.example` | Nginx SSE alternative |
 | `.env.example` | Dev defaults + commented prod checklist |

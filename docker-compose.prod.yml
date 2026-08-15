@@ -1,6 +1,6 @@
 # Production VPS — API + TLS proxy only.
 # Data plane (PostGIS, Qdrant, Redis) is hosted; set env via .env.production.
-# Local PostGIS/Qdrant: use root docker-compose.yml (dev-only).
+# Local PostGIS/Qdrant/Redis/API: use root docker-compose.yml (dev-only).
 
 services:
   api:

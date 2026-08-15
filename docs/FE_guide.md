@@ -37,7 +37,7 @@ NEXT_PUBLIC_API_URL=https://api.example.com   # prod
 Same build, same screens, same clients — no DB/Redis/LLM env in the frontend.
 
 ```
-Dev:  Next :3000  ──credentials──▶  uvicorn :8000  ◀── docker compose (PostGIS + Qdrant)
+Dev:  Next :3000  ──credentials──▶  API :8000  ◀── docker compose (PostGIS + Qdrant + Redis + API)
 Prod: app.<domain> ──credentials──▶  api.<domain>   ◀── hosted DB / Qdrant / Redis / LLM
 ```
 
@@ -319,9 +319,9 @@ This is **not** a multi-turn chat notebook as the primary shell. Progress UI sho
 In the **API** repo:
 
 ```bash
-docker compose up -d          # PostGIS :5433, Qdrant :6335 only
+docker compose up --build     # PostGIS :5433, Qdrant :6335, Redis :6380, API :8000
 # configure .env (DATABASE_URL, LLM_*, CORS includes http://localhost:3000)
-uvicorn src.main:app --reload --port 8000
+# optional host uvicorn instead: stop compose `api`, then uvicorn src.main:app --reload --port 8000
 # seed + enrich + index at least one destination (see docs/context.md scripts)
 # OpenAPI: http://localhost:8000/docs
 ```
