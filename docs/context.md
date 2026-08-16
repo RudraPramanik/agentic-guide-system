@@ -14,7 +14,7 @@
 
 ## Current state (one line)
 
-P7 done + production packaging; public `POST /destinations/{id}/prepare` seeds Overpass POIs so any geocoded place can reach the generate floor (guest, no login).
+P7 done + production packaging; generate default routing is in-process haversine (`ROUTING_BACKEND=haversine`) so Darjeeling cold generate fits the 45s ceiling without public OSRM.
 
 ---
 
@@ -105,7 +105,7 @@ P7 done + production packaging; public `POST /destinations/{id}/prepare` seeds O
 
 | Module | Exports / notes |
 |--------|-----------------|
-| `src/config.py` | `get_settings()` — Qdrant/embeddings, OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo, CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL` |
+| `src/config.py` | `get_settings()` — Qdrant/embeddings, OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo, CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL`, `ROUTING_BACKEND` (`haversine` default \| `osrm`) |
 | `src/core/llm/client.py` | `chat_completion` / `chat_with_tools` / `embed_texts` — **only** litellm import |
 | `src/search/embeddings.py` | `local` MiniLM or `hosted` via `embed_texts`; fail-soft; lazy ST import |
 | `src/core/cache/backends.py` | `CacheBackend` Protocol (`get`/`set`/`delete`); `InMemoryCacheBackend` / `RedisCacheBackend`; `get_cache_backend()` |
@@ -121,7 +121,7 @@ P7 done + production packaging; public `POST /destinations/{id}/prepare` seeds O
 | `src/travel_engine/route_optimizer.py` | `optimize_route` — full-matrix legs; drop until under travel or 1 stop; public `populate_leg_polylines` for winning/fixed order |
 | `src/travel_engine/schedule_builder.py` | `build_day_schedule` — morning extract ≤2; `preserve_order=True` skips extract (P7 reorder) |
 | `src/travel_engine/trip_validator.py` | `validate_trip`, `ValidationResult`, `DayPlan`, `TripItinerary` — pure CoR rules; morning errors prefixed `morning_slot_violation:` |
-| `src/planner/routing_provider.py` | `OsrmRoutingProvider` — `travel_matrix` + fail-soft `route_polyline` via `geo/osrm.get_route` |
+| `src/planner/routing_provider.py` | `get_routing_provider()` — `HaversineRoutingProvider` (default, `estimate_route`, no HTTP) or `OsrmRoutingProvider` (`get_route` + fail-soft `route_polyline`) |
 | `src/planner/tools/schemas.py` | `AgentPhase`, `PHASE_TOOLS`, `ToolResult` (+`fallback_used`), `ToolContext`, 12 input models |
 | `src/planner/tools/registry.py` | 12-tool `TOOL_REGISTRY`, phase/precondition `execute_tool`, re-exports orchestration helpers |
 | `src/planner/tools/orchestration.py` | `check_preconditions`, `apply_tool_result` (sole writer), `maybe_transition_phase`, `_make_test_state` |
@@ -135,7 +135,7 @@ P7 done + production packaging; public `POST /destinations/{id}/prepare` seeds O
 | `src/planner/graph/nodes/write_narrative.py` | Titles/paragraphs via `chat_completion`; templates on LLM fail; geometry locked |
 | `src/planner/graph/nodes/record_evaluation.py` | Best-effort `EvaluationService.record_generation`; warning on DB fail |
 | `src/planner/graph/builder.py` | Compiled graph singleton — agent→executor unconditional; bookends on `plan_complete` |
-| `src/planner/service.py` | `PlannerService.generate` — fresh ToolContext, emit/`last_known_state`, `wait_for`, recursion ceiling |
+| `src/planner/service.py` | `PlannerService.generate` — fresh ToolContext (`get_routing_provider()` default), emit/`last_known_state`, `wait_for`, recursion ceiling |
 | `src/evaluation/repository.py` | `EvaluationRepository` — flush-only create; `get_latest_for_trip`; `mark_user_edited(evaluation)` |
 | `src/evaluation/service.py` | `record_generation(state)` + `mark_trip_edited` flag-only (no TripEditEvent; skip if missing/already flagged) |
 | `src/planner/tools/schemas.py` | + `DEFAULT_TOOL_BY_PHASE` (nudge / LLM-fail defaults) |
@@ -169,12 +169,12 @@ P7 done + production packaging; public `POST /destinations/{id}/prepare` seeds O
 | `src/search/client.py` | `AsyncQdrantClient`, `ensure_places_collection`, `is_qdrant_available` |
 | `src/search/embeddings.py` | (see above — local MiniLM or hosted `embed_texts`) |
 | `src/search/places_index.py` | upsert, `search_places`, `count_indexed` |
-| `src/geo/*` | geocoder, overpass, osrm |
+| `src/geo/*` | geocoder, overpass, osrm (`get_route` live-first; public `estimate_route` never HTTP) |
 | `src/trips/models.py` | Trip / TripPlace / TripEditEvent (+ `Trip.places` / `TripPlace.place` relationships for eager load) |
 | `src/trips/exceptions.py` | `TripNotFoundError`, `TripForbiddenError`, `TripAlreadyClaimedError` (409), `TripEditValidationError` (422), `TripStopConflictError` (409), `TripStopNotFoundError` (404) |
 | `src/trips/schemas.py` | `TripOut` / `TripPlaceOut`; `ReorderStopsIn` / `AddStopIn` |
 | `src/trips/repository.py` | `TripRepository` — list/get_with_places, flush-only place insert/delete, sole `insert_edit_event` |
-| `src/trips/service.py` | `save_from_state` UoW; `_resolve_base`; ownership/claim/GeoJSON; day surgery `reorder_stops` / `remove_stop` / `add_stop` / `reoptimize_day` (RoutingProvider DI; no PlannerService); TripEditEvent + `mark_trip_edited` in same UoW; persist uses SQL `delete_trip_place` (avoids cascade resurrect) |
+| `src/trips/service.py` | `save_from_state` UoW; `_resolve_base`; ownership/claim/GeoJSON; day surgery `reorder_stops` / `remove_stop` / `add_stop` / `reoptimize_day` (`get_routing_provider()` default; no PlannerService); TripEditEvent + `mark_trip_edited` in same UoW; persist uses SQL `delete_trip_place` (avoids cascade resurrect) |
 | `src/trips/polyline.py` | Pure Google-encoded polyline decode (no package; invalid → `[]`) |
 | `src/trips/dependencies.py` | `rate_limit_trip_edit` — user-keyed `{user_id}:trip_edit`; fail-open; dual OK with middleware IP |
 | `src/trips/router.py` | CRUD + GeoJSON + claim + four day-edit routes (`require_auth` via rate-limit dep); DELETE require_auth intentional vs guest GET |
@@ -184,7 +184,7 @@ P7 done + production packaging; public `POST /destinations/{id}/prepare` seeds O
 
 **Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_p4_smoke.py`, `scripts/test_agent.py`, `scripts/test_p6_smoke.py`, `scripts/test_p7_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
 
-**Known limitations / TODO (post-P7):** geocoder cache + Nominatim throttle are per-process; empty `REDIS_URL` keeps rate limit + planner cache in-memory (not shared across workers) — set `REDIS_URL` for multi-worker prod. Prod uses **hosted** embeddings (`PLACES_EMBEDDING_BACKEND=hosted`, Gemini via LiteLLM) — dim cutover 384→768 requires Qdrant recreate + `index_places` reindex (see `docs/steps/blueprint_production.md`). Local MiniLM remains `BACKEND=local`. **P7 MVP:** concurrent trip edits are last-write-wins (no row locking). **Cold generate SSE (2026-08-16):** live path emits `preferences_done` / `phase_changed` / terminal `itinerary_done`|`clarification_needed`|`error` (incl. `generation_aborted`); router yields `missing_terminal` if no terminal buffered. Proof: destination `458854b1-…` (132 places, tier `limited`) → `itinerary_done` + `trip_id` in ~48s wall under default 45s graph ceiling.
+**Known limitations / TODO (post-P7):** geocoder cache + Nominatim throttle are per-process; empty `REDIS_URL` keeps rate limit + planner cache in-memory (not shared across workers) — set `REDIS_URL` for multi-worker prod. Prod uses **hosted** embeddings (`PLACES_EMBEDDING_BACKEND=hosted`, Gemini via LiteLLM) — dim cutover 384→768 requires Qdrant recreate + `index_places` reindex (see `docs/steps/blueprint_production.md`). Local MiniLM remains `BACKEND=local`. **P7 MVP:** concurrent trip edits are last-write-wins (no row locking). **Cold generate SSE (2026-08-16):** live path emits `preferences_done` / `phase_changed` / terminal `itinerary_done`\|`clarification_needed`\|`error` (incl. `generation_aborted`); router yields `missing_terminal` if no terminal buffered. Default `ROUTING_BACKEND=haversine` (in-process times, Point-only GeoJSON until `osrm`). Proof: destination `458854b1-…` (132 places, tier `limited`) → `itinerary_done` + `trip_id` in ~10s wall (under 45s graph ceiling; public OSRM not required).
 
 ---
 
@@ -255,6 +255,7 @@ python -m pytest tests/ -v
 - Stop host uvicorn **and any other process on :8000** before `docker compose up` (port clash)
 - `.env` must have a **bare** `DATABASE_URL` value — no comment prefix on the same line
 - Geo: `NOMINATIM_BASE_URL`, `OVERPASS_API_URL`, `NOMINATIM_USER_AGENT` via `get_settings()`
+- Routing: `ROUTING_BACKEND=haversine` (default, in-process) or `osrm` + `OSRM_BASE_URL` (live pairwise; not required for 45s generate)
 - Overpass: `read=90s` + retry on 5xx (amendment vs step `read=30`); failure → `[]`
 
 ---

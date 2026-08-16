@@ -74,6 +74,9 @@ class Settings(BaseSettings):
     OSRM_BASE_URL: str = "https://router.project-osrm.org"
     # Bounded parallelism for OsrmRoutingProvider.travel_matrix (public OSRM-safe)
     OSRM_MATRIX_MAX_CONCURRENCY: int = 8
+    # Generate + trip-edit routing adapter: haversine = in-process (default, fits 45s);
+    # osrm = live pairwise get_route against OSRM_BASE_URL (paid/self-host later).
+    ROUTING_BACKEND: str = "haversine"
 
     # Auth / JWT
     ACCESS_TOKEN_EXPIRE_DAYS: int = 7

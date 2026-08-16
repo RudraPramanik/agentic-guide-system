@@ -1,7 +1,8 @@
-﻿"""OSRM adapter — implements travel_engine RoutingProvider via geo/osrm.
+﻿"""Routing adapters — RoutingProvider via geo/osrm (live or in-process estimate).
 
-Maps get_route fallback_used onto RouteLeg.used_fallback. Does not touch
-LangGraph / TravelState (used_osrm_fallback is P5).
+OsrmRoutingProvider maps get_route fallback_used onto RouteLeg.used_fallback.
+HaversineRoutingProvider never HTTP-calls. Does not touch LangGraph / TravelState
+(used_osrm_fallback is P5).
 """
 
 from __future__ import annotations
@@ -10,8 +11,10 @@ import asyncio
 from uuid import UUID
 
 from src.config import get_settings
-from src.geo.osrm import get_route
+from src.geo.osrm import estimate_route, get_route
 from src.travel_engine.protocols import RouteLeg
+
+_ROUTING_BACKEND_OSRM = "osrm"
 
 
 class OsrmRoutingProvider:
@@ -66,3 +69,43 @@ class OsrmRoutingProvider:
         if not poly:
             return None
         return poly
+
+
+class HaversineRoutingProvider:
+    """In-process pairwise estimate_route — no OSRM HTTP, no polylines."""
+
+    async def travel_matrix(
+        self, waypoints: list[tuple[UUID, float, float]]
+    ) -> list[RouteLeg]:
+        if len(waypoints) < 2:
+            return []
+        legs: list[RouteLeg] = []
+        for i, (from_id, lat_i, lng_i) in enumerate(waypoints):
+            for j, (to_id, lat_j, lng_j) in enumerate(waypoints):
+                if i == j:
+                    continue
+                result = estimate_route([(lat_i, lng_i), (lat_j, lng_j)])
+                legs.append(
+                    RouteLeg(
+                        from_place_id=from_id,
+                        to_place_id=to_id,
+                        duration_min=round(result.duration_min),
+                        distance_km=result.distance_km,
+                        used_fallback=True,
+                    )
+                )
+        return legs
+
+    async def route_polyline(
+        self, waypoints: list[tuple[float, float]]
+    ) -> str | None:
+        _ = waypoints
+        return None
+
+
+def get_routing_provider() -> OsrmRoutingProvider | HaversineRoutingProvider:
+    """Select generate/edit adapter from ROUTING_BACKEND (unknown → haversine)."""
+    raw = str(get_settings().ROUTING_BACKEND or "").strip().lower()
+    if raw == _ROUTING_BACKEND_OSRM:
+        return OsrmRoutingProvider()
+    return HaversineRoutingProvider()

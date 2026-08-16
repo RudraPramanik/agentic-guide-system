@@ -6,12 +6,16 @@ import asyncio
 import time
 from types import SimpleNamespace
 from uuid import uuid4
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from src.geo.schemas import RouteResult
-from src.planner.routing_provider import OsrmRoutingProvider
+from src.planner.routing_provider import (
+    HaversineRoutingProvider,
+    OsrmRoutingProvider,
+    get_routing_provider,
+)
 
 
 @pytest.mark.asyncio
@@ -160,3 +164,114 @@ async def test_route_polyline_fallback_and_errors_are_none():
         side_effect=ValueError("need 2"),
     ):
         assert await provider.route_polyline([(0.0, 0.0)]) is None
+
+
+@pytest.mark.asyncio
+async def test_haversine_matrix_three_waypoints_no_get_route():
+    provider = HaversineRoutingProvider()
+    a, b, c = uuid4(), uuid4(), uuid4()
+    waypoints = [
+        (a, 27.04, 88.26),
+        (b, 27.03, 88.27),
+        (c, 27.05, 88.25),
+    ]
+    with patch(
+        "src.planner.routing_provider.get_route",
+        new_callable=AsyncMock,
+    ) as mock_route:
+        legs = await provider.travel_matrix(waypoints)
+    assert mock_route.await_count == 0
+    assert len(legs) == 6
+    assert all(leg.used_fallback is True for leg in legs)
+    assert all(leg.distance_km > 0 for leg in legs)
+
+
+@pytest.mark.asyncio
+async def test_haversine_polyline_always_none():
+    provider = HaversineRoutingProvider()
+    assert await provider.route_polyline([(27.04, 88.26), (27.03, 88.27)]) is None
+
+
+@pytest.mark.asyncio
+async def test_haversine_single_waypoint_empty():
+    provider = HaversineRoutingProvider()
+    assert await provider.travel_matrix([(uuid4(), 27.0, 88.0)]) == []
+
+
+def test_factory_default_and_unknown_are_haversine():
+    fake = SimpleNamespace(ROUTING_BACKEND="haversine")
+    with patch("src.planner.routing_provider.get_settings", return_value=fake):
+        assert isinstance(get_routing_provider(), HaversineRoutingProvider)
+    fake.ROUTING_BACKEND = "not-a-backend"
+    with patch("src.planner.routing_provider.get_settings", return_value=fake):
+        assert isinstance(get_routing_provider(), HaversineRoutingProvider)
+
+
+def test_factory_osrm_returns_osrm_adapter():
+    fake = SimpleNamespace(ROUTING_BACKEND="osrm")
+    with patch("src.planner.routing_provider.get_settings", return_value=fake):
+        assert isinstance(get_routing_provider(), OsrmRoutingProvider)
+
+
+@pytest.mark.asyncio
+async def test_generate_default_routing_uses_factory():
+    from src.planner.service import PlannerService
+
+    dest_id = uuid4()
+    sentinel = object()
+    mock_graph = MagicMock()
+    mock_graph.ainvoke = AsyncMock(
+        return_value={
+            "destination_id": str(dest_id),
+            "plan_complete": False,
+            "needs_clarification": False,
+            "abort_triggered": True,
+            "schedule": [],
+            "itinerary": {},
+            "errors": ["test_short_circuit"],
+            "warnings": [],
+        }
+    )
+    with (
+        patch("src.planner.service.get_compiled_graph", return_value=mock_graph),
+        patch(
+            "src.planner.service.record_evaluation",
+            new=AsyncMock(return_value={}),
+        ),
+        patch(
+            "src.planner.service.get_routing_provider",
+            return_value=sentinel,
+        ) as factory,
+    ):
+        await PlannerService().generate(
+            destination_id=dest_id,
+            raw_input="trip",
+            base_lat=27.0,
+            base_lng=88.0,
+            session_id="sess-test",
+        )
+    factory.assert_called_once()
+    _args, kwargs = mock_graph.ainvoke.call_args
+    ctx = kwargs["config"]["configurable"]["tool_context"]
+    assert ctx.routing is sentinel
+
+
+def test_trip_service_default_routing_uses_factory():
+    from src.trips.service import TripService
+
+    sentinel = object()
+    session = MagicMock()
+    with patch("src.trips.service.get_routing_provider", return_value=sentinel):
+        svc = TripService(session)
+    assert svc._routing is sentinel
+
+
+def test_travel_engine_has_zero_geo_imports():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2] / "src" / "travel_engine"
+    for path in root.glob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        assert "src.geo" not in text
+        assert "from src import geo" not in text
+

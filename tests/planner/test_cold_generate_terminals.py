@@ -51,7 +51,7 @@ async def test_generate_emits_itinerary_done_on_success() -> None:
             "src.planner.service.record_evaluation",
             new=AsyncMock(return_value={}),
         ),
-        patch("src.planner.service.OsrmRoutingProvider"),
+        patch("src.planner.service.get_routing_provider"),
     ):
         result = await PlannerService().generate(
             destination_id=dest_id,
@@ -98,7 +98,7 @@ async def test_generate_emits_clarification_needed() -> None:
             "src.planner.service.record_evaluation",
             new=AsyncMock(return_value={}),
         ),
-        patch("src.planner.service.OsrmRoutingProvider"),
+        patch("src.planner.service.get_routing_provider"),
     ):
         await PlannerService().generate(
             destination_id=dest_id,
@@ -136,7 +136,7 @@ async def test_generate_timeout_single_error_terminal() -> None:
             "src.planner.service.record_evaluation",
             new=AsyncMock(return_value={}),
         ),
-        patch("src.planner.service.OsrmRoutingProvider"),
+        patch("src.planner.service.get_routing_provider"),
         patch("src.planner.service.get_settings") as mock_settings,
     ):
         settings = MagicMock()

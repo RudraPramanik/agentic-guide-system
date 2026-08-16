@@ -8,7 +8,7 @@ P5.12 PlannerService SSE bridge: `generate` with wait_for ceiling, last_known_st
 The project SHALL implement `PlannerService` in `src/planner/service.py` with
 `async def generate(self, *, destination_id, raw_input, base_lat, base_lng, session_id, on_event: Callable[[str, dict], None] | None = None) -> TravelState` such that:
 
-- It builds an initial `TravelState` and a **fresh** `ToolContext` (routing=`OsrmRoutingProvider()`, `db=None` unless a measured need) **per invoke** — never reuse ToolContext across generates.
+- It builds an initial `TravelState` and a **fresh** `ToolContext` (routing=`get_routing_provider()` unless the caller injects a test Fake, `db=None` unless a measured need) **per invoke** — never reuse ToolContext across generates.
 - It obtains the graph via `get_compiled_graph()` (cached singleton) and passes
   `config={"configurable": {"tool_context": ctx, "emit": _capture_and_emit}}`.
 - It MUST wrap `graph.ainvoke(...)` in `asyncio.wait_for(..., timeout=get_settings().PLANNER_GENERATION_TIMEOUT_SECONDS)`.
@@ -21,6 +21,10 @@ The project SHALL implement `PlannerService` in `src/planner/service.py` with
 #### Scenario: Fresh ToolContext per invoke
 - **WHEN** two sequential or concurrent `generate` calls run against the same compiled graph
 - **THEN** each invoke supplies its own `tool_context` via configurable (no compile-time ToolContext closure)
+
+#### Scenario: Default routing comes from factory
+- **WHEN** `generate` is called without an injected routing adapter
+- **THEN** `ToolContext.routing` is the adapter returned by `get_routing_provider()`
 
 ### Requirement: last_known_state survives generation timeout
 `generate` SHALL keep a `last_known_state` dict **outside** the cancellable `wait_for` task. The configurable `emit` / `_capture_and_emit(event, data, state_snapshot=None)` MUST update that dict when `state_snapshot` is provided (`clear` + `update`). On `TimeoutError`:

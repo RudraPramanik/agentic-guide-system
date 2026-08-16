@@ -36,8 +36,10 @@ def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     return 2 * r * math.asin(math.sqrt(a))
 
 
-def _fallback_route(waypoints: list[tuple[float, float]]) -> RouteResult:
-    """Sum haversine legs x 1.4; duration from AVG_SPEED; always fallback_used=True."""
+def estimate_route(waypoints: list[tuple[float, float]]) -> RouteResult:
+    """In-process haversine × 1.4 / 30 km/h. Never HTTP. Always fallback_used=True."""
+    if len(waypoints) < 2:
+        raise ValueError("estimate_route requires at least 2 waypoints")
     distance_km = 0.0
     for i in range(len(waypoints) - 1):
         lat1, lng1 = waypoints[i]
@@ -45,18 +47,24 @@ def _fallback_route(waypoints: list[tuple[float, float]]) -> RouteResult:
         distance_km += _haversine_km(lat1, lng1, lat2, lng2)
     distance_km *= _HAVERSINE_ROAD_FACTOR
     duration_min = (distance_km / _AVG_SPEED_KMH) * 60.0
-    logger.warning(
-        "osrm.fallback",
-        distance_km=round(distance_km, 3),
-        duration_min=round(duration_min, 3),
-        legs=len(waypoints) - 1,
-    )
     return RouteResult(
         distance_km=distance_km,
         duration_min=duration_min,
         encoded_polyline=None,
         fallback_used=True,
     )
+
+
+def _fallback_route(waypoints: list[tuple[float, float]]) -> RouteResult:
+    """Named OSRM-miss fallback: estimate_route plus a warning log."""
+    result = estimate_route(waypoints)
+    logger.warning(
+        "osrm.fallback",
+        distance_km=round(result.distance_km, 3),
+        duration_min=round(result.duration_min, 3),
+        legs=len(waypoints) - 1,
+    )
+    return result
 
 
 @retry(

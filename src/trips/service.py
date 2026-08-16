@@ -17,7 +17,7 @@ from src.core.pagination import PageParams
 from src.destinations.repository import DestinationRepository
 from src.evaluation.service import EvaluationService
 from src.places.repository import PlaceRepository
-from src.planner.routing_provider import OsrmRoutingProvider
+from src.planner.routing_provider import get_routing_provider
 from src.travel_engine.place_selector import PlaceCandidate, ScoredPlace
 from src.travel_engine.protocols import RouteLeg, RoutingProvider, legs_to_lookup
 from src.travel_engine.route_optimizer import (
@@ -276,7 +276,7 @@ class TripService:
     ) -> None:
         self.session = session
         self.repo = TripRepository(session)
-        self._routing = routing if routing is not None else OsrmRoutingProvider()
+        self._routing = routing if routing is not None else get_routing_provider()
         self._dest_repo = DestinationRepository(session)
         self._place_repo = PlaceRepository(session)
 

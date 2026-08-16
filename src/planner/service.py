@@ -17,7 +17,7 @@ from src.config import get_settings
 from src.planner.emit_terminals import emit_terminal_from_state
 from src.planner.graph.builder import get_compiled_graph
 from src.planner.graph.nodes.record_evaluation import record_evaluation
-from src.planner.routing_provider import OsrmRoutingProvider
+from src.planner.routing_provider import get_routing_provider
 from src.planner.tools.schemas import AgentPhase, ToolContext
 
 # Bookend nodes outside the agent↔executor cycle (parse + narrative + eval).
@@ -99,7 +99,7 @@ class PlannerService:
         """Run compiled planner graph with timeout + emit checkpoints.
 
         ``routing`` is optional (tests inject FakeRoutingProvider); production
-        uses OsrmRoutingProvider. Always persists evaluation after return/timeout.
+        uses get_routing_provider(). Always persists evaluation after return/timeout.
         """
         settings = get_settings()
         dest_uuid = _as_uuid(destination_id)
@@ -120,7 +120,7 @@ class PlannerService:
             destination_id=dest_uuid,
             base_lat=float(base_lat),
             base_lng=float(base_lng),
-            routing=routing if routing is not None else OsrmRoutingProvider(),
+            routing=routing if routing is not None else get_routing_provider(),
             db=None,
         )
         initial = _initial_state(

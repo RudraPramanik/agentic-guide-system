@@ -50,3 +50,18 @@ async def test_get_route_fallback_when_osrm_none(mocker) -> None:
 async def test_get_route_rejects_fewer_than_two_waypoints() -> None:
     with pytest.raises(ValueError, match="at least 2"):
         await osrm.get_route([(27.04, 88.26)])
+
+
+def test_estimate_route_is_local_fallback(mocker) -> None:
+    mock_call = mocker.patch.object(osrm, "_call_osrm", new=AsyncMock())
+    result = osrm.estimate_route([(27.04, 88.26), (27.03, 88.27)])
+    assert result.fallback_used is True
+    assert result.distance_km > 0
+    assert result.duration_min > 0
+    assert result.encoded_polyline is None
+    mock_call.assert_not_called()
+
+
+def test_estimate_route_rejects_fewer_than_two_waypoints() -> None:
+    with pytest.raises(ValueError, match="at least 2"):
+        osrm.estimate_route([(27.04, 88.26)])
