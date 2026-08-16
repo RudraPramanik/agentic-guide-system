@@ -1,19 +1,18 @@
 # Wandr — Frontend stack & API integration guide
 
-> **Canonical FE contract** for the separate Next.js app (sibling repo, not a monorepo).  
-> **Phased build bible (v1.1 SSOT):** `docs/blueprint_frontend.md` (principles, FE AGENT, F0–F7, failure contracts).  
-> Draft brainstorming lives in `docs/fe_suggestins.md` — **this file is the locked subset**.  
-> Live API routes: `docs/context.md` → Live endpoints. Update this guide when routes or public DTOs change.
+> **Canonical FE contract** for the Next.js app (sibling of the FastAPI API, not a monorepo).  
+> **Phased build bible (v1.1.2 SSOT):** `docs/blueprint.md` (principles, FE AGENT, F0–F7, failure contracts).  
+> Live API routes: API repo (`guideagent`) `docs/context.md` → Live endpoints. Update this guide when routes or public DTOs change.
 
-**Non-goals of this document:** scaffolding the Next.js app inside this API repo; changing FastAPI code; frontend hosting/VPS SOP.
+**Non-goals of this document:** changing FastAPI routes; FE hosting/VPS SOP; scaffolding a second Next.js app.
 
 ### API contract — source of truth
 
 | Priority | Source | Role |
 |----------|--------|------|
-| 1 | Live routers + `src/*/schemas.py` | Canonical |
+| 1 | Live routers + `src/*/schemas.py` (API repo `guideagent`) | Canonical |
 | 2 | OpenAPI at `{API}/docs` | Machine-readable companion |
-| 3 | `docs/context.md` → Live endpoints | Auth matrix checkpoint |
+| 3 | API repo (`guideagent`) `docs/context.md` → Live endpoints | Auth matrix checkpoint |
 | 4 | **This file** | FE-oriented mirror (stack + navigation) |
 
 If this guide disagrees with Python schemas or `/docs`, **schemas win**. Update the API-contract sections of this file in the same PR (or immediately after) when public routes/DTOs change.
@@ -24,8 +23,8 @@ If this guide disagrees with Python schemas or `/docs`, **schemas win**. Update 
 
 | Repo | Role |
 |------|------|
-| This repo (`guideagent`) | FastAPI backend + this guide |
-| Sibling FE repo (e.g. `wandr-web`) | Next.js App Router UI |
+| This repo (`guideagent-frontend`) | Next.js App Router UI + this guide |
+| Sibling API repo (`guideagent`) | FastAPI backend |
 
 When the API is reachable at a stable host, the FE switches only:
 
@@ -37,7 +36,7 @@ NEXT_PUBLIC_API_URL=https://api.example.com   # prod
 Same build, same screens, same clients — no DB/Redis/LLM env in the frontend.
 
 ```
-Dev:  Next :3000  ──credentials──▶  API :8000  ◀── docker compose (PostGIS + Qdrant + Redis + API)
+Dev:  Next :3000  ──credentials──▶  uvicorn :8000  ◀── docker compose (PostGIS + Qdrant)
 Prod: app.<domain> ──credentials──▶  api.<domain>   ◀── hosted DB / Qdrant / Redis / LLM
 ```
 
@@ -204,7 +203,7 @@ data: <json>
 | Progress | `preferences_done`, `phase_changed`, `tool_started`, `tool_done`, `tool_batch_done`, `validation_done`, … |
 | Terminal (buffer until end; exactly one yielded) | `itinerary_done`, `error`, `clarification_needed` |
 
-**Pre-stream failure:** destination `place_count` below planner floor → HTTP **409** `{ success: false, code: "destination_not_ready", … }` — **no SSE**.
+**Pre-stream failure:** destination `place_count` below planner floor → HTTP **409** `{ success: false, code: "destination_not_ready", … }` — **no SSE**. Call `POST /destinations/{id}/prepare` and poll readiness; do not treat this as missing login.
 
 **Cache replay:** may emit `preferences_done` / `phase_changed` / `itinerary_done` **without** `tool_started` / `tool_done`. Treat missing tool events as normal.
 
@@ -224,7 +223,7 @@ data: <json>
 
 Ignore unknown event names (log in dev). Spec catalog may include `tool_started` / `validation_done` even when a given run omits them.
 
-Proxy note (prod): reverse proxy must not buffer this path (see `docs/context.md` / production blueprint).
+Proxy note (prod): reverse proxy must not buffer this path (see API repo (`guideagent`) `docs/context.md` / production blueprint).
 
 Optional later: Vercel AI SDK only if you add a true chat surface — **not** as the MVP planner client.
 
@@ -254,8 +253,9 @@ Auth vocabulary: **None** | **Optional** | **Required** (+ ownership notes).
 
 | Method | Path | Auth | Notes |
 |--------|------|------|-------|
-| GET | `/api/v1/destinations/search?q=` | None | `q` min length 2; rate limit **20/min/IP**; `ApiResponse<DestinationOut[]>` |
+| GET | `/api/v1/destinations/search?q=` | None | `q` min length 2; rate limit **20/min/IP**; `ApiResponse<DestinationOut[]>`. **Does not scrape Overpass** — a new place may return `place_count=0` |
 | GET | `/api/v1/destinations/{id}/readiness` | None | `DestinationReadinessOut` — use `tier` / score / pcts (not a `search_available` field) |
+| POST | `/api/v1/destinations/{id}/prepare` | None | Overpass seed kickoff; `ApiResponse<DestinationPrepareOut>`; HTTP **200** `status=ready` if already at planner floor; HTTP **202** `status=preparing` if scrape started/in-flight. Optional body `{ radius_km?: number }` (default 30, max 50). Rate limit **5/min/IP**. Country/region polygons are out of scope (point + radius only) |
 
 ### `places`
 
@@ -293,22 +293,30 @@ Wrap each module with TanStack Query hooks (`useQuery` / `useMutation` + invalid
 ## 9. MVP screen flow
 
 ```
-[Search destination]
+[Search destination]   (any place; may be a geocoded shell with place_count=0)
         ↓
 [Readiness] tier / score / place_count / enriched_pct / indexed_pct / message
         ↓
-[Compose] raw_input (+ optional days / base)
+[Prepare] POST /destinations/{id}/prepare  →  200 ready | 202 preparing
         ↓
-[Generating…] SSE phase/tool progress
+[Poll readiness] every ~2s, up to ~120s; first sparse poll is NOT failure
         ↓
-[Trip] day list + MapLibre (GeoJSON / polylines)
+[Compose] raw_input (+ optional days / base)   when place_count meets planner floor
+        ↓
+[Generating…] SSE phase/tool progress   (guest OK — no Google login)
+        ↓
+[Trip] day list + MapLibre (GeoJSON / polylines)  via trip_id + wandr_session
         ↓
 [Edit] reorder / add / remove / reoptimize   (auth)
         ↓
 [Claim] after Google login                   (auth + wandr_session)
 ```
 
-Gate generate on readiness **tier** / message (and handle 409 `destination_not_ready`). There is **no** `search_available` boolean on the readiness JSON — Qdrant availability is folded into scoring / `indexed_pct` server-side.
+Search does **not** load POIs. Empty readiness (score 0 / places 0) is expected for a new place until prepare finishes. Poll `GET /destinations/{id}/readiness` until `place_count` is at least the planner floor (API default **10**, `PLANNER_ABSOLUTE_MIN_PLACES`) or until the client timeout — then show “not enough places”, not a login or SSE error.
+
+HTTP **409** `destination_not_ready` on generate means the place floor is unmet (call prepare / keep polling). It is **not** an auth failure and **not** an SSE client bug. Guests generate and open `GET /trips/{id}` without Google login; `GET /trips` list still requires login.
+
+Do **not** use the default ~20s JSON client timeout as a hang on prepare — prepare returns 202 quickly. Gate generate on `place_count` (and still handle 409). There is **no** `search_available` boolean on the readiness JSON — Qdrant availability is folded into scoring / `indexed_pct` server-side.
 
 This is **not** a multi-turn chat notebook as the primary shell. Progress UI should surface planner phases/tools; the durable artifact is the **trip**.
 
@@ -319,10 +327,10 @@ This is **not** a multi-turn chat notebook as the primary shell. Progress UI sho
 In the **API** repo:
 
 ```bash
-docker compose up --build     # PostGIS :5433, Qdrant :6335, Redis :6380, API :8000
+docker compose up -d          # PostGIS :5433, Qdrant :6335 only
 # configure .env (DATABASE_URL, LLM_*, CORS includes http://localhost:3000)
-# optional host uvicorn instead: stop compose `api`, then uvicorn src.main:app --reload --port 8000
-# seed + enrich + index at least one destination (see docs/context.md scripts)
+uvicorn src.main:app --reload --port 8000
+# seed + enrich + index at least one destination (see API repo (`guideagent`) docs/context.md scripts)
 # OpenAPI: http://localhost:8000/docs
 ```
 
@@ -335,7 +343,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 npm run dev   # http://localhost:3000
 ```
 
-Happy path: search → readiness OK → generate → open trip → map from `/geojson`.
+Happy path: search → prepare (if `place_count` is below the floor) → poll readiness → generate → open trip → map from `/geojson`.
 
 ---
 
@@ -457,6 +465,16 @@ type DestinationReadinessOut = {
   message: string | null;
 };
 
+type PrepareIn = {
+  radius_km?: number | null; // default 30, max 50 (km around the geocoded point)
+};
+
+type DestinationPrepareOut = {
+  destination_id: string;
+  status: "ready" | "preparing";
+  place_count: number;
+};
+
 // Places — src/places/schemas.py
 type PlaceOut = {
   id: string;
@@ -563,7 +581,7 @@ MapLibre: use Point features for markers; LineString features for day routes. Mi
 
 | Code | Typical HTTP | When |
 |------|--------------|------|
-| `destination_not_ready` | 409 | Generate refused — not enough places |
+| `destination_not_ready` | 409 | Generate refused — not enough places (prepare / poll; not login or SSE) |
 | `not_found` | 404 | Unknown destination / place / trip |
 | `unauthorized` | 401 | Missing/invalid auth where Required |
 | `forbidden` | 403 | Ownership / claim failure |
@@ -588,6 +606,7 @@ Also handle non-JSON failures (network, CORS, proxy buffering on SSE).
 | Route | Limit (default) |
 |-------|-----------------|
 | `GET /destinations/search` | **20/min/IP** |
+| `POST /destinations/{id}/prepare` | **5/min/IP** (IP-keyed; not the search path table) |
 | `POST /planner/generate` | **10/min** |
 | Trip day-edit routes | **20/min** (trip-edit limiter) |
 | Default API paths | 60/min (middleware default) |
@@ -596,4 +615,4 @@ Exact numbers are config-driven (`RATE_LIMIT_*` in settings); treat the table as
 
 ---
 
-*Source decisions: OpenSpec changes `frontend-stack-guide`, `fe-api-contract-guide`, `fe-guide-map-tiles`. Input draft: `docs/fe_suggestins.md`.*
+*Source decisions: OpenSpec changes `frontend-stack-guide`, `fe-api-contract-guide`, `fe-guide-map-tiles` (API repo history). Input draft lived in that repo's `docs/fe_suggestins.md` — not a file here.*

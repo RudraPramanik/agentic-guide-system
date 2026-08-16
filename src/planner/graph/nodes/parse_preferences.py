@@ -6,6 +6,8 @@ import json
 import re
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
+
 from src.core.exceptions import WandrLLMError
 from src.core.llm.client import chat_completion
 from src.places.constants import PLACE_TAG_VOCAB
@@ -131,10 +133,28 @@ def _parse_json_content(content: str | None) -> dict[str, Any] | None:
             return None
 
 
-async def parse_preferences(state: dict[str, Any]) -> dict[str, Any]:
+def _prefs_payload(update: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "interests": update.get("interests") or [],
+        "budget": update.get("budget"),
+        "days": update.get("days"),
+        "include_offbeat": update.get("include_offbeat"),
+        "include_trekking": update.get("include_trekking"),
+    }
+
+
+async def parse_preferences(
+    state: dict[str, Any],
+    config: RunnableConfig | None = None,
+) -> dict[str, Any]:
     """Parse raw_input into prefs via chat_completion; defaults on failure."""
     raw_input = (state or {}).get("raw_input") or ""
     llm_retry_count = int((state or {}).get("llm_retry_count") or 0)
+
+    configurable = config.get("configurable") if config else None
+    if not isinstance(configurable, dict):
+        configurable = {}
+    emit = configurable.get("emit")
 
     try:
         content = await chat_completion(
@@ -146,28 +166,33 @@ async def parse_preferences(state: dict[str, Any]) -> dict[str, Any]:
         )
         parsed = _parse_json_content(content)
         if parsed is None:
-            return _defaults(llm_retry_count)
+            update = _defaults(llm_retry_count)
+        else:
+            interests = _normalize_interests(parsed.get("interests"))
+            include_offbeat = bool(parsed.get("include_offbeat", False))
+            include_trekking = bool(parsed.get("include_trekking", False))
+            interest_keys = {i.lower() for i in interests}
+            if "offbeat" in interest_keys:
+                include_offbeat = True
+            if "trek" in interest_keys:
+                include_trekking = True
 
-        interests = _normalize_interests(parsed.get("interests"))
-        include_offbeat = bool(parsed.get("include_offbeat", False))
-        include_trekking = bool(parsed.get("include_trekking", False))
-        interest_keys = {i.lower() for i in interests}
-        if "offbeat" in interest_keys:
-            include_offbeat = True
-        if "trek" in interest_keys:
-            include_trekking = True
+            budget = parsed.get("budget")
+            if not isinstance(budget, str) or not budget.strip():
+                budget = _DEFAULT_BUDGET
 
-        budget = parsed.get("budget")
-        if not isinstance(budget, str) or not budget.strip():
-            budget = _DEFAULT_BUDGET
-
-        return {
-            "days": _coerce_days(parsed.get("days")),
-            "budget": budget.strip().lower(),
-            "interests": interests,
-            "include_offbeat": include_offbeat,
-            "include_trekking": include_trekking,
-            "llm_retry_count": llm_retry_count,
-        }
+            update = {
+                "days": _coerce_days(parsed.get("days")),
+                "budget": budget.strip().lower(),
+                "interests": interests,
+                "include_offbeat": include_offbeat,
+                "include_trekking": include_trekking,
+                "llm_retry_count": llm_retry_count,
+            }
     except WandrLLMError:
-        return _defaults(llm_retry_count)
+        update = _defaults(llm_retry_count)
+
+    if callable(emit):
+        snapshot = {**(state or {}), **update}
+        emit("preferences_done", _prefs_payload(update), state_snapshot=snapshot)
+    return update

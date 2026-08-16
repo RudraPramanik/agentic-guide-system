@@ -38,6 +38,7 @@ async def tool_executor_node(
     emit = configurable.get("emit")
     working_state: dict[str, Any] = dict(state)
     pending = list(state.get("pending_tool_calls") or [])
+    last_phase = working_state.get("agent_phase")
 
     for call in pending:
         name, arguments_json = _call_fields(call)
@@ -49,6 +50,14 @@ async def tool_executor_node(
             working_state, name, result, duration_ms=duration_ms
         )
         maybe_transition_phase(working_state, name, result)
+        phase_now = working_state.get("agent_phase")
+        if callable(emit) and phase_now != last_phase:
+            emit(
+                "phase_changed",
+                {"phase": str(phase_now)},
+                state_snapshot=dict(working_state),
+            )
+            last_phase = phase_now
         if callable(emit):
             emit(
                 "tool_done",
@@ -63,6 +72,13 @@ async def tool_executor_node(
 
     working_state["pending_tool_calls"] = []
     run_stuck_detector(working_state)
+    phase_after_stuck = working_state.get("agent_phase")
+    if callable(emit) and phase_after_stuck != last_phase:
+        emit(
+            "phase_changed",
+            {"phase": str(phase_after_stuck)},
+            state_snapshot=dict(working_state),
+        )
     if callable(emit):
         emit("tool_batch_done", {}, state_snapshot=dict(working_state))
     return working_state

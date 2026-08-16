@@ -133,6 +133,9 @@ async def generate_plan(
                                 body, base_lat, base_lng, final_state
                             )
                 yield sse_frame(event, data)
+            elif task.done() and not task.cancelled():
+                # Safety net: never close on progress-only frames
+                yield sse_frame("error", {"code": "missing_terminal"})
         finally:
             if not task.done():
                 task.cancel()

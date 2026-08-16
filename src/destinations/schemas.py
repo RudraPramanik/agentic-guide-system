@@ -34,3 +34,13 @@ class DestinationReadinessOut(BaseModel):
     enriched_pct: float
     indexed_pct: float
     message: str | None = None
+
+
+class PrepareIn(BaseModel):
+    radius_km: float | None = Field(default=None, ge=1, le=50)
+
+
+class DestinationPrepareOut(BaseModel):
+    destination_id: uuid.UUID
+    status: Literal["ready", "preparing"]
+    place_count: int

@@ -96,6 +96,13 @@ class Settings(BaseSettings):
     # User-keyed trip edit dependency (not path-table); middleware IP default may still apply
     RATE_LIMIT_TRIP_EDIT_REQUESTS: int = 20
     RATE_LIMIT_TRIP_EDIT_WINDOW_SECONDS: int = 60
+    # IP-keyed destination prepare (UUID path — not in _route_limit_table)
+    RATE_LIMIT_DESTINATIONS_PREPARE_REQUESTS: int = 5
+    RATE_LIMIT_DESTINATIONS_PREPARE_WINDOW_SECONDS: int = 60
+    # In-flight prepare lock TTL so a dead worker cannot pin "preparing" forever
+    DESTINATIONS_PREPARE_LOCK_TTL_SECONDS: int = 180
+    DESTINATIONS_PREPARE_DEFAULT_RADIUS_KM: float = 30.0
+    DESTINATIONS_PREPARE_MAX_RADIUS_KM: float = 50.0
 
     # CORS (credentialed; explicit origins only — never "*" with credentials)
     CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]

@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-15 · **Phase:** post-P7 · **Next step:** operator VPS deploy via `docs/steps/blueprint_production.md`
+**Last updated:** 2026-08-16 · **Phase:** post-P7 · **Next step:** FE companion: poll prepare → generate → trip (`guideagent-frontend`); then operator VPS deploy via `docs/steps/blueprint_production.md`
 
 ---
 
 ## Current state (one line)
 
-P7 done + production packaging; local backend is one Compose command (`docker compose up --build`) — PostGIS, Qdrant, Redis, uvicorn API on :8000.
+P7 done + production packaging; public `POST /destinations/{id}/prepare` seeds Overpass POIs so any geocoded place can reach the generate floor (guest, no login).
 
 ---
 
@@ -105,10 +105,10 @@ P7 done + production packaging; local backend is one Compose command (`docker co
 
 | Module | Exports / notes |
 |--------|-----------------|
-| `src/config.py` | `get_settings()` — Qdrant/embeddings (`PLACES_EMBEDDING_BACKEND`, `GEMINI_API_KEY`), enrich concurrency, OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`), geo, CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `PLANNER_CACHE_TTL_SECONDS`, `REDIS_URL` + Redis timeouts |
+| `src/config.py` | `get_settings()` — Qdrant/embeddings, OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo, CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL` |
 | `src/core/llm/client.py` | `chat_completion` / `chat_with_tools` / `embed_texts` — **only** litellm import |
 | `src/search/embeddings.py` | `local` MiniLM or `hosted` via `embed_texts`; fail-soft; lazy ST import |
-| `src/core/cache/backends.py` | `CacheBackend` Protocol; `InMemoryCacheBackend` / `RedisCacheBackend`; `get_cache_backend()` |
+| `src/core/cache/backends.py` | `CacheBackend` Protocol (`get`/`set`/`delete`); `InMemoryCacheBackend` / `RedisCacheBackend`; `get_cache_backend()` |
 | `src/core/middleware/rate_limit.py` | `InMemoryRateLimiter` / `RedisRateLimiter`; `get_rate_limiter()` selects on `REDIS_URL`; fail-open |
 | `src/planner/schemas.py` | `PlanRequest` (destination_id, raw_input, optional days/base/accommodation_label) |
 | `src/planner/cache.py` | MVP key + `maybe_get_cached_state` / `maybe_set_cached_state` / `_replay_cached` (skip tool loop; still feeds `save_from_state`) |
@@ -161,7 +161,7 @@ P7 done + production packaging; local backend is one Compose command (`docker co
 | `alembic/versions/20260721_*_add_trip_edit_events.py` | Migration 003 — `trip_edit_events` |
 | `alembic/versions/20260728_*_add_place_enriched_tags.py` | Migration 004 — `places.enriched_tags` |
 | `src/auth/*` | User model, OAuth service, JWT auth router |
-| `src/destinations/*` | search + readiness (`is_qdrant_available` live) |
+| `src/destinations/*` | search + readiness + public prepare (`ingest.py`, IP-keyed limiter); search does not scrape Overpass |
 | `src/places/models.py` | `tags` (OSM) + `enriched_tags` (LLM list) + POINT |
 | `src/places/constants.py` | `PLACE_TAG_VOCAB` |
 | `src/places/service.py` | list/get + `enrich_place` |
@@ -180,11 +180,11 @@ P7 done + production packaging; local backend is one Compose command (`docker co
 | `src/trips/router.py` | CRUD + GeoJSON + claim + four day-edit routes (`require_auth` via rate-limit dep); DELETE require_auth intentional vs guest GET |
 | `src/evaluation/models.py` | TripEvaluation |
 
-**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/`, `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/`, `tests/trips/`, `tests/evaluation/` — run `python -m pytest tests/ -v` (DB `wandr_test`) — **248** when DB up (incl. `test_mark_trip_edited` flag scenarios, `test_edit_replan` 20-scenario matrix, trip edit HTTP auth/429, Fake ops, preserve-order schedule, cache backends, Redis limiter fail-open, SSE cache-hit new trip_id, trips CRUD)
+**Tests:** `tests/core/`, `tests/auth/`, `tests/geo/`, `tests/destinations/` (incl. prepare 200/202/409 floor proof), `tests/places/`, `tests/search/`, `tests/scripts/`, `tests/travel_engine/`, `tests/planner/`, `tests/trips/`, `tests/evaluation/` — run `python -m pytest tests/ -v` (DB `wandr_test`)
 
 **Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_p4_smoke.py`, `scripts/test_agent.py`, `scripts/test_p6_smoke.py`, `scripts/test_p7_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
 
-**Known limitations / TODO (post-P7):** geocoder cache + Nominatim throttle are per-process; empty `REDIS_URL` keeps rate limit + planner cache in-memory (not shared across workers) — set `REDIS_URL` for multi-worker prod. Prod uses **hosted** embeddings (`PLACES_EMBEDDING_BACKEND=hosted`, Gemini via LiteLLM) — dim cutover 384→768 requires Qdrant recreate + `index_places` reindex (see `docs/steps/blueprint_production.md`). Local MiniLM remains `BACKEND=local`. **P7 MVP:** concurrent trip edits are last-write-wins (no row locking).
+**Known limitations / TODO (post-P7):** geocoder cache + Nominatim throttle are per-process; empty `REDIS_URL` keeps rate limit + planner cache in-memory (not shared across workers) — set `REDIS_URL` for multi-worker prod. Prod uses **hosted** embeddings (`PLACES_EMBEDDING_BACKEND=hosted`, Gemini via LiteLLM) — dim cutover 384→768 requires Qdrant recreate + `index_places` reindex (see `docs/steps/blueprint_production.md`). Local MiniLM remains `BACKEND=local`. **P7 MVP:** concurrent trip edits are last-write-wins (no row locking). **Cold generate SSE (2026-08-16):** live path emits `preferences_done` / `phase_changed` / terminal `itinerary_done`|`clarification_needed`|`error` (incl. `generation_aborted`); router yields `missing_terminal` if no terminal buffered. Proof: destination `458854b1-…` (132 places, tier `limited`) → `itinerary_done` + `trip_id` in ~48s wall under default 45s graph ceiling.
 
 ---
 
@@ -207,8 +207,9 @@ trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/
 | GET | `/api/v1/auth/callback` | None (OAuth redirect) |
 | GET | `/api/v1/auth/me` | Optional (guest or cookie/Bearer) |
 | POST | `/api/v1/auth/logout` | None |
-| GET | `/api/v1/destinations/search?q=` | None (public catalog; rate limit 20/min/IP) |
+| GET | `/api/v1/destinations/search?q=` | None (public catalog; rate limit 20/min/IP; Nominatim shell on miss — no Overpass) |
 | GET | `/api/v1/destinations/{id}/readiness` | None (`tier` / score / pcts; Qdrant folded into scoring — no `search_available` on wire) |
+| POST | `/api/v1/destinations/{id}/prepare` | None (200 ready / 202 preparing; Overpass around stored point; 5/min/IP) |
 | GET | `/api/v1/places?destination_id=` | None (paginated; unknown destination → 404) |
 | GET | `/api/v1/places/{id}` | None |
 | POST | `/api/v1/planner/generate` | Optional (SSE; floor 409 if place_count low; `wandr_session` cookie) |

@@ -67,11 +67,11 @@ async def test_seed_survives_partial_poi_failure(db_session, mocker) -> None:
 async def test_seed_continues_when_overpass_returns_empty(db_session, mocker) -> None:
     geocoded = _geocoded("empty")
     mocker.patch(
-        "scripts.seed_destination.geocode",
+        "src.destinations.ingest.geocode",
         new=AsyncMock(return_value=geocoded),
     )
     mocker.patch(
-        "scripts.seed_destination.fetch_pois",
+        "src.destinations.ingest.fetch_pois",
         new=AsyncMock(return_value=[]),
     )
 

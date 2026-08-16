@@ -38,6 +38,10 @@ async def test_in_memory_hit_miss_and_ttl() -> None:
     cache._store["expired"] = ("old", 0.0)  # already past monotonic
     assert await cache.get("expired") is None
 
+    await cache.set("gone", "x", ttl_seconds=60)
+    await cache.delete("gone")
+    assert await cache.get("gone") is None
+
 
 @pytest.mark.asyncio
 async def test_redis_cache_get_error_is_miss() -> None:
@@ -53,3 +57,11 @@ async def test_redis_cache_set_error_is_noop() -> None:
     client.set = AsyncMock(side_effect=RuntimeError("redis down"))
     backend = RedisCacheBackend(client)
     await backend.set("k", "v", ttl_seconds=10)  # must not raise
+
+
+@pytest.mark.asyncio
+async def test_redis_cache_delete_error_is_noop() -> None:
+    client = MagicMock()
+    client.delete = AsyncMock(side_effect=RuntimeError("redis down"))
+    backend = RedisCacheBackend(client)
+    await backend.delete("k")  # must not raise

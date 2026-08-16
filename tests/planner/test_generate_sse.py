@@ -308,3 +308,90 @@ async def test_disconnect_cancels_background_task(client, db_session) -> None:
 
     assert response.status_code == 200
     assert cancelled.is_set()
+
+
+@pytest.mark.asyncio
+async def test_missing_terminal_safety_net(client, db_session) -> None:
+    """Progress-only generate closes with a single error missing_terminal."""
+    dest = Destination(
+        name="No Terminal Dest",
+        country="IN",
+        display_name="No Terminal Dest",
+        osm_place_id=f"relation/noterm-{uuid.uuid4().hex[:8]}",
+        lat=27.041,
+        lng=88.263,
+        place_count=50,
+    )
+    db_session.add(dest)
+    await db_session.flush()
+
+    async def _fake_generate(**kwargs):
+        on_event = kwargs["on_event"]
+        on_event("tool_done", {"name": "search_places", "ok": True, "ms": 1})
+        return {
+            "destination_id": str(dest.id),
+            "schedule": [],
+            "plan_complete": False,
+        }
+
+    with patch(
+        "src.planner.router.PlannerService.generate",
+        new=AsyncMock(side_effect=_fake_generate),
+    ):
+        response = await client.post(
+            "/api/v1/planner/generate",
+            json={"destination_id": str(dest.id), "raw_input": "trip"},
+        )
+
+    assert response.status_code == 200
+    text = response.text
+    assert "event: tool_done" in text
+    assert text.count("event: error") == 1
+    assert "missing_terminal" in text
+    assert "event: itinerary_done" not in text
+
+
+@pytest.mark.asyncio
+async def test_clarification_terminal_does_not_save_trip(client, db_session) -> None:
+    dest = Destination(
+        name="Clarify Dest",
+        country="IN",
+        display_name="Clarify Dest",
+        osm_place_id=f"relation/clarify-{uuid.uuid4().hex[:8]}",
+        lat=27.041,
+        lng=88.263,
+        place_count=50,
+    )
+    db_session.add(dest)
+    await db_session.flush()
+
+    async def _fake_generate(**kwargs):
+        on_event = kwargs["on_event"]
+        on_event("clarification_needed", {"question": "How many days?"})
+        return {
+            "destination_id": str(dest.id),
+            "needs_clarification": True,
+            "schedule": [],
+        }
+
+    with (
+        patch(
+            "src.planner.router.PlannerService.generate",
+            new=AsyncMock(side_effect=_fake_generate),
+        ),
+        patch(
+            "src.planner.router.TripService.save_from_state",
+            new_callable=AsyncMock,
+        ) as mock_save,
+    ):
+        response = await client.post(
+            "/api/v1/planner/generate",
+            json={"destination_id": str(dest.id), "raw_input": "trip"},
+        )
+
+    assert response.status_code == 200
+    text = response.text
+    assert "event: clarification_needed" in text
+    assert "How many days?" in text
+    assert "trip_id" not in text
+    mock_save.assert_not_called()

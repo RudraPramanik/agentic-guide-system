@@ -19,6 +19,8 @@ class CacheBackend(Protocol):
 
     async def set(self, key: str, value: str, ttl_seconds: int) -> None: ...
 
+    async def delete(self, key: str) -> None: ...
+
 
 class InMemoryCacheBackend:
     """Process-local TTL cache. Not shared across workers."""
@@ -53,6 +55,12 @@ class InMemoryCacheBackend:
         except Exception as exc:
             log.warning("cache.set_error", backend="memory", error=str(exc))
 
+    async def delete(self, key: str) -> None:
+        try:
+            self._store.pop(key, None)
+        except Exception as exc:
+            log.warning("cache.delete_error", backend="memory", error=str(exc))
+
 
 class RedisCacheBackend:
     """Redis string GET/SET with TTL. Errors → miss / no-op (never raise to callers)."""
@@ -82,6 +90,12 @@ class RedisCacheBackend:
             )
         except Exception as exc:
             log.warning("cache.set_error", backend="redis", error=str(exc))
+
+    async def delete(self, key: str) -> None:
+        try:
+            await self._client.delete(f"{_CACHE_KEY_PREFIX}{key}")  # type: ignore[attr-defined]
+        except Exception as exc:
+            log.warning("cache.delete_error", backend="redis", error=str(exc))
 
 
 _cache_backend: CacheBackend | None = None

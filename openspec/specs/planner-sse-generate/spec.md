@@ -36,6 +36,8 @@ On cache hit, the background task MUST be `_replay_cached` (not `PlannerService.
 
 Rate limiting for this path MUST continue to use the existing middleware path table (do not add a second limiter in the router).
 
+If the background task completes without having enqueued any terminal event, the router MUST treat that as a server defect: it MUST NOT hang, and MUST yield a single terminal `error` (stable code) rather than closing the stream with only progress frames.
+
 #### Scenario: Route is registered
 - **WHEN** the FastAPI app is created
 - **THEN** a route path containing `planner/generate` is present
@@ -63,3 +65,36 @@ Rate limiting for this path MUST continue to use the existing middleware path ta
 #### Scenario: Cache hit still persists via same save path
 - **WHEN** `maybe_get_cached_state` returns a usable cached state
 - **THEN** the router runs `_replay_cached` and still calls `save_from_state` for buffered `itinerary_done`
+
+#### Scenario: Missing terminal is surfaced as error
+- **WHEN** the generate background task finishes with an empty terminal buffer
+- **THEN** the client receives exactly one terminal `error` and the connection does not hang waiting for a success frame
+
+### Requirement: Live generate emits exactly one terminal from final state
+After a non-cache `PlannerService.generate` (or equivalent cold-path runner) finishes — success, clarification, hard abort, timeout, or recursion — the emit bridge MUST publish exactly one terminal SSE event before returning, chosen by locked precedence:
+
+1. If the run already emitted a terminal `error` for timeout or `graph_recursion_limit`, MUST NOT emit a second terminal.
+2. Else if `needs_clarification` is true → `clarification_needed` with a non-empty question string (from `clarification_question` or a safe default).
+3. Else if the final state is usable for trip persistence (`plan_complete` and a non-empty schedule/itinerary suitable for `save_from_state`) → `itinerary_done` with at least itinerary/days fields the router can enrich.
+4. Else → `error` with a stable `code` (for example `generation_aborted` or an existing abort code) so the client always sees a terminal.
+
+Cache replay (`_replay_cached`) MUST continue to emit `itinerary_done` as today. The HTTP router MUST keep buffering terminals and calling `save_from_state` only for `itinerary_done`.
+
+#### Scenario: Successful cold generate yields itinerary_done
+- **WHEN** a cold generate completes with `plan_complete` and a usable schedule
+- **THEN** the SSE stream includes exactly one terminal `itinerary_done` and, when `save_from_state` persists a trip, that payload includes `trip_id`
+
+#### Scenario: Clarification yields clarification_needed without trip_id
+- **WHEN** a cold generate ends with `needs_clarification=true`
+- **THEN** the SSE stream’s single terminal is `clarification_needed` with a question, and no trip is saved
+
+#### Scenario: Timeout remains a single error terminal
+- **WHEN** generation hits `PLANNER_GENERATION_TIMEOUT_SECONDS`
+- **THEN** the stream’s single terminal is `error` with code `generation_timeout` and no duplicate success/clarification terminal follows
+
+### Requirement: Cold-path progress events for FE contract
+On a cache miss, the generate path MUST emit `preferences_done` after preferences are resolved (parsed or defaults) and MUST emit `phase_changed` when `agent_phase` transitions. Existing `tool_done` / `tool_batch_done` emits MAY remain. Unknown event names MUST remain ignorable by clients.
+
+#### Scenario: Preferences and phase events appear before terminal on cold path
+- **WHEN** a cold generate runs past preference parsing into the tool loop
+- **THEN** the stream includes `preferences_done` and at least one `phase_changed` before the terminal event

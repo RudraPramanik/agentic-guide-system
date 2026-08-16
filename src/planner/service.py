@@ -14,6 +14,7 @@ from uuid import UUID
 from langgraph.errors import GraphRecursionError
 
 from src.config import get_settings
+from src.planner.emit_terminals import emit_terminal_from_state
 from src.planner.graph.builder import get_compiled_graph
 from src.planner.graph.nodes.record_evaluation import record_evaluation
 from src.planner.routing_provider import OsrmRoutingProvider
@@ -141,6 +142,7 @@ class PlannerService:
             "recursion_limit": _recursion_limit(settings),
         }
 
+        already_emitted_error = False
         try:
             final = await asyncio.wait_for(
                 graph.ainvoke(initial, config=config),
@@ -155,6 +157,7 @@ class PlannerService:
                 "abort_triggered": True,
             }
             _capture_and_emit("error", {"code": "generation_timeout"})
+            already_emitted_error = True
         except GraphRecursionError:
             # Bound exceeded despite settings-derived limit — controlled abort.
             errors = list(last_known_state.get("errors") or [])
@@ -165,6 +168,17 @@ class PlannerService:
                 "abort_triggered": True,
             }
             _capture_and_emit("error", {"code": "graph_recursion_limit"})
+            already_emitted_error = True
+
+        # Cold-path terminals (success / clarification / abort) — skip if error already emitted.
+        if isinstance(final, dict):
+            last_known_state.clear()
+            last_known_state.update(final)
+            emit_terminal_from_state(
+                final,
+                _capture_and_emit if on_event else None,
+                already_emitted_error=already_emitted_error,
+            )
 
         eval_update = await record_evaluation(final)
         if eval_update.get("warnings"):
