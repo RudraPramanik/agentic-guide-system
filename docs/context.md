@@ -8,7 +8,7 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-16 · **Phase:** post-P7 · **Next step:** FE companion: poll prepare → generate → trip (`guideagent-frontend`); then operator VPS deploy via `docs/steps/blueprint_production.md`
+**Last updated:** 2026-08-19 · **Phase:** post-P7 · **Next step:** FE companion: poll prepare → generate → trip (`guideagent-frontend`); then operator VPS deploy via `docs/steps/blueprint_production.md`
 
 ---
 
@@ -254,6 +254,7 @@ python -m pytest tests/ -v
 - Empty host `REDIS_URL` keeps in-memory backends for pytest; Compose `api` sets `redis://redis:6379/0` (published **6380**). Optional host uvicorn: `redis://localhost:6380/0`
 - Stop host uvicorn **and any other process on :8000** before `docker compose up` (port clash)
 - `.env` must have a **bare** `DATABASE_URL` value — no comment prefix on the same line
+- Root `.gitignore` ignores `.env` / `.env.*` (keeps `.env.example`). `.env` is untracked; git history still has old blobs until a separate rewrite
 - Geo: `NOMINATIM_BASE_URL`, `OVERPASS_API_URL`, `NOMINATIM_USER_AGENT` via `get_settings()`
 - Routing: `ROUTING_BACKEND=haversine` (default, in-process) or `osrm` + `OSRM_BASE_URL` (live pairwise; not required for 45s generate)
 - Overpass: `read=90s` + retry on 5xx (amendment vs step `read=30`); failure → `[]`
