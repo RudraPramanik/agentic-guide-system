@@ -251,6 +251,18 @@ _HAPPY_PATH_NEXT: dict[AgentPhase, AgentPhase] = {
 }
 
 
+def _schedule_has_stops(schedule: Any) -> bool:
+    if not isinstance(schedule, list) or not schedule:
+        return False
+    for day in schedule:
+        if not isinstance(day, dict):
+            continue
+        stops = day.get("stops") or []
+        if isinstance(stops, list) and len(stops) > 0:
+            return True
+    return False
+
+
 def _progress_fingerprint(state: Any) -> str:
     """Compact progress signature for stuck detection."""
     phase = _phase_from_state(state) or AgentPhase.DISCOVER
@@ -292,7 +304,38 @@ def run_stuck_detector(state: Any) -> None:
         phase = _phase_from_state(state) or AgentPhase.DISCOVER
         warnings = list(state_get(state, "warnings") or [])
 
-        if phase in (AgentPhase.DISCOVER, AgentPhase.PLAN, AgentPhase.VALIDATE):
+        if phase == AgentPhase.DISCOVER:
+            candidates = state_get(state, "candidate_pois") or []
+            if not isinstance(candidates, list) or not candidates:
+                _state_set(state, "abort_triggered", True)
+                _state_set(state, "agent_phase", AgentPhase.WRAP_UP)
+                warnings.append("phase_stuck_discover_no_pois")
+                _state_set(state, "warnings", warnings)
+                _state_set(state, "stuck_cycles", 0)
+                return
+            nxt = _HAPPY_PATH_NEXT[phase]
+            _state_set(state, "agent_phase", nxt)
+            warnings.append("phase_stuck_auto_advance")
+            _state_set(state, "warnings", warnings)
+            _state_set(state, "stuck_cycles", 0)
+            return
+
+        if phase == AgentPhase.PLAN:
+            if not _schedule_has_stops(state_get(state, "schedule")):
+                _state_set(state, "abort_triggered", True)
+                _state_set(state, "agent_phase", AgentPhase.WRAP_UP)
+                warnings.append("phase_stuck_plan_no_schedule")
+                _state_set(state, "warnings", warnings)
+                _state_set(state, "stuck_cycles", 0)
+                return
+            nxt = _HAPPY_PATH_NEXT[phase]
+            _state_set(state, "agent_phase", nxt)
+            warnings.append("phase_stuck_auto_advance")
+            _state_set(state, "warnings", warnings)
+            _state_set(state, "stuck_cycles", 0)
+            return
+
+        if phase == AgentPhase.VALIDATE:
             nxt = _HAPPY_PATH_NEXT[phase]
             _state_set(state, "agent_phase", nxt)
             warnings.append("phase_stuck_auto_advance")

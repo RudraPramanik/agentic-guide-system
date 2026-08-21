@@ -67,6 +67,13 @@ async def run(
         if candidates:
             ranked = select_places(candidates, prefs)
 
+    if not ranked:
+        return ToolResult(
+            ok=False,
+            code="no_ranked_places",
+            message="no ranked or candidate places to route",
+        )
+
     days = allocate_days(ranked, prefs.days, prefs)
 
     route_days: list[dict] = []

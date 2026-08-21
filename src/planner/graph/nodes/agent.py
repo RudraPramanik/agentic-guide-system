@@ -50,8 +50,29 @@ def _pending_dicts(calls: list[dict[str, Any]] | list[PendingToolCall]) -> list[
     return out
 
 
-def _synthesize_default(phase: AgentPhase) -> list[dict[str, Any]]:
-    name = DEFAULT_TOOL_BY_PHASE.get(phase, "check_readiness")
+def _default_tool_for_state(state: dict[str, Any]) -> str:
+    """Next productive phase tool when the LLM does not pick one."""
+    phase = _as_phase(state.get("agent_phase"))
+    if phase == AgentPhase.DISCOVER:
+        if state.get("readiness_score") is None:
+            return "check_readiness"
+        candidates = state.get("candidate_pois") or []
+        if not isinstance(candidates, list) or not candidates:
+            return "search_places"
+        ranked = state.get("ranked_pois") or []
+        if not isinstance(ranked, list) or not ranked:
+            return "rank_places"
+        return "rank_places"
+    if phase == AgentPhase.PLAN:
+        route = state.get("route") or []
+        if isinstance(route, list) and route:
+            return "build_schedule"
+        return "build_route"
+    return DEFAULT_TOOL_BY_PHASE.get(phase, "check_readiness")
+
+
+def _synthesize_default(state: dict[str, Any]) -> list[dict[str, Any]]:
+    name = _default_tool_for_state(state)
     return [PendingToolCall(name=name, arguments_json="{}").model_dump()]
 
 
@@ -94,12 +115,12 @@ async def agent_node(
             }
 
         return {
-            "pending_tool_calls": _synthesize_default(phase),
+            "pending_tool_calls": _synthesize_default(state),
             "warnings": _append_warning(state, "agent_no_tool_call_default_used"),
         }
     except WandrLLMError:
         return {
-            "pending_tool_calls": _synthesize_default(phase),
+            "pending_tool_calls": _synthesize_default(state),
             "llm_retry_count": int(state.get("llm_retry_count") or 0) + 1,
             "warnings": _append_warning(state, "agent_no_tool_call_default_used"),
         }
