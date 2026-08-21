@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from unittest.mock import AsyncMock, MagicMock
 
@@ -44,6 +45,28 @@ async def test_search_not_found_404(client, mocker) -> None:
 
     response = await client.get("/api/v1/destinations/search?q=XyzzyNonexistent999")
 
+    assert response.status_code == 404
+    body = response.json()
+    assert body["success"] is False
+    assert body["code"] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_search_geocode_timeout_returns_404(client, mocker) -> None:
+    async def hang(_query: str):
+        await asyncio.sleep(30)
+
+    mocker.patch("src.destinations.service.geocode", new=hang)
+    mocker.patch(
+        "src.destinations.service.get_settings",
+        return_value=MagicMock(SEARCH_GEOCODE_TIMEOUT_SECONDS=0.05),
+    )
+
+    started = asyncio.get_running_loop().time()
+    response = await client.get("/api/v1/destinations/search?q=SlowTownXX")
+    elapsed = asyncio.get_running_loop().time() - started
+
+    assert elapsed < 3.0
     assert response.status_code == 404
     body = response.json()
     assert body["success"] is False

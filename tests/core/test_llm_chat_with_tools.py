@@ -97,3 +97,31 @@ async def test_chat_with_tools_exhausted_retries_raises_wandr_llm_error() -> Non
             )
 
     assert exc_info.value.code == "llm_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_chat_with_tools_empty_api_key_raises_without_litellm() -> None:
+    with (
+        patch(
+            "src.core.llm.client.litellm.acompletion",
+            new_callable=AsyncMock,
+        ) as mock_ac,
+        patch("src.core.llm.client.get_settings") as mock_settings,
+    ):
+        mock_settings.return_value = SimpleNamespace(
+            LLM_MODEL="test-model",
+            LLM_API_KEY="   ",
+            LLM_API_BASE="",
+            LLM_TIMEOUT_SECONDS=1,
+            LLM_MAX_RETRIES=2,
+        )
+        with pytest.raises(WandrLLMError) as exc_info:
+            await chat_with_tools(
+                messages=[{"role": "user", "content": "x"}],
+                tools=[],
+            )
+
+    assert exc_info.value.code == "llm_unavailable"
+    assert "LLM_API_KEY" in str(exc_info.value.message)
+    assert ".env" in str(exc_info.value.message)
+    mock_ac.assert_not_awaited()

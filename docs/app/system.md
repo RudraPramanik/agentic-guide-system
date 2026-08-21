@@ -222,13 +222,15 @@ Run before starting P1. On Windows, use PowerShell equivalents where noted.
 | 11 | Health | `GET /api/v1/health` | `{"success": true, "data": {"status": "ok", ...}}` |
 | 12 | Docker | `docker compose ps` | `wandr_postgres` healthy, `wandr_qdrant` running, `wandr_redis` healthy, `wandr_api` up |
 
-**Run the app** (requires `.env` with `SECRET_KEY`, `DATABASE_URL`, `LLM_API_KEY`, `NOMINATIM_USER_AGENT`):
+**Run the app** (requires `.env` with `SECRET_KEY`, `DATABASE_URL`, `NOMINATIM_USER_AGENT`; `LLM_API_KEY` optional for catalog, required for generate/enrich):
 
 ```bash
 docker compose up --build
 # Health: curl -s http://localhost:8000/api/v1/health | python -m json.tool
 # optional host uvicorn: stop compose `api`, then uvicorn src.main:app --reload
 ```
+
+If `wandr_postgres` is healthy but `wandr_api` is `Exited`, host `:8000` (and sibling FE destinations search) fail with `ERR_CONNECTION_REFUSED`. Check `docker logs wandr_api` for other missing required env — empty `LLM_API_KEY` no longer blocks catalog boot. Compose bind-mounts host `.env` at `/app/.env:ro` so Settings survive `docker compose down` / `up` (wait until `wandr_api` is healthy). Search `ERR_EMPTY_RESPONSE` (API up, connection dropped) is a separate issue: Nominatim bound by `SEARCH_GEOCODE_TIMEOUT_SECONDS` and uvicorn `--reload-dir /app/src`. See `docs/issue_solve.md`.
 
 Local dev notes:
 - Postgres: `DATABASE_URL=postgresql+asyncpg://wandr:wandr@localhost:5433/wandr` (port 5433, not 5432)

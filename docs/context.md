@@ -8,7 +8,7 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-19 · **Phase:** post-P7 · **Next step:** FE companion: poll prepare → generate → trip (`guideagent-frontend`); then operator VPS deploy via `docs/steps/blueprint_production.md`
+**Last updated:** 2026-08-21 · **Phase:** post-P7 · **Next step:** FE companion: poll prepare → generate → trip (`guideagent-frontend`); then operator VPS deploy via `docs/steps/blueprint_production.md`
 
 ---
 
@@ -228,7 +228,7 @@ trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/
 ## Local dev quick ref
 
 ```bash
-docker compose up --build     # PostGIS :5433, Qdrant :6335, Redis :6380, API :8000 (uvicorn --reload)
+docker compose up --build     # PostGIS :5433, Qdrant :6335, Redis :6380, API :8000 (uvicorn --reload --reload-dir /app/src)
 # browser: http://localhost:8000/docs  and  /api/v1/destinations/search?q=Darjeeling
 # optional host uvicorn (stop compose `api` first): uvicorn src.main:app --reload --port 8000
 python scripts/test_db_conn.py
@@ -254,6 +254,7 @@ python -m pytest tests/ -v
 - Empty host `REDIS_URL` keeps in-memory backends for pytest; Compose `api` sets `redis://redis:6379/0` (published **6380**). Optional host uvicorn: `redis://localhost:6380/0`
 - Stop host uvicorn **and any other process on :8000** before `docker compose up` (port clash)
 - `.env` must have a **bare** `DATABASE_URL` value — no comment prefix on the same line
+- `LLM_API_KEY` is optional for catalog/health boot (defaults empty). Generate/enrich need a real key in `guideagent/.env` (bind-mounted at `/app/.env` plus Compose `env_file`) — not in the Next app. `docker compose down` unbinds `:8000` until `up` and `wandr_api` is healthy. If `wandr_api` is `Exited` while Postgres is healthy, host `:8000` `ERR_CONNECTION_REFUSED` means the API never bound the port — `docker logs wandr_api` (other missing required env), not a Next.js URL bug. Tracking: `docs/issue_solve.md`
 - Root `.gitignore` ignores `.env` / `.env.*` (keeps `.env.example`). `.env` is untracked; git history still has old blobs until a separate rewrite
 - Geo: `NOMINATIM_BASE_URL`, `OVERPASS_API_URL`, `NOMINATIM_USER_AGENT` via `get_settings()`
 - Routing: `ROUTING_BACKEND=haversine` (default, in-process) or `osrm` + `OSRM_BASE_URL` (live pairwise; not required for 45s generate)

@@ -324,20 +324,23 @@ This is **not** a multi-turn chat notebook as the primary shell. Progress UI sho
 
 ## 10. Local verification loop
 
-In the **API** repo:
+In the **API** repo (`guideagent`):
 
 ```bash
-docker compose up -d          # PostGIS :5433, Qdrant :6335 only
-# configure .env (DATABASE_URL, LLM_*, CORS includes http://localhost:3000)
-uvicorn src.main:app --reload --port 8000
-# seed + enrich + index at least one destination (see API repo (`guideagent`) docs/context.md scripts)
-# OpenAPI: http://localhost:8000/docs
+docker compose up --build     # PostGIS :5433, Qdrant :6335, Redis :6380, API :8000
+# Catalog/health boot without LLM_API_KEY. Generate/enrich need a real key in guideagent/.env
+# Health: http://localhost:8000/api/v1/health
+# CORS includes http://localhost:3000
 ```
+
+If the sibling FE shows `net::ERR_CONNECTION_REFUSED` to `:8000` (e.g. `/api/v1/destinations/search`), the API process is not listening. `docker compose ps` / `docker logs wandr_api` — usually other missing required env (`SECRET_KEY`, `DATABASE_URL`, `NOMINATIM_USER_AGENT`), not an empty `LLM_API_KEY` (catalog boots without it). That is not a Next.js `NEXT_PUBLIC_API_URL` bug. Unused font preload warnings on `:3000` are unrelated. If the API is healthy but Chrome shows `net::ERR_EMPTY_RESPONSE`, the connection dropped (Nominatim miss vs 20s abort, or uvicorn reload) — search now 404s after `SEARCH_GEOCODE_TIMEOUT_SECONDS`. See `docs/issue_solve.md`.
+
+Optional host uvicorn: stop Compose `api` first, then `uvicorn src.main:app --reload --port 8000`.
 
 In the **FE** repo:
 
 ```bash
-# .env.local
+# .env.local — never put LLM_* / DATABASE_URL here
 NEXT_PUBLIC_API_URL=http://localhost:8000
 
 npm run dev   # http://localhost:3000

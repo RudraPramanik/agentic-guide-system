@@ -6,6 +6,7 @@ services:
   postgres:
     image: postgis/postgis:16-3.4
     container_name: wandr_postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: wandr
       POSTGRES_PASSWORD: wandr
@@ -23,6 +24,7 @@ services:
   qdrant:
     image: qdrant/qdrant:latest
     container_name: wandr_qdrant
+    restart: unless-stopped
     ports:
       - "6335:6333"
       - "6336:6334"
@@ -32,6 +34,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: wandr_redis
+    restart: unless-stopped
     ports:
       - "6380:6379"
     volumes:
@@ -48,6 +51,7 @@ services:
       dockerfile: Dockerfile.dev
     image: wandr-api:dev
     container_name: wandr_api
+    restart: unless-stopped
     env_file:
       - .env
     environment:
@@ -57,6 +61,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      - ./.env:/app/.env:ro
       - ./src:/app/src
       - ./alembic:/app/alembic
       - ./scripts:/app/scripts
@@ -66,7 +71,7 @@ services:
     command:
       - sh
       - -c
-      - PYTHONPATH="/usr/local/lib/python3.12/site-packages:${PYTHONPATH:-/app}" alembic upgrade head && exec uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+      - PYTHONPATH="/usr/local/lib/python3.12/site-packages:${PYTHONPATH:-/app}" alembic upgrade head && exec uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
     depends_on:
       postgres:
         condition: service_healthy

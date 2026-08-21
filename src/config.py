@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -45,9 +46,9 @@ class Settings(BaseSettings):
     REDIS_CONNECT_TIMEOUT_SECONDS: float = 1.0
     REDIS_SOCKET_TIMEOUT_SECONDS: float = 1.0
 
-    # LLM
+    # LLM — optional at boot (catalog/health bind without a key); generate/enrich need a real key
     LLM_MODEL: str = "nvidia_nim/meta/llama-3.1-8b-instruct"
-    LLM_API_KEY: str
+    LLM_API_KEY: str = ""
     LLM_API_BASE: str = ""
     LLM_TIMEOUT_SECONDS: int = 20
     LLM_MAX_RETRIES: int = 4
@@ -106,6 +107,8 @@ class Settings(BaseSettings):
     DESTINATIONS_PREPARE_LOCK_TTL_SECONDS: int = 180
     DESTINATIONS_PREPARE_DEFAULT_RADIUS_KM: float = 30.0
     DESTINATIONS_PREPARE_MAX_RADIUS_KM: float = 50.0
+    # Bound Nominatim on search cache-miss so HTTP returns before the FE 20s abort
+    SEARCH_GEOCODE_TIMEOUT_SECONDS: float = 8.0
 
     # CORS (credentialed; explicit origins only — never "*" with credentials)
     CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]
@@ -115,4 +118,18 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return cached settings singleton for process lifetime."""
 
-    return Settings()
+    try:
+        return Settings()
+    except ValidationError as e:
+        missing = [
+            str(err["loc"][0])
+            for err in e.errors()
+            if err.get("type") == "missing" and err.get("loc")
+        ]
+        names = ", ".join(missing) if missing else "required fields"
+        raise RuntimeError(
+            "Wandr API cannot start: missing required env "
+            f"({names}). Set them in the Compose env_file `.env` "
+            "(see `.env.example`). Catalog routes boot without "
+            "LLM_API_KEY; generate/enrich still need a real key."
+        ) from e

@@ -60,7 +60,13 @@ class DestinationService:
         if results:
             return results
 
-        geocoded = await geocode(query)
+        try:
+            geocoded = await asyncio.wait_for(
+                geocode(query),
+                timeout=get_settings().SEARCH_GEOCODE_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            geocoded = None
         if geocoded is None:
             raise DestinationNotFoundError(query=query)
 

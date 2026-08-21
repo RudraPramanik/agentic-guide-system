@@ -20,6 +20,45 @@ from src.core.observability.logging import get_logger
 log = get_logger()
 
 
+def _embedding_api_key(settings) -> str:
+    """Prefer GEMINI_API_KEY for gemini/* embed models; else LLM_API_KEY."""
+    model = settings.PLACES_EMBEDDING_MODEL
+    if model.startswith("gemini/") and settings.GEMINI_API_KEY:
+        return settings.GEMINI_API_KEY
+    if settings.GEMINI_API_KEY:
+        return settings.GEMINI_API_KEY
+    return settings.LLM_API_KEY
+
+
+def _require_llm_api_key(settings) -> str:
+    """Refuse empty LLM_API_KEY before LiteLLM (catalog boot stays key-optional)."""
+    key = (settings.LLM_API_KEY or "").strip()
+    if not key:
+        raise WandrLLMError(
+            code="llm_unavailable",
+            message=(
+                "LLM_API_KEY is empty. Set it in the Compose env_file `.env` "
+                "(see `.env.example`) before generate/enrich."
+            ),
+        )
+    return key
+
+
+def _require_embedding_api_key(settings) -> str:
+    """Refuse empty resolved embedding key before LiteLLM."""
+    key = (_embedding_api_key(settings) or "").strip()
+    if not key:
+        raise WandrLLMError(
+            code="llm_unavailable",
+            message=(
+                "Embedding API key is empty. Set LLM_API_KEY (or GEMINI_API_KEY "
+                "for gemini/* embeddings) in the Compose env_file `.env` "
+                "(see `.env.example`)."
+            ),
+        )
+    return key
+
+
 def _llm_stop(retry_state: RetryCallState) -> bool:
     return retry_state.attempt_number >= get_settings().LLM_MAX_RETRIES
 
@@ -73,13 +112,14 @@ async def chat_completion(
     model: str | None = None,
     response_format: dict | None = None,
 ) -> str:
+    settings = get_settings()
+    api_key = _require_llm_api_key(settings)
     try:
-        settings = get_settings()
         response = await litellm.acompletion(
             model=model or settings.LLM_MODEL,
             messages=messages,
             response_format=response_format,
-            api_key=settings.LLM_API_KEY,
+            api_key=api_key,
             api_base=settings.LLM_API_BASE or None,
             timeout=settings.LLM_TIMEOUT_SECONDS,
         )
@@ -89,6 +129,8 @@ async def chat_completion(
         await asyncio.sleep(float(retry_after))
         raise
     except litellm.Timeout:
+        raise
+    except WandrLLMError:
         raise
     except Exception as e:
         raise WandrLLMError(
@@ -104,12 +146,13 @@ async def chat_with_tools(
     tool_choice: str = "auto",
     model: str | None = None,
 ) -> LLMToolResponse:
+    settings = get_settings()
+    api_key = _require_llm_api_key(settings)
     try:
-        settings = get_settings()
         response = await litellm.acompletion(
             model=model or settings.LLM_MODEL,
             messages=messages,
-            api_key=settings.LLM_API_KEY,
+            api_key=api_key,
             api_base=settings.LLM_API_BASE or None,
             timeout=settings.LLM_TIMEOUT_SECONDS,
             tools=tools,
@@ -133,21 +176,13 @@ async def chat_with_tools(
         raise
     except litellm.Timeout:
         raise
+    except WandrLLMError:
+        raise
     except Exception as e:
         raise WandrLLMError(
             code="llm_unavailable",
             message=f"LLM call failed after retries: {type(e).__name__}",
         ) from e
-
-
-def _embedding_api_key(settings) -> str:
-    """Prefer GEMINI_API_KEY for gemini/* embed models; else LLM_API_KEY."""
-    model = settings.PLACES_EMBEDDING_MODEL
-    if model.startswith("gemini/") and settings.GEMINI_API_KEY:
-        return settings.GEMINI_API_KEY
-    if settings.GEMINI_API_KEY:
-        return settings.GEMINI_API_KEY
-    return settings.LLM_API_KEY
 
 
 @_llm_retry
@@ -161,13 +196,14 @@ async def embed_texts(
     """
     if not texts:
         return []
+    settings = get_settings()
+    api_key = _require_embedding_api_key(settings)
     try:
-        settings = get_settings()
         embed_model = model or settings.PLACES_EMBEDDING_MODEL
         response = await litellm.aembedding(
             model=embed_model,
             input=texts,
-            api_key=_embedding_api_key(settings),
+            api_key=api_key,
             timeout=settings.LLM_TIMEOUT_SECONDS,
             dimensions=settings.PLACES_EMBEDDING_DIM,
         )
