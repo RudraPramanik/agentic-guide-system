@@ -8,13 +8,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-21 · **Phase:** post-P7 · **Next step:** FE companion: poll prepare → generate → trip (`guideagent-frontend`); then operator VPS deploy via `docs/steps/blueprint_production.md`
+**Last updated:** 2026-08-23 · **Phase:** post-P7 · **Next step:** FE companion: poll prepare → generate → trip (`guideagent-frontend`); then operator VPS deploy via `docs/steps/blueprint_production.md`
 
 ---
 
 ## Current state (one line)
 
-P7 done + production packaging; generate default routing is in-process haversine (`ROUTING_BACKEND=haversine`) so Darjeeling cold generate fits the 45s ceiling without public OSRM.
+P7 done + production packaging; generate default routing is in-process haversine (`ROUTING_BACKEND=haversine`); POI ingest uses multi-source facade (`PLACES_SOURCES`, default `overpass`; optional OpenTripMap + Geoapify).
 
 ---
 
@@ -105,7 +105,7 @@ P7 done + production packaging; generate default routing is in-process haversine
 
 | Module | Exports / notes |
 |--------|-----------------|
-| `src/config.py` | `get_settings()` — Qdrant/embeddings, OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo, CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL`, `ROUTING_BACKEND` (`haversine` default \| `osrm`) |
+| `src/config.py` | `get_settings()` — Qdrant/embeddings, OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo (`PLACES_SOURCES`, OpenTripMap/Geoapify keys), CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL`, `ROUTING_BACKEND` (`haversine` default \| `osrm`) |
 | `src/core/llm/client.py` | `chat_completion` / `chat_with_tools` / `embed_texts` — **only** litellm import |
 | `src/search/embeddings.py` | `local` MiniLM or `hosted` via `embed_texts`; fail-soft; lazy ST import |
 | `src/core/cache/backends.py` | `CacheBackend` Protocol (`get`/`set`/`delete`); `InMemoryCacheBackend` / `RedisCacheBackend`; `get_cache_backend()` |
@@ -169,7 +169,7 @@ P7 done + production packaging; generate default routing is in-process haversine
 | `src/search/client.py` | `AsyncQdrantClient`, `ensure_places_collection`, `is_qdrant_available` |
 | `src/search/embeddings.py` | (see above — local MiniLM or hosted `embed_texts`) |
 | `src/search/places_index.py` | upsert, `search_places`, `count_indexed` |
-| `src/geo/*` | geocoder, overpass, osrm (`get_route` live-first; public `estimate_route` never HTTP) |
+| `src/geo/*` | geocoder, overpass (widened tags), `places.fetch_destination_pois` facade, opentripmap, geoapify_places, osrm (`get_route` live-first; public `estimate_route` never HTTP) |
 | `src/trips/models.py` | Trip / TripPlace / TripEditEvent (+ `Trip.places` / `TripPlace.place` relationships for eager load) |
 | `src/trips/exceptions.py` | `TripNotFoundError`, `TripForbiddenError`, `TripAlreadyClaimedError` (409), `TripEditValidationError` (422), `TripStopConflictError` (409), `TripStopNotFoundError` (404) |
 | `src/trips/schemas.py` | `TripOut` / `TripPlaceOut`; `ReorderStopsIn` / `AddStopIn` |
@@ -256,7 +256,7 @@ python -m pytest tests/ -v
 - `.env` must have a **bare** `DATABASE_URL` value — no comment prefix on the same line
 - `LLM_API_KEY` is optional for catalog/health boot (defaults empty). Generate/enrich need a real key in `guideagent/.env` (bind-mounted at `/app/.env` plus Compose `env_file`) — not in the Next app. `docker compose down` unbinds `:8000` until `up` and `wandr_api` is healthy. If `wandr_api` is `Exited` while Postgres is healthy, host `:8000` `ERR_CONNECTION_REFUSED` means the API never bound the port — `docker logs wandr_api` (other missing required env), not a Next.js URL bug. Tracking: `docs/issue_solve.md`
 - Root `.gitignore` ignores `.env` / `.env.*` (keeps `.env.example`). `.env` is untracked; git history still has old blobs until a separate rewrite
-- Geo: `NOMINATIM_BASE_URL`, `OVERPASS_API_URL`, `NOMINATIM_USER_AGENT` via `get_settings()`
+- Geo: `NOMINATIM_BASE_URL`, `OVERPASS_API_URL`, `NOMINATIM_USER_AGENT`, `PLACES_SOURCES` (`overpass` default; optional `opentripmap`,`geoapify`), `OPENTRIPMAP_*`, `GEOAPIFY_*` via `get_settings()`
 - Routing: `ROUTING_BACKEND=haversine` (default, in-process) or `osrm` + `OSRM_BASE_URL` (live pairwise; not required for 45s generate)
 - Overpass: `read=90s` + retry on 5xx (amendment vs step `read=30`); failure → `[]`
 

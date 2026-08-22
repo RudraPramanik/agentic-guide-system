@@ -79,7 +79,7 @@ async def test_prepare_already_at_floor_is_200_ready_without_overpass(
     await db_session.flush()
 
     fetch = mocker.patch(
-        "src.destinations.ingest.fetch_pois",
+        "src.destinations.ingest.fetch_destination_pois",
         new_callable=AsyncMock,
     )
     create = mocker.patch(
@@ -111,7 +111,7 @@ async def test_prepare_below_floor_returns_202_and_schedules_ingest(
         side_effect=_swallow_task,
     )
     fetch = mocker.patch(
-        "src.destinations.ingest.fetch_pois",
+        "src.destinations.ingest.fetch_destination_pois",
         new_callable=AsyncMock,
     )
 
@@ -227,7 +227,7 @@ async def test_ingest_destination_pois_updates_place_count(
     await db_session.flush()
 
     mocker.patch(
-        "src.destinations.ingest.fetch_pois",
+        "src.destinations.ingest.fetch_destination_pois",
         new=AsyncMock(return_value=[_poi("node/1"), _poi("node/2")]),
     )
     geocode = mocker.patch(
@@ -261,7 +261,7 @@ async def test_prepare_then_generate_floor_until_places_exist(
 
     pois = [_poi(f"node/{i}") for i in range(12)]
     mocker.patch(
-        "src.destinations.ingest.fetch_pois",
+        "src.destinations.ingest.fetch_destination_pois",
         new=AsyncMock(return_value=pois),
     )
     await ingest_destination_pois(db_session, dest, 30.0)

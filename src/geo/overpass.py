@@ -26,6 +26,11 @@ _OVERPASS_QL_TEMPLATE = """[out:json][timeout:60];
   way["tourism"~"attraction|viewpoint|museum|monastery"](around:{radius_m},{lat},{lng});
   node["leisure"="park"](around:{radius_m},{lat},{lng});
   node["highway"="trailhead"](around:{radius_m},{lat},{lng});
+  node["amenity"~"cafe|restaurant"](around:{radius_m},{lat},{lng});
+  node["amenity"="place_of_worship"](around:{radius_m},{lat},{lng});
+  node["historic"](around:{radius_m},{lat},{lng});
+  way["historic"](around:{radius_m},{lat},{lng});
+  node["natural"~"peak|waterfall"](around:{radius_m},{lat},{lng});
 );
 out center tags;"""
 
@@ -40,7 +45,7 @@ def _is_retryable(exc: BaseException) -> bool:
 
 
 def _category_from_tags(tags: dict) -> str:
-    """Priority-ordered mapping per the locked P2 category table."""
+    """Priority-ordered mapping: tourism → amenity → leisure/highway → historic/natural."""
     tourism = tags.get("tourism")
     if tourism == "museum":
         return "museum"
@@ -50,10 +55,22 @@ def _category_from_tags(tags: dict) -> str:
         return "monastery"
     if tourism == "attraction":
         return "attraction"
+    amenity = tags.get("amenity")
+    if amenity == "cafe":
+        return "cafe"
+    if amenity == "restaurant":
+        return "restaurant"
+    if amenity == "place_of_worship":
+        return "temple"
     if tags.get("leisure") == "park":
         return "park"
     if tags.get("highway") == "trailhead":
         return "trailhead"
+    if tags.get("historic"):
+        return "historic"
+    natural = tags.get("natural")
+    if natural in ("peak", "waterfall"):
+        return "nature"
     return "attraction"
 
 

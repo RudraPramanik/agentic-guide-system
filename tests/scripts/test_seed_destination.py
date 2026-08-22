@@ -71,7 +71,7 @@ async def test_seed_continues_when_overpass_returns_empty(db_session, mocker) ->
         new=AsyncMock(return_value=geocoded),
     )
     mocker.patch(
-        "src.destinations.ingest.fetch_pois",
+        "src.destinations.ingest.fetch_destination_pois",
         new=AsyncMock(return_value=[]),
     )
 

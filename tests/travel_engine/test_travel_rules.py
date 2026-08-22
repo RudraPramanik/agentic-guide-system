@@ -20,11 +20,21 @@ _P2_CATEGORIES = {
     "attraction",
     "park",
     "trailhead",
+    "cafe",
+    "restaurant",
+    "temple",
+    "historic",
+    "nature",
 }
 
 
 def test_duration_keys_cover_p2_categories() -> None:
     assert _P2_CATEGORIES <= set(VISIT_DURATION_BY_CATEGORY)
+
+
+def test_cafe_has_explicit_duration() -> None:
+    assert visit_duration_min("cafe") == VISIT_DURATION_BY_CATEGORY["cafe"]
+    assert visit_duration_min("cafe") > 0
 
 
 def test_default_duration_for_unknown_category() -> None:
@@ -42,7 +52,8 @@ def test_no_sunrise_point_in_morning_only() -> None:
 
 
 def test_interest_only_tags_not_in_duration_map() -> None:
-    for tag in ("trek", "cultural", "photography", "offbeat", "family", "nature", "adventure"):
+    # nature is dual-use (structural Place.category + interest tag) — excluded here.
+    for tag in ("trek", "cultural", "photography", "offbeat", "family", "adventure"):
         assert tag not in VISIT_DURATION_BY_CATEGORY
 
 

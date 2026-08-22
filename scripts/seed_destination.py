@@ -1,5 +1,5 @@
 ﻿"""
-Seed a destination with POIs from Overpass.
+Seed a destination with POIs from the geo places facade.
 Usage: python scripts/seed_destination.py --destination "Darjeeling" --radius 30
 Re-runnable (upsert). Commits on success.
 """

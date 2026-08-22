@@ -78,6 +78,12 @@ class Settings(BaseSettings):
     # Generate + trip-edit routing adapter: haversine = in-process (default, fits 45s);
     # osrm = live pairwise get_route against OSRM_BASE_URL (paid/self-host later).
     ROUTING_BACKEND: str = "haversine"
+    # Comma list: overpass | opentripmap | geoapify. Default overpass-only (no extra keys).
+    PLACES_SOURCES: str = "overpass"
+    OPENTRIPMAP_API_KEY: str = ""
+    OPENTRIPMAP_BASE_URL: str = "https://api.opentripmap.com/0.1/en"
+    GEOAPIFY_API_KEY: str = ""
+    GEOAPIFY_BASE_URL: str = "https://api.geoapify.com/v2"
 
     # Auth / JWT
     ACCESS_TOKEN_EXPIRE_DAYS: int = 7

@@ -87,6 +87,41 @@ async def test_fetch_pois_radius_uses_meters(mocker) -> None:
 
     query = mock_post.await_args.args[0]
     assert "around:30000," in query
+    assert 'amenity"~"cafe|restaurant"' in query or "amenity" in query
+    assert "place_of_worship" in query
+    assert "historic" in query
+    assert 'natural"~"peak|waterfall"' in query or "waterfall" in query
+
+
+def test_category_from_tags_new_categories() -> None:
+    assert overpass._category_from_tags({"amenity": "cafe"}) == "cafe"
+    assert overpass._category_from_tags({"amenity": "restaurant"}) == "restaurant"
+    assert overpass._category_from_tags({"amenity": "place_of_worship"}) == "temple"
+    assert overpass._category_from_tags({"historic": "monument", "name": "X"}) == "historic"
+    assert overpass._category_from_tags({"natural": "peak"}) == "nature"
+    assert overpass._category_from_tags({"tourism": "viewpoint"}) == "viewpoint"
+
+
+@pytest.mark.asyncio
+async def test_fetch_pois_maps_cafe(mocker) -> None:
+    payload = {
+        "elements": [
+            {
+                "type": "node",
+                "id": 7,
+                "lat": 27.04,
+                "lon": 88.26,
+                "tags": {"name": "Glenary's", "amenity": "cafe"},
+            },
+        ]
+    }
+    mocker.patch.object(overpass, "_post_overpass", new=AsyncMock(return_value=payload))
+
+    pois = await overpass.fetch_pois(27.041, 88.263, 5)
+
+    assert len(pois) == 1
+    assert pois[0].category == "cafe"
+    assert pois[0].osm_id == "node/7"
 
 
 @pytest.mark.asyncio

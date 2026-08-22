@@ -27,6 +27,11 @@ VISIT_DURATION_BY_CATEGORY: dict[str, int] = {
     "park": 30,
     "trailhead": 90,
     "attraction": 40,
+    "cafe": 30,
+    "restaurant": 60,
+    "temple": 40,
+    "historic": 40,
+    "nature": 45,
 }
 VISIT_DURATION_DEFAULT_MIN = 30
 MORNING_ONLY_CATEGORIES: list[str] = ["viewpoint"]

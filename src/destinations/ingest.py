@@ -1,4 +1,4 @@
-"""Shared Overpass place ingest — CLI seed and HTTP prepare both call this.
+"""Shared place ingest — CLI seed and HTTP prepare both call this.
 
 Geo only via ``src.geo``. No httpx, no LLM. Caller owns the session commit.
 """
@@ -13,7 +13,7 @@ from src.core.observability.logging import get_logger
 from src.destinations.models import Destination
 from src.destinations.repository import DestinationRepository
 from src.geo.geocoder import geocode
-from src.geo.overpass import fetch_pois
+from src.geo.places import fetch_destination_pois
 from src.geo.schemas import GeocodedPlace, RawPOI
 from src.places.repository import PlaceRepository
 
@@ -57,12 +57,12 @@ async def ingest_destination_pois(
     dest: Destination,
     radius_km: float,
 ) -> tuple[Destination, int, int]:
-    """Fetch Overpass POIs around the stored point, upsert, update ``place_count``.
+    """Fetch POIs via places facade, upsert, update ``place_count``.
 
     Does not geocode and does not commit. Does not touch enrich/index counters.
     """
     dest_repo = DestinationRepository(session)
-    pois = await fetch_pois(dest.lat, dest.lng, radius_km)
+    pois = await fetch_destination_pois(dest.lat, dest.lng, radius_km)
     if not pois:
         log.warning(
             "seed.no_pois",
@@ -71,7 +71,7 @@ async def ingest_destination_pois(
             radius_km=radius_km,
         )
         print(
-            f"WARNING: Overpass returned no POIs for {dest.name} "
+            f"WARNING: Places facade returned no POIs for {dest.name} "
             f"within {radius_km}km - saving destination with place_count=0"
         )
 
@@ -95,7 +95,7 @@ async def seed_destination_into(
     destination_name: str,
     radius_km: float,
 ) -> tuple[Destination, int, int]:
-    """Geocode → upsert → Overpass ingest on *session*. Caller commits.
+    """Geocode → upsert → places-facade ingest on *session*. Caller commits.
 
     Raises ValueError when geocode returns None (maps to CLI exit 1).
     """
