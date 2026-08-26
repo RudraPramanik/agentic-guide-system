@@ -1,5 +1,7 @@
 # Blueprint v7.0 — Hybrid Dense + Sparse Place Search (BM25-style)
-> Extends `docs/blueprint_final.md` (v6.1). This file is the build plan for the next version's retrieval upgrade.
+> Extends `docs/blueprint_final.md` (v6.1). This file holds **why / package decisions / detailed stage notes** for the next version's retrieval + observability upgrade.
+>
+> **Build SSOT (step-by-step phases V0–V6):** [`docs/v2_blueprint.md`](v2_blueprint.md) — use that file to execute work (same shape as `blueprint_final.md`).
 > Scope: upgrade place retrieval from pure dense vector search to **hybrid dense + sparse (BM25-style) with server-side RRF fusion** — without breaking any architecture rule, resilience contract, or existing consumer.
 >
 > **Supersedes nothing.** v6.1 remains the SSOT for everything not touched here.

@@ -1,0 +1,3 @@
+schema: spec-driven
+created: 2026-08-26
+skip_specs: true  # docs-only: authors docs/v2_blueprint.md; no product behavior in this change
