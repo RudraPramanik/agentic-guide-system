@@ -27,7 +27,14 @@ class Settings(BaseSettings):
     # Vector search (host port 6335 — compose maps 6335:6333)
     QDRANT_URL: str = "http://localhost:6335"
     QDRANT_API_KEY: str = ""
+    # Active collection — cutover to hybrid = set this to places_v2 (via places_collection())
     QDRANT_PLACES_COLLECTION: str = "places"
+    QDRANT_PLACES_COLLECTION_V2: str = "places_v2"
+    SEARCH_SPARSE_ENABLED: bool = True
+    # Standard RRF constant (server FusionQuery uses fixed RRF; kept for ops/docs + logs)
+    SEARCH_RRF_K: int = 60
+    # V6.1: dense/sparse/fused id orders into tool_trace; false skips extra diagnostic queries
+    SEARCH_FUSION_DIAGNOSTICS: bool = True
     # local = MiniLM in-process (dev); hosted = LiteLLM embedding API (prod)
     PLACES_EMBEDDING_BACKEND: str = "local"
     # Dim must match backend model + Qdrant collection (MiniLM 384; gemini/text-embedding-004 → 768)

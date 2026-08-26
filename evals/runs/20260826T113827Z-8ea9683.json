@@ -1,0 +1,105 @@
+{
+  "destination": "darjeeling",
+  "timestamp": "20260826T113827Z",
+  "git_sha": "8ea9683",
+  "case_set_hash": "75f7af9c24c2",
+  "pass_rate": 0.25,
+  "cases": [
+    {
+      "id": "dar-001",
+      "passed": false,
+      "reasons": [
+        "missing_place:Tiger Hill",
+        "validation_passed:expected=True:actual=False",
+        "no_geo_fallback:used_geo_fallback=True"
+      ],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-002",
+      "passed": false,
+      "reasons": [
+        "validation_passed:expected=True:actual=False",
+        "max_days:expected<=2:actual=3",
+        "itinerary_days:expected<=2:actual=3"
+      ],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-003",
+      "passed": true,
+      "reasons": [],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-004",
+      "passed": false,
+      "reasons": [
+        "max_days:expected<=1:actual=3",
+        "itinerary_days:expected<=1:actual=3"
+      ],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-005",
+      "passed": false,
+      "reasons": [
+        "no_geo_fallback:used_geo_fallback=True"
+      ],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-006",
+      "passed": true,
+      "reasons": [],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-007",
+      "passed": false,
+      "reasons": [
+        "max_days:expected<=2:actual=3",
+        "itinerary_days:expected<=2:actual=3"
+      ],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-008",
+      "passed": false,
+      "reasons": [
+        "max_tool_calls:expected<=10:actual=11"
+      ],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-009",
+      "passed": true,
+      "reasons": [],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-010",
+      "passed": false,
+      "reasons": [
+        "missing_place:Tiger Hill"
+      ],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-011",
+      "passed": false,
+      "reasons": [
+        "validation_passed:expected=True:actual=False"
+      ],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-012",
+      "passed": false,
+      "reasons": [
+        "no_geo_fallback:used_geo_fallback=True"
+      ],
+      "mode": "generate"
+    }
+  ]
+}

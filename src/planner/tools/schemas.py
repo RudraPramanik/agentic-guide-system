@@ -60,6 +60,7 @@ class ToolTraceEntry(BaseModel):
     phase: AgentPhase | str
     code: str | None = None
     fallback_used: bool | None = None
+    diagnostics: dict[str, Any] | None = None
 
 
 class PendingToolCall(BaseModel):

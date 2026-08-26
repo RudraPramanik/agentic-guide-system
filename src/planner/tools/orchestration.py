@@ -163,6 +163,11 @@ def apply_tool_result(
                     _state_set(state, key, value)
 
         phase = _phase_from_state(state) or AgentPhase.DISCOVER
+        diagnostics = None
+        if isinstance(result.data, dict):
+            raw_diag = result.data.get("fusion_diagnostics")
+            if isinstance(raw_diag, dict):
+                diagnostics = raw_diag
         entry = ToolTraceEntry(
             name=name,
             ok=bool(result.ok),
@@ -170,6 +175,7 @@ def apply_tool_result(
             phase=phase,
             code=result.code,
             fallback_used=result.fallback_used,
+            diagnostics=diagnostics,
         )
         trace = list(state_get(state, "tool_trace") or [])
         trace.append(entry.model_dump(mode="json"))

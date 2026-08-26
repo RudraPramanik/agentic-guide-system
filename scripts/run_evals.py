@@ -108,6 +108,12 @@ async def _generate_or_fixture(
 
     from tests.travel_engine.fake_routing import FakeRoutingProvider
     from src.planner.service import PlannerService
+    from src.search.client import ensure_places_collection
+    from src.search.embeddings import ensure_embedding_model_loaded
+
+    # Lifespan is not running under the CLI — make Qdrant/embeddings available for real retrieval.
+    await ensure_places_collection()
+    await ensure_embedding_model_loaded()
 
     dest_id = case.get("destination_id")
     if not dest_id:

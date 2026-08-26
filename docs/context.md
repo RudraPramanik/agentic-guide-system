@@ -9,13 +9,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-26 · **Phase:** post-P7 / v7 · **Next step:** fill/apply hybrid dense+sparse (`hybrid-dense-sparse-place-search` / V4–V5); FE companion poll prepare → generate → trip; VPS via `docs/steps/blueprint_production.md`
+**Last updated:** 2026-08-26 · **Phase:** post-P7 / v7 · **Next step:** V6.2 embedding bump / V6.3 cross-encoder only if fusion diagnostics + evals demand; FE companion poll prepare → generate → trip; VPS via `docs/steps/blueprint_production.md`
 
 ---
 
 ## Current state (one line)
 
-P7 done; v7 **V0–V3 done** (CI, `query_points`, token/Langfuse observability, golden harness); generate default routing haversine; POI ingest multi-source (`PLACES_SOURCES`).
+P7 done; v7 **V0–V6.1 done** (through hybrid RRF + fusion diagnostics in `tool_trace`); V6.2/V6.3 deferred pending evidence; generate default routing haversine; POI ingest multi-source (`PLACES_SOURCES`).
 
 ---
 
@@ -104,18 +104,26 @@ P7 done; v7 **V0–V3 done** (CI, `query_points`, token/Langfuse observability, 
 | V1 | ✅ Done | `search_places` → `client.query_points`; three pinned tests mock `query_points` |
 | V2 | ✅ Done | `LLMUsage` + state `token_usage`; Langfuse trace around `PlannerService.generate` (NoOp default) |
 | V3 | ✅ Done | Golden harness `evals/` + `scripts/run_evals.py` + `src/evaluation/scorers.py` |
+| V4 | ✅ Done | `_canonical_text` includes `name` + `category`; reindex required for gains |
+| V5 | ✅ Done | `places_collection()` + `sparse.py` + `places_v2` named vectors + RRF; kill-switch dense-only |
+| V6.1 | ✅ Done | Fusion diagnostics (dense/sparse/fused ids) → `tool_trace`; `SEARCH_FUSION_DIAGNOSTICS` kill-switch |
+| V6.2–V6.3 | ⬜ Deferred | Embedding bump / cross-encoder — only if diagnostics + evals show retrieval-dominant misses |
 ---
 
 ## Implemented modules (real code)
 
 | Module | Exports / notes |
 |--------|-----------------|
-| `src/config.py` | `get_settings()` — Qdrant/embeddings, OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo (`PLACES_SOURCES`, OpenTripMap/Geoapify keys), CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL`, `ROUTING_BACKEND` (`haversine` default \| `osrm`) |
+| `src/config.py` | `get_settings()` — Qdrant/embeddings (`QDRANT_PLACES_COLLECTION`, `_V2`, `SEARCH_SPARSE_ENABLED`, `SEARCH_RRF_K`, `SEARCH_FUSION_DIAGNOSTICS`), OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo (`PLACES_SOURCES`, OpenTripMap/Geoapify keys), CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL`, `ROUTING_BACKEND` (`haversine` default \| `osrm`) |
 | `src/core/llm/client.py` | `chat_completion` / `chat_with_tools` / `embed_texts` — **only** litellm import; `LLMUsage` + retry counts |
 | `src/core/observability/tracing.py` | `get_tracer()` / `flush_tracer()` / generate trace + tool spans (fail-soft) |
 | `src/evaluation/scorers.py` | Pure golden-case scorers |
 | `scripts/run_evals.py` | Golden harness runner + baseline diff |
 | `src/search/embeddings.py` | `local` MiniLM or `hosted` via `embed_texts`; fail-soft; lazy ST import |
+| `src/search/sparse.py` | Pure-Python BM25-style sparse encode; `is_sparse_available` fail-soft gate |
+| `src/search/client.py` | `places_collection()` accessor; ensure legacy dense or V2 named `dense`+`bm25` |
+| `src/search/places_index.py` | Canonical text + hybrid RRF / dense-only; `search_places_with_diagnostics` sidecar → tool_trace |
+| `scripts/run_evals.py` | Golden harness runner + baseline diff; live path ensures Qdrant/embeddings |
 | `src/core/cache/backends.py` | `CacheBackend` Protocol (`get`/`set`/`delete`); `InMemoryCacheBackend` / `RedisCacheBackend`; `get_cache_backend()` |
 | `src/core/middleware/rate_limit.py` | `InMemoryRateLimiter` / `RedisRateLimiter`; `get_rate_limiter()` selects on `REDIS_URL`; fail-open |
 | `src/planner/schemas.py` | `PlanRequest` (destination_id, raw_input, optional days/base/accommodation_label) |
@@ -174,9 +182,10 @@ P7 done; v7 **V0–V3 done** (CI, `query_points`, token/Langfuse observability, 
 | `src/places/constants.py` | `PLACE_TAG_VOCAB` |
 | `src/places/service.py` | list/get + `enrich_place` |
 | `src/places/repository.py` / `router.py` / `schemas.py` | P2 places HTTP |
-| `src/search/client.py` | `AsyncQdrantClient`, `ensure_places_collection`, `is_qdrant_available` |
+| `src/search/client.py` | `places_collection()`, ensure (legacy or V2 hybrid), `is_qdrant_available` |
 | `src/search/embeddings.py` | (see above — local MiniLM or hosted `embed_texts`) |
-| `src/search/places_index.py` | upsert, `search_places` (`query_points`), `count_indexed` |
+| `src/search/sparse.py` | Pure-Python BM25-style sparse encode |
+| `src/search/places_index.py` | upsert (named vectors on V2), hybrid RRF / dense-only `search_places`, `count_indexed` |
 | `.github/workflows/ci.yml` | Phase A CI — pytest on PostGIS + prod Dockerfile build; no registry/deploy |
 | `src/geo/*` | geocoder, overpass (widened tags), `places.fetch_destination_pois` facade, opentripmap, geoapify_places, osrm (`get_route` live-first; public `estimate_route` never HTTP) |
 | `src/trips/models.py` | Trip / TripPlace / TripEditEvent (+ `Trip.places` / `TripPlace.place` relationships for eager load) |
@@ -260,6 +269,7 @@ python -m pytest tests/ -v
 
 - `DATABASE_URL=postgresql+asyncpg://wandr:wandr@localhost:5433/wandr` (port **5433**, not 5432) — host tools; Compose `api` overrides to `postgres:5432`
 - `QDRANT_URL=http://localhost:6335` — host tools; Compose `api` overrides to `http://qdrant:6333`
+- Places collection cutover: `QDRANT_PLACES_COLLECTION=places_v2` (active via `places_collection()`); `SEARCH_SPARSE_ENABLED=false` → dense-only; `SEARCH_FUSION_DIAGNOSTICS=false` → skip diagnostic subqueries; rollback also `QDRANT_PLACES_COLLECTION=places` (keep legacy until soak)
 - Empty host `REDIS_URL` keeps in-memory backends for pytest; Compose `api` sets `redis://redis:6379/0` (published **6380**). Optional host uvicorn: `redis://localhost:6380/0`
 - Stop host uvicorn **and any other process on :8000** before `docker compose up` (port clash)
 - `.env` must have a **bare** `DATABASE_URL` value — no comment prefix on the same line
