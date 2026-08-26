@@ -1,0 +1,36 @@
+﻿{
+    "destination_id":  "458854b1-4d2a-4d02-8901-e26ed59c0c8b",
+    "days":  4,
+    "validation_result":  {
+                              "ok":  true
+                          },
+    "readiness_score":  0.75,
+    "used_geo_fallback":  false,
+    "tool_loop_count":  5,
+    "itinerary":  {
+                      "days":  [
+                                   {
+                                       "stops":  [
+                                                     {
+                                                         "place_id":  "p1",
+                                                         "name":  "Tiger Hill"
+                                                     },
+                                                     {
+                                                         "place_id":  "p2",
+                                                         "name":  "Batasia Loop"
+                                                     },
+                                                     {
+                                                         "place_id":  "p3",
+                                                         "name":  "Padmaja Naidu Himalayan Zoological Park"
+                                                     }
+                                                 ],
+                                       "day":  1
+                                   }
+                               ]
+                  },
+    "candidate_pois":  [
+                           {
+                               "name":  "Tiger Hill"
+                           }
+                       ]
+}

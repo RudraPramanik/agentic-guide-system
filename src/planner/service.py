@@ -14,6 +14,11 @@ from uuid import UUID
 from langgraph.errors import GraphRecursionError
 
 from src.config import get_settings
+from src.core.observability.tracing import (
+    emit_tool_spans_from_trace,
+    end_generation_trace,
+    start_generation_trace,
+)
 from src.planner.emit_terminals import emit_terminal_from_state
 from src.planner.graph.builder import get_compiled_graph
 from src.planner.graph.nodes.record_evaluation import record_evaluation
@@ -70,6 +75,7 @@ def _initial_state(
         "max_replan_attempts": settings.PLANNER_MAX_REPLAN_ATTEMPTS,
         "abort_triggered": False,
         "llm_retry_count": 0,
+        "token_usage": {},
         "used_geo_fallback": False,
         "used_osrm_fallback": False,
         "candidate_pois": [],

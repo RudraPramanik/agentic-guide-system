@@ -1,0 +1,13 @@
+﻿{
+    "id":  "dar-010",
+    "destination":  "Darjeeling",
+    "destination_id":  "458854b1-4d2a-4d02-8901-e26ed59c0c8b",
+    "raw_input":  "photography focused 3 day plan",
+    "must_include_places":  [
+                                "Tiger Hill"
+                            ],
+    "assertions":  {
+                       "max_tool_calls":  12,
+                       "max_days":  3
+                   }
+}

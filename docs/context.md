@@ -9,13 +9,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-26 · **Phase:** post-P7 / v7 · **Next step:** apply OpenSpec `wire-langfuse-tracing-and-eval-harness` (V2–V3); FE companion poll prepare → generate → trip; operator VPS via `docs/steps/blueprint_production.md`
+**Last updated:** 2026-08-26 · **Phase:** post-P7 / v7 · **Next step:** fill/apply hybrid dense+sparse (`hybrid-dense-sparse-place-search` / V4–V5); FE companion poll prepare → generate → trip; VPS via `docs/steps/blueprint_production.md`
 
 ---
 
 ## Current state (one line)
 
-P7 done; v7 **V0+V1 done** (GitHub Actions CI + `search_places` via `query_points`); generate default routing haversine; POI ingest multi-source (`PLACES_SOURCES`, default `overpass`).
+P7 done; v7 **V0–V3 done** (CI, `query_points`, token/Langfuse observability, golden harness); generate default routing haversine; POI ingest multi-source (`PLACES_SOURCES`).
 
 ---
 
@@ -102,6 +102,8 @@ P7 done; v7 **V0+V1 done** (GitHub Actions CI + `search_places` via `query_point
 | 7.6 | ✅ Done | P7 smoke (`scripts/test_p7_smoke.py`) + import guards; context P7-complete stamp |
 | V0 | ✅ Done | `.github/workflows/ci.yml` — pytest + PostGIS service + `docker build` (no deploy) |
 | V1 | ✅ Done | `search_places` → `client.query_points`; three pinned tests mock `query_points` |
+| V2 | ✅ Done | `LLMUsage` + state `token_usage`; Langfuse trace around `PlannerService.generate` (NoOp default) |
+| V3 | ✅ Done | Golden harness `evals/` + `scripts/run_evals.py` + `src/evaluation/scorers.py` |
 ---
 
 ## Implemented modules (real code)
@@ -109,7 +111,10 @@ P7 done; v7 **V0+V1 done** (GitHub Actions CI + `search_places` via `query_point
 | Module | Exports / notes |
 |--------|-----------------|
 | `src/config.py` | `get_settings()` — Qdrant/embeddings, OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo (`PLACES_SOURCES`, OpenTripMap/Geoapify keys), CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL`, `ROUTING_BACKEND` (`haversine` default \| `osrm`) |
-| `src/core/llm/client.py` | `chat_completion` / `chat_with_tools` / `embed_texts` — **only** litellm import |
+| `src/core/llm/client.py` | `chat_completion` / `chat_with_tools` / `embed_texts` — **only** litellm import; `LLMUsage` + retry counts |
+| `src/core/observability/tracing.py` | `get_tracer()` / `flush_tracer()` / generate trace + tool spans (fail-soft) |
+| `src/evaluation/scorers.py` | Pure golden-case scorers |
+| `scripts/run_evals.py` | Golden harness runner + baseline diff |
 | `src/search/embeddings.py` | `local` MiniLM or `hosted` via `embed_texts`; fail-soft; lazy ST import |
 | `src/core/cache/backends.py` | `CacheBackend` Protocol (`get`/`set`/`delete`); `InMemoryCacheBackend` / `RedisCacheBackend`; `get_cache_backend()` |
 | `src/core/middleware/rate_limit.py` | `InMemoryRateLimiter` / `RedisRateLimiter`; `get_rate_limiter()` selects on `REDIS_URL`; fail-open |

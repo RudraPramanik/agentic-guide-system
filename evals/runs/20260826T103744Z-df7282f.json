@@ -1,0 +1,81 @@
+{
+  "destination": "darjeeling",
+  "timestamp": "20260826T103744Z",
+  "git_sha": "df7282f",
+  "case_set_hash": "75f7af9c24c2",
+  "pass_rate": 1.0,
+  "cases": [
+    {
+      "id": "dar-001",
+      "passed": true,
+      "reasons": [],
+      "mode": "fixture"
+    },
+    {
+      "id": "dar-002",
+      "passed": true,
+      "reasons": [],
+      "mode": "fixture"
+    },
+    {
+      "id": "dar-003",
+      "passed": true,
+      "reasons": [],
+      "mode": "fixture"
+    },
+    {
+      "id": "dar-004",
+      "passed": true,
+      "reasons": [],
+      "mode": "fixture"
+    },
+    {
+      "id": "dar-005",
+      "passed": true,
+      "reasons": [],
+      "mode": "fixture"
+    },
+    {
+      "id": "dar-006",
+      "passed": true,
+      "reasons": [],
+      "mode": "fixture"
+    },
+    {
+      "id": "dar-007",
+      "passed": true,
+      "reasons": [],
+      "mode": "fixture"
+    },
+    {
+      "id": "dar-008",
+      "passed": true,
+      "reasons": [],
+      "mode": "fixture"
+    },
+    {
+      "id": "dar-009",
+      "passed": true,
+      "reasons": [],
+      "mode": "fixture"
+    },
+    {
+      "id": "dar-010",
+      "passed": true,
+      "reasons": [],
+      "mode": "fixture"
+    },
+    {
+      "id": "dar-011",
+      "passed": true,
+      "reasons": [],
+      "mode": "fixture"
+    },
+    {
+      "id": "dar-012",
+      "passed": true,
+      "reasons": [],
+      "mode": "fixture"
+    }
+  ]
+}

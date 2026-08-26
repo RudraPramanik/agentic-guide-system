@@ -8,7 +8,7 @@ from langchain_core.runnables import RunnableConfig
 
 from src.config import get_settings
 from src.core.exceptions import WandrLLMError
-from src.core.llm.client import chat_with_tools
+from src.core.llm.client import chat_with_tools, merge_token_usage
 from src.planner.graph.messages import build_agent_messages
 from src.planner.tools.registry import get_tools_for_phase
 from src.planner.tools.schemas import (
@@ -101,26 +101,42 @@ async def agent_node(
     tools = get_tools_for_phase(phase)
     messages = build_agent_messages(state)
 
+    token_usage = dict(state.get("token_usage") or {})
+    llm_retry_count = int(state.get("llm_retry_count") or 0)
+
     try:
         response = await chat_with_tools(messages, tools, tool_choice="auto")
+        token_usage = merge_token_usage(token_usage, response.usage)
+        llm_retry_count += int(response.retry_count or 0)
         if response.tool_calls:
-            return {"pending_tool_calls": _pending_dicts(response.tool_calls)}
+            return {
+                "pending_tool_calls": _pending_dicts(response.tool_calls),
+                "token_usage": token_usage,
+                "llm_retry_count": llm_retry_count,
+            }
 
         nudged = list(messages) + [{"role": "system", "content": _NUDGE}]
         response2 = await chat_with_tools(nudged, tools, tool_choice="required")
+        token_usage = merge_token_usage(token_usage, response2.usage)
+        llm_retry_count += int(response2.retry_count or 0)
         if response2.tool_calls:
             return {
                 "pending_tool_calls": _pending_dicts(response2.tool_calls),
                 "warnings": _append_warning(state, "agent_nudged"),
+                "token_usage": token_usage,
+                "llm_retry_count": llm_retry_count,
             }
 
         return {
             "pending_tool_calls": _synthesize_default(state),
             "warnings": _append_warning(state, "agent_no_tool_call_default_used"),
+            "token_usage": token_usage,
+            "llm_retry_count": llm_retry_count,
         }
     except WandrLLMError:
         return {
             "pending_tool_calls": _synthesize_default(state),
-            "llm_retry_count": int(state.get("llm_retry_count") or 0) + 1,
+            "llm_retry_count": llm_retry_count + 1,
+            "token_usage": token_usage,
             "warnings": _append_warning(state, "agent_no_tool_call_default_used"),
         }

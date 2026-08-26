@@ -1,0 +1,16 @@
+﻿{
+    "id":  "dar-001",
+    "destination":  "Darjeeling",
+    "destination_id":  "458854b1-4d2a-4d02-8901-e26ed59c0c8b",
+    "raw_input":  "3 days photography sunrise Tiger Hill",
+    "must_include_places":  [
+                                "Tiger Hill"
+                            ],
+    "assertions":  {
+                       "max_tool_calls":  12,
+                       "validation_passed":  true,
+                       "readiness_score_min":  0.3,
+                       "max_days":  3,
+                       "no_geo_fallback":  true
+                   }
+}

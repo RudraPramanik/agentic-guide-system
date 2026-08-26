@@ -208,6 +208,8 @@ Never retry on 4xx from Qdrant (config bugs, not transient).
 ---
 
 # Blueprint v7.1 — Observability & Evaluation Harness (Langfuse + Golden Datasets)
+> **Status 2026-08-26: SHIPPED** via OpenSpec `wire-langfuse-tracing-and-eval-harness` (Stages 1–4).
+> Build SSOT remains `docs/v2_blueprint.md` V2–V3.
 > Extends `docs/blueprint_final.md` (v6.1). Companion to Part 1 above — independent scope, independently shippable.
 > Scope: light up LLM observability (token/retry capture + Langfuse tracing via the existing dead-code facade) and build an offline golden-dataset regression harness — without breaking any architecture rule, resilience contract, or existing consumer.
 >

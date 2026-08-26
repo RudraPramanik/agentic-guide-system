@@ -63,6 +63,7 @@ class TravelState(TypedDict, total=False):
     max_replan_attempts: int
     abort_triggered: bool
     llm_retry_count: int
+    token_usage: dict[str, int]
     used_geo_fallback: bool
     used_osrm_fallback: bool
     readiness_score: float | None

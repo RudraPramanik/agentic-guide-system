@@ -74,9 +74,10 @@ class PlaceService:
             }
         ]
         try:
-            raw = await chat_completion(
+            result = await chat_completion(
                 messages=prompt, response_format={"type": "json_object"}
             )
+            raw = result.content if hasattr(result, "content") else result
         except WandrLLMError as e:
             log.warning("enrichment.llm_failed", place_id=str(place.id), error=str(e))
             return None
