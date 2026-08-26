@@ -9,13 +9,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-26 · **Phase:** post-P7 · **Next step:** FE companion: poll prepare → generate → trip (`guideagent-frontend`); backend v7 follow `docs/v2_blueprint.md` starting at V0 (minimal CI); operator VPS deploy via `docs/steps/blueprint_production.md`
+**Last updated:** 2026-08-26 · **Phase:** post-P7 / v7 · **Next step:** apply OpenSpec `wire-langfuse-tracing-and-eval-harness` (V2–V3); FE companion poll prepare → generate → trip; operator VPS via `docs/steps/blueprint_production.md`
 
 ---
 
 ## Current state (one line)
 
-P7 done + production packaging; generate default routing is in-process haversine (`ROUTING_BACKEND=haversine`); POI ingest uses multi-source facade (`PLACES_SOURCES`, default `overpass`; optional OpenTripMap + Geoapify).
+P7 done; v7 **V0+V1 done** (GitHub Actions CI + `search_places` via `query_points`); generate default routing haversine; POI ingest multi-source (`PLACES_SOURCES`, default `overpass`).
 
 ---
 
@@ -100,6 +100,8 @@ P7 done + production packaging; generate default routing is in-process haversine
 | 7.4 | ✅ Done | `tests/trips/test_edit_replan.py` — 20 locked scenarios + persist SQL-delete fix |
 | 7.5 | ✅ Done | `EvaluationService.mark_trip_edited` flag polish — `get_latest_for_trip` + `mark_user_edited(evaluation)` |
 | 7.6 | ✅ Done | P7 smoke (`scripts/test_p7_smoke.py`) + import guards; context P7-complete stamp |
+| V0 | ✅ Done | `.github/workflows/ci.yml` — pytest + PostGIS service + `docker build` (no deploy) |
+| V1 | ✅ Done | `search_places` → `client.query_points`; three pinned tests mock `query_points` |
 ---
 
 ## Implemented modules (real code)
@@ -169,7 +171,8 @@ P7 done + production packaging; generate default routing is in-process haversine
 | `src/places/repository.py` / `router.py` / `schemas.py` | P2 places HTTP |
 | `src/search/client.py` | `AsyncQdrantClient`, `ensure_places_collection`, `is_qdrant_available` |
 | `src/search/embeddings.py` | (see above — local MiniLM or hosted `embed_texts`) |
-| `src/search/places_index.py` | upsert, `search_places`, `count_indexed` |
+| `src/search/places_index.py` | upsert, `search_places` (`query_points`), `count_indexed` |
+| `.github/workflows/ci.yml` | Phase A CI — pytest on PostGIS + prod Dockerfile build; no registry/deploy |
 | `src/geo/*` | geocoder, overpass (widened tags), `places.fetch_destination_pois` facade, opentripmap, geoapify_places, osrm (`get_route` live-first; public `estimate_route` never HTTP) |
 | `src/trips/models.py` | Trip / TripPlace / TripEditEvent (+ `Trip.places` / `TripPlace.place` relationships for eager load) |
 | `src/trips/exceptions.py` | `TripNotFoundError`, `TripForbiddenError`, `TripAlreadyClaimedError` (409), `TripEditValidationError` (422), `TripStopConflictError` (409), `TripStopNotFoundError` (404) |

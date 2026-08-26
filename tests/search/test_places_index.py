@@ -95,7 +95,7 @@ async def test_upsert_places_batch_single_qdrant_call() -> None:
 @pytest.mark.asyncio
 async def test_search_places_returns_empty_on_qdrant_error() -> None:
     mock_client = AsyncMock()
-    mock_client.search = AsyncMock(side_effect=RuntimeError("down"))
+    mock_client.query_points = AsyncMock(side_effect=RuntimeError("down"))
     with (
         patch("src.search.places_index.get_qdrant_client", return_value=mock_client),
         patch(
@@ -110,21 +110,23 @@ async def test_search_places_returns_empty_on_qdrant_error() -> None:
 @pytest.mark.asyncio
 async def test_search_places_short_circuits_on_empty_embedding() -> None:
     mock_client = AsyncMock()
-    mock_client.search = AsyncMock()
+    mock_client.query_points = AsyncMock()
     with (
         patch("src.search.places_index.get_qdrant_client", return_value=mock_client),
         patch("src.search.places_index.embed_text", new=AsyncMock(return_value=[])),
         patch("src.search.places_index.is_qdrant_available", return_value=True),
     ):
         assert await search_places("q", uuid.uuid4()) == []
-        assert mock_client.search.await_count == 0
+        assert mock_client.query_points.await_count == 0
 
 
 @pytest.mark.asyncio
 async def test_search_places_includes_destination_filter() -> None:
     dest_id = uuid.uuid4()
     mock_client = AsyncMock()
-    mock_client.search = AsyncMock(return_value=[])
+    mock_client.query_points = AsyncMock(
+        return_value=SimpleNamespace(points=[])
+    )
     with (
         patch("src.search.places_index.get_qdrant_client", return_value=mock_client),
         patch(
@@ -134,7 +136,7 @@ async def test_search_places_includes_destination_filter() -> None:
         patch("src.search.places_index.is_qdrant_available", return_value=True),
     ):
         await search_places("q", dest_id, top_k=5)
-        kwargs = mock_client.search.await_args.kwargs
+        kwargs = mock_client.query_points.await_args.kwargs
         filt: qmodels.Filter = kwargs["query_filter"]
         assert filt.must[0].match.value == str(dest_id)
 

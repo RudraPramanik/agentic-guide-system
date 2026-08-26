@@ -121,10 +121,10 @@ async def search_places(
     try:
         settings = get_settings()
         client = get_qdrant_client()
-        results = await asyncio.wait_for(
-            client.search(
+        response = await asyncio.wait_for(
+            client.query_points(
                 collection_name=settings.QDRANT_PLACES_COLLECTION,
-                query_vector=vector,
+                query=vector,
                 query_filter=qmodels.Filter(
                     must=[
                         qmodels.FieldCondition(
@@ -147,7 +147,7 @@ async def search_places(
             name=r.payload.get("name"),
             destination_id=r.payload.get("destination_id"),
         )
-        for r in results
+        for r in response.points
     ]
 
 
