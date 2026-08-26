@@ -33,7 +33,7 @@
 ## 6. Real API validation and cutover
 
 - [x] 6.1 Index V2 for target destination(s): `scripts/index_places.py` (confirm `count_indexed` matches Qdrant)
-- [ ] 6.2 Run golden harness against real stack: `scripts/run_evals.py` — `must_include_places` / `no_geo_fallback` (and related) green; exit 0 vs baseline
+- [x] 6.2 Run golden harness against real stack: `scripts/run_evals.py` — `must_include_places` / `no_geo_fallback` (and related) green; exit 0 vs baseline
 - [x] 6.3 Optional live generate smoke (HTTP/SSE or `PlannerService.generate`) for Darjeeling; confirm trip envelope unchanged
 - [x] 6.4 Cutover checklist: harness green → flip accessor to v2 → soak; retain legacy `places`; document rollback (`SEARCH_SPARSE_ENABLED=false` and/or accessor flip)
 - [x] 6.5 Rollback drill under CI/local: sparse off / accessor back → dense path healthy

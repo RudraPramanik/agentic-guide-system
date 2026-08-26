@@ -1,16 +1,16 @@
 {
   "destination": "darjeeling",
-  "timestamp": "20260826T142922Z",
+  "timestamp": "20260826T135739Z",
   "git_sha": "3b58df2",
   "case_set_hash": "75f7af9c24c2",
-  "pass_rate": 0.6666666666666666,
+  "pass_rate": 0.4166666666666667,
   "cases": [
     {
       "id": "dar-001",
       "passed": false,
       "reasons": [
-        "validation_passed:expected=True:actual=False",
-        "readiness_score_min:expected>=0.3:actual=None"
+        "missing_place:Tiger Hill",
+        "validation_passed:expected=True:actual=False"
       ],
       "mode": "generate"
     },
@@ -18,7 +18,9 @@
       "id": "dar-002",
       "passed": false,
       "reasons": [
-        "validation_passed:expected=True:actual=False"
+        "validation_passed:expected=True:actual=False",
+        "max_days:expected<=2:actual=3",
+        "itinerary_days:expected<=2:actual=3"
       ],
       "mode": "generate"
     },
@@ -30,8 +32,11 @@
     },
     {
       "id": "dar-004",
-      "passed": true,
-      "reasons": [],
+      "passed": false,
+      "reasons": [
+        "max_days:expected<=1:actual=3",
+        "itinerary_days:expected<=1:actual=3"
+      ],
       "mode": "generate"
     },
     {
@@ -48,14 +53,19 @@
     },
     {
       "id": "dar-007",
-      "passed": true,
-      "reasons": [],
+      "passed": false,
+      "reasons": [
+        "max_days:expected<=2:actual=3",
+        "itinerary_days:expected<=2:actual=3"
+      ],
       "mode": "generate"
     },
     {
       "id": "dar-008",
-      "passed": true,
-      "reasons": [],
+      "passed": false,
+      "reasons": [
+        "max_tool_calls:expected<=10:actual=11"
+      ],
       "mode": "generate"
     },
     {

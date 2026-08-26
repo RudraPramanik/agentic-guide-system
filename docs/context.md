@@ -9,13 +9,13 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-26 · **Phase:** post-P7 / v7 · **Next step:** V6.2 embedding bump / V6.3 cross-encoder only if fusion diagnostics + evals demand; FE companion poll prepare → generate → trip; VPS via `docs/steps/blueprint_production.md`
+**Last updated:** 2026-08-26 · **Phase:** post-P7 / v7 · **Next step:** FE companion poll prepare → generate → trip; VPS via `docs/steps/blueprint_production.md`; V6.2/V6.3 only if future live evals show retrieval-dominant misses (currently deferred)
 
 ---
 
 ## Current state (one line)
 
-P7 done; v7 **V0–V6.1 done** (through hybrid RRF + fusion diagnostics in `tool_trace`); V6.2/V6.3 deferred pending evidence; generate default routing haversine; POI ingest multi-source (`PLACES_SOURCES`).
+P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode baseline; Tiger Hill indexed); V6.2/V6.3 deferred — misses were enrich/index coverage + agent flakiness, not embedding-model; generate default routing haversine; POI ingest multi-source (`PLACES_SOURCES`).
 
 ---
 
@@ -105,9 +105,9 @@ P7 done; v7 **V0–V6.1 done** (through hybrid RRF + fusion diagnostics in `tool
 | V2 | ✅ Done | `LLMUsage` + state `token_usage`; Langfuse trace around `PlannerService.generate` (NoOp default) |
 | V3 | ✅ Done | Golden harness `evals/` + `scripts/run_evals.py` + `src/evaluation/scorers.py` |
 | V4 | ✅ Done | `_canonical_text` includes `name` + `category`; reindex required for gains |
-| V5 | ✅ Done | `places_collection()` + `sparse.py` + `places_v2` named vectors + RRF; kill-switch dense-only |
+| V5 | ✅ Done | `places_collection()` + `sparse.py` + `places_v2` named vectors + RRF; kill-switch dense-only; **live** golden harness gate closed 2026-08-26 (`mode: generate` baseline) |
 | V6.1 | ✅ Done | Fusion diagnostics (dense/sparse/fused ids) → `tool_trace`; `SEARCH_FUSION_DIAGNOSTICS` kill-switch |
-| V6.2–V6.3 | ⬜ Deferred | Embedding bump / cross-encoder — only if diagnostics + evals show retrieval-dominant misses |
+| V6.2–V6.3 | ⬜ Deferred | Embedding bump / cross-encoder — **go/no-go: defer** (live evals: Tiger Hill miss was unenriched/unindexed; residual fails = validation/agent prefs, not retrieval-dominant) |
 ---
 
 ## Implemented modules (real code)
@@ -270,6 +270,7 @@ python -m pytest tests/ -v
 - `DATABASE_URL=postgresql+asyncpg://wandr:wandr@localhost:5433/wandr` (port **5433**, not 5432) — host tools; Compose `api` overrides to `postgres:5432`
 - `QDRANT_URL=http://localhost:6335` — host tools; Compose `api` overrides to `http://qdrant:6333`
 - Places collection cutover: `QDRANT_PLACES_COLLECTION=places_v2` (active via `places_collection()`); `SEARCH_SPARSE_ENABLED=false` → dense-only; `SEARCH_FUSION_DIAGNOSTICS=false` → skip diagnostic subqueries; rollback also `QDRANT_PLACES_COLLECTION=places` (keep legacy until soak)
+- Live golden harness: `python scripts/run_evals.py --destination darjeeling` (needs `LLM_MODEL` with LiteLLM provider prefix, e.g. `nvidia_nim/...` — bare `deepseek-ai/...` → BadRequestError); baseline is generate-mode (`evals/baselines/darjeeling.json`)
 - Empty host `REDIS_URL` keeps in-memory backends for pytest; Compose `api` sets `redis://redis:6379/0` (published **6380**). Optional host uvicorn: `redis://localhost:6380/0`
 - Stop host uvicorn **and any other process on :8000** before `docker compose up` (port clash)
 - `.env` must have a **bare** `DATABASE_URL` value — no comment prefix on the same line

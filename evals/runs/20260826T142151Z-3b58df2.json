@@ -1,16 +1,15 @@
 {
   "destination": "darjeeling",
-  "timestamp": "20260826T142922Z",
+  "timestamp": "20260826T142151Z",
   "git_sha": "3b58df2",
   "case_set_hash": "75f7af9c24c2",
-  "pass_rate": 0.6666666666666666,
+  "pass_rate": 0.5833333333333334,
   "cases": [
     {
       "id": "dar-001",
       "passed": false,
       "reasons": [
-        "validation_passed:expected=True:actual=False",
-        "readiness_score_min:expected>=0.3:actual=None"
+        "validation_passed:expected=True:actual=False"
       ],
       "mode": "generate"
     },
@@ -42,8 +41,10 @@
     },
     {
       "id": "dar-006",
-      "passed": true,
-      "reasons": [],
+      "passed": false,
+      "reasons": [
+        "readiness_score_min:expected>=0.3:actual=None"
+      ],
       "mode": "generate"
     },
     {
