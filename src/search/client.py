@@ -17,6 +17,20 @@ _client: AsyncQdrantClient | None = None
 _qdrant_available: bool = False  # pessimistic until ensure_places_collection() succeeds
 
 
+def places_collection() -> str:
+    """
+    Single accessor for ensure / upsert / search / count_indexed.
+    Cutover to hybrid: set QDRANT_PLACES_COLLECTION=places_v2 (same as V2 name).
+    """
+    return get_settings().QDRANT_PLACES_COLLECTION
+
+
+def collection_uses_hybrid_schema() -> bool:
+    """True when the active collection is the named-vector V2 hybrid collection."""
+    settings = get_settings()
+    return places_collection() == settings.QDRANT_PLACES_COLLECTION_V2
+
+
 def get_qdrant_client() -> AsyncQdrantClient:
     """Lazy singleton, same pattern as core/database/session.py's get_engine()."""
     global _client
@@ -47,14 +61,33 @@ def _set_qdrant_available(value: bool) -> None:
 async def _ensure_collection_impl() -> None:
     settings = get_settings()
     client = get_qdrant_client()
+    name = places_collection()
     exists = await asyncio.wait_for(
-        client.collection_exists(settings.QDRANT_PLACES_COLLECTION),
+        client.collection_exists(name),
         timeout=settings.QDRANT_OPERATION_TIMEOUT_SECONDS,
     )
-    if not exists:
+    if exists:
+        return
+    if collection_uses_hybrid_schema():
         await asyncio.wait_for(
             client.create_collection(
-                collection_name=settings.QDRANT_PLACES_COLLECTION,
+                collection_name=name,
+                vectors_config={
+                    "dense": qmodels.VectorParams(
+                        size=settings.PLACES_EMBEDDING_DIM,
+                        distance=qmodels.Distance.COSINE,
+                    ),
+                },
+                sparse_vectors_config={
+                    "bm25": qmodels.SparseVectorParams(),
+                },
+            ),
+            timeout=settings.QDRANT_OPERATION_TIMEOUT_SECONDS,
+        )
+    else:
+        await asyncio.wait_for(
+            client.create_collection(
+                collection_name=name,
                 vectors_config=qmodels.VectorParams(
                     size=settings.PLACES_EMBEDDING_DIM,
                     distance=qmodels.Distance.COSINE,

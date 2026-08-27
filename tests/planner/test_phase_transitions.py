@@ -93,3 +93,38 @@ async def test_unknown_tool_does_not_increment_loop_count() -> None:
     apply_tool_result(state, "nope", result)
     assert state["tool_loop_count"] == 0
     assert len(state["tool_trace"]) == 1
+
+
+def test_apply_tool_result_copies_fusion_diagnostics_to_trace() -> None:
+    state = _make_test_state(agent_phase=AgentPhase.DISCOVER)
+    diag = {
+        "mode": "hybrid_rrf",
+        "collection": "places_v2",
+        "sparse_enabled": True,
+        "fused_place_ids": ["a"],
+        "dense_place_ids": ["a"],
+        "sparse_place_ids": ["b"],
+        "top_k": 5,
+    }
+    result = ToolResult(
+        ok=True,
+        data={
+            "candidate_pois": [{"place_id": "a"}],
+            "used_geo_fallback": False,
+            "fusion_diagnostics": diag,
+        },
+    )
+    apply_tool_result(state, "search_places", result, duration_ms=12.0)
+    assert len(state["tool_trace"]) == 1
+    assert state["tool_trace"][0]["diagnostics"] == diag
+    assert state["candidate_pois"] == [{"place_id": "a"}]
+    assert "fusion_diagnostics" not in state
+
+
+def test_apply_tool_result_without_diagnostics_keeps_trace_shape() -> None:
+    state = _make_test_state(agent_phase=AgentPhase.DISCOVER)
+    result = ToolResult(ok=True, data={"ranked_pois": []})
+    apply_tool_result(state, "rank_places", result)
+    assert len(state["tool_trace"]) == 1
+    assert state["tool_trace"][0].get("diagnostics") is None
+    assert "fusion_diagnostics" not in state

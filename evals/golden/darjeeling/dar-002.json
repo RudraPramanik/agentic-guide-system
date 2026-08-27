@@ -1,0 +1,14 @@
+﻿{
+    "id":  "dar-002",
+    "destination":  "Darjeeling",
+    "destination_id":  "458854b1-4d2a-4d02-8901-e26ed59c0c8b",
+    "raw_input":  "2 days family friendly",
+    "must_include_places":  [
+
+                            ],
+    "assertions":  {
+                       "validation_passed":  true,
+                       "max_days":  2,
+                       "max_tool_calls":  12
+                   }
+}

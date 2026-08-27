@@ -6,7 +6,7 @@
 
 ## What Wandr is (one paragraph)
 
-Wandr is a **FastAPI modular monolith** that generates multi-day travel itineraries. Structure (places, routes, times) comes from **code**; narrative prose comes from an **LLM** outside the tool loop. Today (through **P6.5**) you have: app scaffold, auth, database models, geo gateways, destination/place HTTP APIs with readiness, seed + enrich + index CLIs, Qdrant search, pure `travel_engine` (incl. polylines), CORS, the phase-gated LangGraph planner, SSE `POST /api/v1/planner/generate`, trips HTTP CRUD/GeoJSON/claim, and Redis/in-memory cache + rate-limit backends. Next product work is **P7.1** (trip edit/replan).
+Wandr is a **FastAPI modular monolith** that generates multi-day travel itineraries. Structure (places, routes, times) comes from **code**; narrative prose comes from an **LLM** outside the tool loop. Today (through **P7 + V6.1**) you have: app scaffold, auth, database models, geo gateways, destination/place HTTP APIs with readiness/prepare, seed + enrich + index CLIs, hybrid Qdrant search, pure `travel_engine` (incl. polylines), CORS, the phase-gated LangGraph planner, SSE generate, trips HTTP CRUD/GeoJSON/claim **and day edits**, Redis/in-memory cache + rate-limit backends, Langfuse/token observability (keys optional), and the offline golden eval harness. Deferred: V6.2/V6.3 embedding/cross-encoder; evaluation HTTP still stub.
 
 ---
 
@@ -60,6 +60,6 @@ Wandr is a **FastAPI modular monolith** that generates multi-day travel itinerar
 2. Routers call **services**; services call **repositories** (never skip layers).  
 3. **External geo** (Nominatim, Overpass, OSRM) only inside `src/geo/`.  
 4. **LLM** only inside `src/core/llm/client.py`; **search** only via `src/search/`; **scheduling math** only via `src/travel_engine/` (pure).  
-5. If a file is listed under **Stubs** in `context.md`, it has **no public API** — don’t import it expecting logic. Still stub: P7 edit/replan HTTP, evaluation HTTP, `auth/dependencies.py`.
+5. If a file is listed under **Stubs** in `context.md`, it has **no public API** — don’t import it expecting logic. Still stub: evaluation HTTP, `auth/dependencies.py`. P7 trip edit HTTP is **real**.
 
 Next: [02 — Layers & AI boundary](02-layers.md)

@@ -1,20 +1,21 @@
 # Wandr — AI Agent Context
 
 > **Read this first every session.** Then `AGENT.md` (rules), then the current step in `docs/steps/step*.md` (or blueprint).
-> **Planner single source of truth:** `docs/blueprint_final.md` **v6.1** (pre-flight addendum merged; `docs/blueprint.md` is a pointer only).
+> **Planner single source of truth (P0–P7):** `docs/blueprint_final.md` **v6.1** (pre-flight addendum merged; `docs/blueprint.md` is a pointer only).
+> **Post-P7 / v7 build SSOT (V0–V6):** `docs/v2_blueprint.md` — CI → observability → harness → hybrid RRF; notes in `docs/next_version.md`.
 > **Deployment (MVP):** frontend + API under the same registrable domain; auth cookies stay `SameSite=Lax` (Option A).
 > Deep reference: `docs/app/system.md` (architecture), `docs/app/lld.md` (patterns).
-> Junior map (layers / files / imports): `docs/app/documentation.md` → `docs/manual/` (refresh on phase end or every 4–5 steps — not every step).
+> Junior map (layers / files / imports): `docs/app/documentation.md` → `docs/manual/` (Last refreshed 2026-08-27 · Through P7 + V6.1 — refresh on phase end or every 4–5 steps — not every step).
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-23 · **Phase:** post-P7 · **Next step:** FE companion: poll prepare → generate → trip (`guideagent-frontend`); then operator VPS deploy via `docs/steps/blueprint_production.md`
+**Last updated:** 2026-08-27 · **Phase:** post-P7 / v7 · **Next step:** FE companion poll prepare → generate → trip; VPS via `docs/steps/blueprint_production.md`; V6.2/V6.3 only if future live evals show retrieval-dominant misses (currently deferred)
 
 ---
 
 ## Current state (one line)
 
-P7 done + production packaging; generate default routing is in-process haversine (`ROUTING_BACKEND=haversine`); POI ingest uses multi-source facade (`PLACES_SOURCES`, default `overpass`; optional OpenTripMap + Geoapify).
+P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode baseline; Tiger Hill indexed); V6.2/V6.3 deferred — misses were enrich/index coverage + agent flakiness, not embedding-model; generate default routing haversine; POI ingest multi-source (`PLACES_SOURCES`).
 
 ---
 
@@ -99,15 +100,30 @@ P7 done + production packaging; generate default routing is in-process haversine
 | 7.4 | ✅ Done | `tests/trips/test_edit_replan.py` — 20 locked scenarios + persist SQL-delete fix |
 | 7.5 | ✅ Done | `EvaluationService.mark_trip_edited` flag polish — `get_latest_for_trip` + `mark_user_edited(evaluation)` |
 | 7.6 | ✅ Done | P7 smoke (`scripts/test_p7_smoke.py`) + import guards; context P7-complete stamp |
+| V0 | ✅ Done | `.github/workflows/ci.yml` — pytest + PostGIS service + `docker build` (no deploy) |
+| V1 | ✅ Done | `search_places` → `client.query_points`; three pinned tests mock `query_points` |
+| V2 | ✅ Done | `LLMUsage` + state `token_usage`; Langfuse parent trace around `PlannerService.generate` (start/end + tool spans; NoOp when keys empty) |
+| V3 | ✅ Done | Golden harness `evals/` + `scripts/run_evals.py` + `src/evaluation/scorers.py` |
+| V4 | ✅ Done | `_canonical_text` includes `name` + `category`; reindex required for gains |
+| V5 | ✅ Done | `places_collection()` + `sparse.py` + `places_v2` named vectors + RRF; kill-switch dense-only; **live** golden harness gate closed 2026-08-26 (`mode: generate` baseline) |
+| V6.1 | ✅ Done | Fusion diagnostics (dense/sparse/fused ids) → `tool_trace`; `SEARCH_FUSION_DIAGNOSTICS` kill-switch |
+| V6.2–V6.3 | ⬜ Deferred | Embedding bump / cross-encoder — **go/no-go: defer** (live evals: Tiger Hill miss was unenriched/unindexed; residual fails = validation/agent prefs, not retrieval-dominant) |
 ---
 
 ## Implemented modules (real code)
 
 | Module | Exports / notes |
 |--------|-----------------|
-| `src/config.py` | `get_settings()` — Qdrant/embeddings, OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo (`PLACES_SOURCES`, OpenTripMap/Geoapify keys), CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL`, `ROUTING_BACKEND` (`haversine` default \| `osrm`) |
-| `src/core/llm/client.py` | `chat_completion` / `chat_with_tools` / `embed_texts` — **only** litellm import |
+| `src/config.py` | `get_settings()` — Qdrant/embeddings (`QDRANT_PLACES_COLLECTION`, `_V2`, `SEARCH_SPARSE_ENABLED`, `SEARCH_RRF_K`, `SEARCH_FUSION_DIAGNOSTICS`), OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo (`PLACES_SOURCES`, OpenTripMap/Geoapify keys), CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL`, `ROUTING_BACKEND` (`haversine` default \| `osrm`) |
+| `src/core/llm/client.py` | `chat_completion` / `chat_with_tools` / `embed_texts` — **only** litellm import; `LLMUsage` + retry counts |
+| `src/core/observability/tracing.py` | `get_tracer()` / `flush_tracer()` / `start_generation_trace` + `end_generation_trace` + tool spans around generate (fail-soft) |
+| `src/evaluation/scorers.py` | Pure golden-case scorers |
+| `scripts/run_evals.py` | Golden harness runner + baseline diff |
 | `src/search/embeddings.py` | `local` MiniLM or `hosted` via `embed_texts`; fail-soft; lazy ST import |
+| `src/search/sparse.py` | Pure-Python BM25-style sparse encode; `is_sparse_available` fail-soft gate |
+| `src/search/client.py` | `places_collection()` accessor; ensure legacy dense or V2 named `dense`+`bm25` |
+| `src/search/places_index.py` | Canonical text + hybrid RRF / dense-only; `search_places_with_diagnostics` sidecar → tool_trace |
+| `scripts/run_evals.py` | Golden harness runner + baseline diff; live path ensures Qdrant/embeddings |
 | `src/core/cache/backends.py` | `CacheBackend` Protocol (`get`/`set`/`delete`); `InMemoryCacheBackend` / `RedisCacheBackend`; `get_cache_backend()` |
 | `src/core/middleware/rate_limit.py` | `InMemoryRateLimiter` / `RedisRateLimiter`; `get_rate_limiter()` selects on `REDIS_URL`; fail-open |
 | `src/planner/schemas.py` | `PlanRequest` (destination_id, raw_input, optional days/base/accommodation_label) |
@@ -166,9 +182,11 @@ P7 done + production packaging; generate default routing is in-process haversine
 | `src/places/constants.py` | `PLACE_TAG_VOCAB` |
 | `src/places/service.py` | list/get + `enrich_place` |
 | `src/places/repository.py` / `router.py` / `schemas.py` | P2 places HTTP |
-| `src/search/client.py` | `AsyncQdrantClient`, `ensure_places_collection`, `is_qdrant_available` |
+| `src/search/client.py` | `places_collection()`, ensure (legacy or V2 hybrid), `is_qdrant_available` |
 | `src/search/embeddings.py` | (see above — local MiniLM or hosted `embed_texts`) |
-| `src/search/places_index.py` | upsert, `search_places`, `count_indexed` |
+| `src/search/sparse.py` | Pure-Python BM25-style sparse encode |
+| `src/search/places_index.py` | upsert (named vectors on V2), hybrid RRF / dense-only `search_places`, `count_indexed` |
+| `.github/workflows/ci.yml` | Phase A CI — pytest on PostGIS + prod Dockerfile build; no registry/deploy |
 | `src/geo/*` | geocoder, overpass (widened tags), `places.fetch_destination_pois` facade, opentripmap, geoapify_places, osrm (`get_route` live-first; public `estimate_route` never HTTP) |
 | `src/trips/models.py` | Trip / TripPlace / TripEditEvent (+ `Trip.places` / `TripPlace.place` relationships for eager load) |
 | `src/trips/exceptions.py` | `TripNotFoundError`, `TripForbiddenError`, `TripAlreadyClaimedError` (409), `TripEditValidationError` (422), `TripStopConflictError` (409), `TripStopNotFoundError` (404) |
@@ -251,6 +269,8 @@ python -m pytest tests/ -v
 
 - `DATABASE_URL=postgresql+asyncpg://wandr:wandr@localhost:5433/wandr` (port **5433**, not 5432) — host tools; Compose `api` overrides to `postgres:5432`
 - `QDRANT_URL=http://localhost:6335` — host tools; Compose `api` overrides to `http://qdrant:6333`
+- Places collection cutover: `QDRANT_PLACES_COLLECTION=places_v2` (active via `places_collection()`); `SEARCH_SPARSE_ENABLED=false` → dense-only; `SEARCH_FUSION_DIAGNOSTICS=false` → skip diagnostic subqueries; rollback also `QDRANT_PLACES_COLLECTION=places` (keep legacy until soak)
+- Live golden harness: `python scripts/run_evals.py --destination darjeeling` (needs `LLM_MODEL` with LiteLLM provider prefix, e.g. `nvidia_nim/...` — bare `deepseek-ai/...` → BadRequestError); baseline is generate-mode (`evals/baselines/darjeeling.json`)
 - Empty host `REDIS_URL` keeps in-memory backends for pytest; Compose `api` sets `redis://redis:6379/0` (published **6380**). Optional host uvicorn: `redis://localhost:6380/0`
 - Stop host uvicorn **and any other process on :8000** before `docker compose up` (port clash)
 - `.env` must have a **bare** `DATABASE_URL` value — no comment prefix on the same line

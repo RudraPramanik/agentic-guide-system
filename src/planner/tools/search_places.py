@@ -75,9 +75,14 @@ async def run(
 
     used_geo_fallback = False
     candidates: list[dict] = []
+    fusion_diagnostics: dict | None = None
 
     try:
-        hits = await places_index.search_places(query, dest_id, top_k=top_k)
+        outcome = await places_index.search_places_with_diagnostics(
+            query, dest_id, top_k=top_k
+        )
+        hits = outcome.hits
+        fusion_diagnostics = outcome.diagnostics
         place_ids: list[UUID] = []
         for h in hits:
             try:
@@ -91,15 +96,18 @@ async def run(
             used_geo_fallback = True
             lat, lng = _base_coords(ctx, state)
             if lat is None or lng is None:
+                data: dict = {
+                    "candidate_pois": [],
+                    "used_geo_fallback": True,
+                    "search_top_k": top_k,
+                }
+                if fusion_diagnostics is not None:
+                    data["fusion_diagnostics"] = fusion_diagnostics
                 return ToolResult(
                     ok=True,
                     code="empty_candidates",
                     message="no search hits and missing base coordinates for fallback",
-                    data={
-                        "candidate_pois": [],
-                        "used_geo_fallback": True,
-                        "search_top_k": top_k,
-                    },
+                    data=data,
                     fallback_used=True,
                 )
             repo = PlaceRepository(session)
@@ -119,16 +127,20 @@ async def run(
             code = "empty_candidates"
             message = "no places found via search or geo fallback"
 
+        data = {
+            "candidate_pois": candidates,
+            "used_geo_fallback": used_geo_fallback,
+            "search_top_k": top_k,
+            "query": query,
+        }
+        if fusion_diagnostics is not None:
+            data["fusion_diagnostics"] = fusion_diagnostics
+
         return ToolResult(
             ok=True,
             code=code,
             message=message,
-            data={
-                "candidate_pois": candidates,
-                "used_geo_fallback": used_geo_fallback,
-                "search_top_k": top_k,
-                "query": query,
-            },
+            data=data,
             fallback_used=used_geo_fallback,
         )
     finally:

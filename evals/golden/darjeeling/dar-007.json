@@ -1,0 +1,13 @@
+﻿{
+    "id":  "dar-007",
+    "destination":  "Darjeeling",
+    "destination_id":  "458854b1-4d2a-4d02-8901-e26ed59c0c8b",
+    "raw_input":  "weekend 2 days budget trip",
+    "must_include_places":  [
+
+                            ],
+    "assertions":  {
+                       "max_tool_calls":  12,
+                       "max_days":  2
+                   }
+}

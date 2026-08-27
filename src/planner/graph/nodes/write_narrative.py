@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 from src.core.exceptions import WandrLLMError
-from src.core.llm.client import chat_completion
+from src.core.llm.client import chat_completion, merge_token_usage
 
 _NARRATIVE_SYSTEM = (
     "You write travel day titles and short paragraphs only. "
@@ -175,6 +175,7 @@ async def write_narrative(state: dict[str, Any]) -> dict[str, Any]:
     destination_name = str(state.get("destination_name") or "")
     allowed = _place_ids_in_schedule(schedule)
     llm_retry_count = int(state.get("llm_retry_count") or 0)
+    token_usage = dict(state.get("token_usage") or {})
 
     user_payload = {
         "destination": destination_name,
@@ -184,23 +185,31 @@ async def write_narrative(state: dict[str, Any]) -> dict[str, Any]:
     }
 
     try:
-        content = await chat_completion(
+        result = await chat_completion(
             messages=[
                 {"role": "system", "content": _NARRATIVE_SYSTEM},
                 {"role": "user", "content": json.dumps(user_payload, default=str)},
             ],
             response_format={"type": "json_object"},
         )
+        token_usage = merge_token_usage(token_usage, result.usage)
+        llm_retry_count += int(result.retry_count or 0)
+        content = result.content
         parsed = _parse_narrative_json(content, schedule, allowed)
         if parsed is None:
             parsed = _template_days(schedule, destination_name)
             llm_retry_count += 1
         itinerary = _build_itinerary(state, parsed)
-        return {"itinerary": itinerary, "llm_retry_count": llm_retry_count}
+        return {
+            "itinerary": itinerary,
+            "llm_retry_count": llm_retry_count,
+            "token_usage": token_usage,
+        }
     except WandrLLMError:
         parsed = _template_days(schedule, destination_name)
         itinerary = _build_itinerary(state, parsed)
         return {
             "itinerary": itinerary,
             "llm_retry_count": llm_retry_count + 1,
+            "token_usage": token_usage,
         }

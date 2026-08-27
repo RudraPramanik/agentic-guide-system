@@ -45,7 +45,7 @@ Domain Services          ← business logic, orchestration
 | `src/auth/` | JWT auth, user management |
 | `src/destinations/` | Destination catalog + readiness scoring |
 | `src/places/` | POI storage and enrichment |
-| `src/trips/` | Trip models + HTTP CRUD / GeoJSON / claim (real, P6); edit/replan HTTP later (P7) |
+| `src/trips/` | Trip models + HTTP CRUD / GeoJSON / claim (P6) + day edit/replan HTTP (P7) |
 | `src/planner/` | Tools + graph + `PlannerService` + SSE `/generate` + MVP cache (real through P6) |
 | `src/travel_engine/` | Pure routing/scheduling/validation algorithms (real, P4) |
 | `src/geo/` | External geo service gateways |

@@ -9,7 +9,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from src.core.exceptions import WandrLLMError
-from src.core.llm.client import chat_completion
+from src.core.llm.client import chat_completion, merge_token_usage
 from src.places.constants import PLACE_TAG_VOCAB
 
 _DEFAULT_DAYS = 3
@@ -150,6 +150,7 @@ async def parse_preferences(
     """Parse raw_input into prefs via chat_completion; defaults on failure."""
     raw_input = (state or {}).get("raw_input") or ""
     llm_retry_count = int((state or {}).get("llm_retry_count") or 0)
+    token_usage = dict((state or {}).get("token_usage") or {})
 
     configurable = config.get("configurable") if config else None
     if not isinstance(configurable, dict):
@@ -157,13 +158,16 @@ async def parse_preferences(
     emit = configurable.get("emit")
 
     try:
-        content = await chat_completion(
+        result = await chat_completion(
             messages=[
                 {"role": "system", "content": _PARSE_SYSTEM},
                 {"role": "user", "content": str(raw_input)},
             ],
             response_format={"type": "json_object"},
         )
+        token_usage = merge_token_usage(token_usage, result.usage)
+        llm_retry_count += int(result.retry_count or 0)
+        content = result.content
         parsed = _parse_json_content(content)
         if parsed is None:
             update = _defaults(llm_retry_count)
@@ -191,6 +195,8 @@ async def parse_preferences(
             }
     except WandrLLMError:
         update = _defaults(llm_retry_count)
+
+    update["token_usage"] = token_usage
 
     if callable(emit):
         snapshot = {**(state or {}), **update}

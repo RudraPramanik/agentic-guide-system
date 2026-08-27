@@ -1,0 +1,14 @@
+﻿{
+    "id":  "dar-006",
+    "destination":  "Darjeeling",
+    "destination_id":  "458854b1-4d2a-4d02-8901-e26ed59c0c8b",
+    "raw_input":  "3 days tea gardens and nature",
+    "must_include_places":  [
+
+                            ],
+    "assertions":  {
+                       "readiness_score_min":  0.3,
+                       "max_days":  3,
+                       "max_tool_calls":  12
+                   }
+}

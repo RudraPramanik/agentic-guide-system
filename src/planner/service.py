@@ -14,6 +14,11 @@ from uuid import UUID
 from langgraph.errors import GraphRecursionError
 
 from src.config import get_settings
+from src.core.observability.tracing import (
+    emit_tool_spans_from_trace,
+    end_generation_trace,
+    start_generation_trace,
+)
 from src.planner.emit_terminals import emit_terminal_from_state
 from src.planner.graph.builder import get_compiled_graph
 from src.planner.graph.nodes.record_evaluation import record_evaluation
@@ -43,6 +48,20 @@ def _recursion_limit(settings: Any) -> int:
     return max_tools * 2 + stuck * _STUCK_PHASE_HOPS * 2 + _GRAPH_BOOKEND_STEPS
 
 
+def _trace_outcome(state: dict[str, Any]) -> str:
+    """Map terminal TravelState flags to a short Langfuse outcome label."""
+    errors = list(state.get("errors") or [])
+    if "generation_timeout" in errors:
+        return "timeout"
+    if "graph_recursion_limit" in errors:
+        return "recursion_abort"
+    if state.get("needs_clarification"):
+        return "clarification"
+    if state.get("plan_complete") and not state.get("abort_triggered"):
+        return "success"
+    return "error"
+
+
 def _initial_state(
     *,
     destination_id: UUID | str,
@@ -70,6 +89,7 @@ def _initial_state(
         "max_replan_attempts": settings.PLANNER_MAX_REPLAN_ATTEMPTS,
         "abort_triggered": False,
         "llm_retry_count": 0,
+        "token_usage": {},
         "used_geo_fallback": False,
         "used_osrm_fallback": False,
         "candidate_pois": [],
@@ -142,47 +162,71 @@ class PlannerService:
             "recursion_limit": _recursion_limit(settings),
         }
 
-        already_emitted_error = False
+        start_generation_trace(
+            metadata={
+                "destination_id": str(dest_uuid),
+                "session_id": session_id,
+            },
+        )
+        final: dict[str, Any] = last_known_state
         try:
-            final = await asyncio.wait_for(
-                graph.ainvoke(initial, config=config),
-                timeout=settings.PLANNER_GENERATION_TIMEOUT_SECONDS,
-            )
-        except TimeoutError:
-            errors = list(last_known_state.get("errors") or [])
-            errors.append("generation_timeout")
-            final = {
-                **last_known_state,
-                "errors": errors,
-                "abort_triggered": True,
-            }
-            _capture_and_emit("error", {"code": "generation_timeout"})
-            already_emitted_error = True
-        except GraphRecursionError:
-            # Bound exceeded despite settings-derived limit — controlled abort.
-            errors = list(last_known_state.get("errors") or [])
-            errors.append("graph_recursion_limit")
-            final = {
-                **last_known_state,
-                "errors": errors,
-                "abort_triggered": True,
-            }
-            _capture_and_emit("error", {"code": "graph_recursion_limit"})
-            already_emitted_error = True
+            already_emitted_error = False
+            try:
+                final = await asyncio.wait_for(
+                    graph.ainvoke(initial, config=config),
+                    timeout=settings.PLANNER_GENERATION_TIMEOUT_SECONDS,
+                )
+            except TimeoutError:
+                errors = list(last_known_state.get("errors") or [])
+                errors.append("generation_timeout")
+                final = {
+                    **last_known_state,
+                    "errors": errors,
+                    "abort_triggered": True,
+                }
+                _capture_and_emit("error", {"code": "generation_timeout"})
+                already_emitted_error = True
+            except GraphRecursionError:
+                # Bound exceeded despite settings-derived limit — controlled abort.
+                errors = list(last_known_state.get("errors") or [])
+                errors.append("graph_recursion_limit")
+                final = {
+                    **last_known_state,
+                    "errors": errors,
+                    "abort_triggered": True,
+                }
+                _capture_and_emit("error", {"code": "graph_recursion_limit"})
+                already_emitted_error = True
 
-        # Cold-path terminals (success / clarification / abort) — skip if error already emitted.
-        if isinstance(final, dict):
-            last_known_state.clear()
-            last_known_state.update(final)
-            emit_terminal_from_state(
-                final,
-                _capture_and_emit if on_event else None,
-                already_emitted_error=already_emitted_error,
-            )
+            # Cold-path terminals (success / clarification / abort) — skip if error already emitted.
+            if isinstance(final, dict):
+                last_known_state.clear()
+                last_known_state.update(final)
+                emit_terminal_from_state(
+                    final,
+                    _capture_and_emit if on_event else None,
+                    already_emitted_error=already_emitted_error,
+                )
 
-        eval_update = await record_evaluation(final)
-        if eval_update.get("warnings"):
-            warnings = list(final.get("warnings") or [])
-            warnings.extend(eval_update["warnings"])
-            final = {**final, "warnings": warnings}
-        return final
+            eval_update = await record_evaluation(final)
+            if eval_update.get("warnings"):
+                warnings = list(final.get("warnings") or [])
+                warnings.extend(eval_update["warnings"])
+                final = {**final, "warnings": warnings}
+            return final
+        finally:
+            state_for_trace = final if isinstance(final, dict) else last_known_state
+            emit_tool_spans_from_trace(
+                state_for_trace.get("tool_trace")
+                if isinstance(state_for_trace, dict)
+                else None
+            )
+            end_generation_trace(
+                outcome=_trace_outcome(
+                    state_for_trace if isinstance(state_for_trace, dict) else {}
+                ),
+                metadata={
+                    "destination_id": str(dest_uuid),
+                    "session_id": session_id,
+                },
+            )

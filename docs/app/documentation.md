@@ -4,7 +4,7 @@
 > **Not for:** End-user / traveler product docs.  
 > **Agents:** Still start every session with [`docs/context.md`](../context.md) — this manual is complementary navigation.
 
-**Last refreshed:** 2026-08-06 · **Through step:** P6.5
+**Last refreshed:** 2026-08-27 · **Through step:** P7 + V6.1
 
 ---
 
@@ -22,6 +22,7 @@ It does **not** replace:
 | [`docs/app/lld.md`](lld.md) | Pattern catalog |
 | [`docs/steps/`](../steps/) | Build prompts + validation |
 | [`docs/spec.md`](../spec.md) | OpenSpec workflow playbook |
+| [`docs/v2_blueprint.md`](../v2_blueprint.md) | Post-P7 / v7 build SSOT (V0–V6) |
 
 ---
 
@@ -34,7 +35,7 @@ It does **not** replace:
 5. [`05-how-to-change.md`](../manual/05-how-to-change.md) — recipes when you open a ticket  
 6. [`06-maintenance.md`](../manual/06-maintenance.md) — when this manual gets refreshed  
 
-Then skim [`docs/context.md`](../context.md) so you know **P7.1** is next (trip edit/replan) and what is still a stub.
+Then skim [`docs/context.md`](../context.md) so you know **post-P7 / v7** status (V0–V6.1 done; V6.2/V6.3 deferred) and what is still a stub.
 
 ---
 
@@ -44,28 +45,30 @@ Then skim [`docs/context.md`](../context.md) so you know **P7.1** is next (trip 
 |---|------|----------|
 | 1 | [Orientation](../manual/01-orientation.md) | Doc layers, who reads what |
 | 2 | [Layers & AI boundary](../manual/02-layers.md) | Router→Service→Repo, geo, LLM, travel_engine, planner loop |
-| 3 | [Module map](../manual/03-module-map.md) | Packages/files through P6.5 + stubs |
+| 3 | [Module map](../manual/03-module-map.md) | Packages/files through P7 + V6.1 + stubs |
 | 4 | [Imports & wiring](../manual/04-imports-and-wiring.md) | Mermaid + import tables |
-| 5 | [How to change](../manual/05-how-to-change.md) | Env, endpoints, geo, enrich, planner, SSE, migrations, tests |
+| 5 | [How to change](../manual/05-how-to-change.md) | Env, endpoints, geo, enrich, planner, SSE, edits, evals, Langfuse, tests |
 | 6 | [Maintenance](../manual/06-maintenance.md) | Refresh cadence (phase or every 4–5 steps) |
 
 ---
 
-## Snapshot (through P6.5)
+## Snapshot (through P7 + V6.1)
 
-- **Running app:** FastAPI (`src/main.py`) — health + auth + destinations + places + planner SSE + trips; CORS; lifespan DB ping + Qdrant ensure + MiniLM load  
+- **Running app:** FastAPI (`src/main.py`) — health + auth + destinations + places + planner SSE + trips (CRUD + day edits); CORS; lifespan DB ping + Qdrant ensure + embeddings load  
 - **Data:** Postgres/PostGIS, Alembic migrations 001–004 (`places.enriched_tags`), domain models  
-- **Geo (real):** Nominatim `geocode()`, Overpass `fetch_pois()`, OSRM `get_route()`  
-- **Catalog HTTP:** destinations search + readiness; places list/get (paginated)  
-- **Search / enrich (P3):** Qdrant client + MiniLM embeddings + `places_index`; `PlaceService.enrich_place`; enrich/index scripts  
-- **Travel engine (P4):** pure Python selector → allocator → optimizer → schedule → validator; route polylines (P6.0); no network/DB/LLM  
-- **Planner (P5 + P6.2/6.4):** phase-gated 12-tool registry + graph loop + `PlannerService.generate`; SSE `POST /api/v1/planner/generate` (floor 409, terminal persist); MVP planner cache via `CacheBackend`  
-- **Trips (P6.1–6.3):** `save_from_state` UoW + HTTP CRUD + GeoJSON + claim  
-- **Cache / rate limit (P6.4):** Redis or in-memory backends selected by `REDIS_URL` (empty → in-memory, not shared across workers)  
-- **Evaluation:** `EvaluationRepository` / `EvaluationService.record_generation` real for planner bookend; evaluation HTTP still stub  
+- **Geo (real):** Nominatim `geocode()`, Overpass (+ optional multi-source) `fetch_pois()`, OSRM / haversine routing  
+- **Catalog HTTP:** destinations search + readiness + prepare; places list/get (paginated)  
+- **Search / enrich (P3 + V4–V6.1):** Qdrant `places_v2` hybrid dense+sparse RRF (kill-switch dense-only); local or hosted embeddings; enrich/index scripts; fusion diagnostics → tool_trace  
+- **Travel engine (P4):** pure Python selector → allocator → optimizer → schedule → validator; route polylines; no network/DB/LLM  
+- **Planner (P5 + P6):** phase-gated 12-tool registry + graph loop + `PlannerService.generate` (Langfuse parent trace when keys set); SSE `POST /api/v1/planner/generate`; MVP planner cache via `CacheBackend`  
+- **Trips (P6 + P7):** `save_from_state` UoW + HTTP CRUD/GeoJSON/claim + day edit routes (reorder/remove/add/reoptimize) with `rate_limit_trip_edit`  
+- **Observability (V2):** `LLMUsage` + `TravelState.token_usage` → `trip_evaluations`; Langfuse via `tracing.py` (empty keys = NoOp)  
+- **Golden evals (V3):** `evals/` + `scripts/run_evals.py` + `src/evaluation/scorers.py` — offline pass_rate / baseline diff (not Langfuse)  
+- **Cache / rate limit:** Redis or in-memory backends selected by `REDIS_URL`  
+- **Evaluation:** generation persist + `mark_trip_edited` flag polish **real**; evaluation HTTP still stub  
 - **Seeding:** `scripts/seed_destination.py` — use `--radius 50` if you need ~100+ places for limited-band readiness  
-- **Verification:** pytest **~202** (`tests/…` incl. trips, cache backends, Redis limiter, SSE) + `scripts/test_p2_smoke.py` + `scripts/test_p4_smoke.py` + `scripts/test_agent.py` + `scripts/test_p6_smoke.py`  
-- **Not built yet:** P7 trip edit/replan HTTP; evaluation HTTP; `auth/dependencies.py`  
+- **Verification:** pytest + `scripts/test_p*_smoke.py` + `scripts/test_agent.py` + `scripts/run_evals.py`  
+- **Still stub / deferred:** evaluation HTTP; `auth/dependencies.py`; V6.2/V6.3 embedding bump / cross-encoder (deferred)  
 - **SSE note:** reverse proxy must disable buffering for `/api/v1/planner/generate`; clients must use POST `fetch()` (not `EventSource`)
 
 Truth for “is this implemented?” → always [`docs/context.md`](../context.md).

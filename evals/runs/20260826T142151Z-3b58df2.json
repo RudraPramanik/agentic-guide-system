@@ -1,0 +1,91 @@
+{
+  "destination": "darjeeling",
+  "timestamp": "20260826T142151Z",
+  "git_sha": "3b58df2",
+  "case_set_hash": "75f7af9c24c2",
+  "pass_rate": 0.5833333333333334,
+  "cases": [
+    {
+      "id": "dar-001",
+      "passed": false,
+      "reasons": [
+        "validation_passed:expected=True:actual=False"
+      ],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-002",
+      "passed": false,
+      "reasons": [
+        "validation_passed:expected=True:actual=False"
+      ],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-003",
+      "passed": true,
+      "reasons": [],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-004",
+      "passed": true,
+      "reasons": [],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-005",
+      "passed": true,
+      "reasons": [],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-006",
+      "passed": false,
+      "reasons": [
+        "readiness_score_min:expected>=0.3:actual=None"
+      ],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-007",
+      "passed": true,
+      "reasons": [],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-008",
+      "passed": true,
+      "reasons": [],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-009",
+      "passed": true,
+      "reasons": [],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-010",
+      "passed": false,
+      "reasons": [
+        "missing_place:Tiger Hill"
+      ],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-011",
+      "passed": false,
+      "reasons": [
+        "validation_passed:expected=True:actual=False"
+      ],
+      "mode": "generate"
+    },
+    {
+      "id": "dar-012",
+      "passed": true,
+      "reasons": [],
+      "mode": "generate"
+    }
+  ]
+}

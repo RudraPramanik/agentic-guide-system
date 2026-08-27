@@ -1,0 +1,14 @@
+﻿{
+    "id":  "dar-012",
+    "destination":  "Darjeeling",
+    "destination_id":  "458854b1-4d2a-4d02-8901-e26ed59c0c8b",
+    "raw_input":  "3 days include Batasia Loop",
+    "must_include_places":  [
+
+                            ],
+    "assertions":  {
+                       "max_tool_calls":  12,
+                       "max_days":  3,
+                       "no_geo_fallback":  true
+                   }
+}
