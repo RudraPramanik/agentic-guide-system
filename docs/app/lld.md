@@ -104,6 +104,8 @@ flush_tracer()
 - either missing → `NoOpTracer`
 - cached in module-level `_tracer` on first call
 
+`PlannerService.generate` owns the parent-trace lifecycle via `start_generation_trace` / `emit_tool_spans_from_trace` / `end_generation_trace` (fail-soft; always ends on timeout/abort). Gateway calls emit generation spans via `safe_generation_span`.
+
 `flush_tracer()` catches all exceptions and logs warnings — never propagates to user requests.
 
 #### Step 0.6 — LLM gateway design detail

@@ -133,7 +133,36 @@ OSRM: use `src/geo/osrm.py` → `get_route()` (never call OSRM HTTP outside `geo
 6. After login: `POST /api/v1/trips/{id}/claim` with matching `wandr_session`  
 7. Empty `REDIS_URL` → in-memory rate limit + planner cache (not shared across workers); set `REDIS_URL` for multi-worker  
 
-**Not live yet:** P7 trip edit/replan HTTP — do not invent those routes.
+---
+
+## I want to edit a trip day (P7)
+
+1. Auth required + ownership; routes under `/api/v1/trips/{id}/days/{day}/…`  
+2. Ops: reorder stops, remove stop, add stop, reoptimize day — see `docs/context.md` Live endpoints  
+3. User-keyed `rate_limit_trip_edit` (fail-open); dual OK with middleware IP limits  
+4. Proof: `python scripts/test_p7_smoke.py` (+ optional live OSRM)  
+
+**Still stub:** evaluation HTTP — do not invent list/detail evaluation APIs.
+
+---
+
+## I want live Langfuse traces / token visualization
+
+1. Set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` in `.env` (via `get_settings()` — never invent new env accessors)  
+2. Empty keys → `NoOpTracer`; generate behavior unchanged; no Langfuse network traffic  
+3. With keys: each `PlannerService.generate` opens one parent trace; LLM calls emit generation spans; tools emit post-hoc spans from `tool_trace`  
+4. Token totals also land in `trip_evaluations.token_usage` (Postgres) regardless of Langfuse  
+5. Cost ($) — use Langfuse model pricing in their UI; Wandr does not compute USD  
+
+---
+
+## I want to run golden evals (accuracy / regression)
+
+1. Offline harness: `python scripts/run_evals.py --destination darjeeling`  
+2. Writes `evals/runs/<ts>-<sha>.json`; diffs `evals/baselines/darjeeling.json`  
+3. `--update-baseline` only when intentionally freezing a new gate  
+4. Pass_rate / case reasons live in those JSON files + CLI — **not** inside Langfuse (unless a future change wires Datasets)  
+5. Live path needs `LLM_API_KEY` + indexed destination; fixtures-only works without LLM  
 
 ---
 
@@ -163,10 +192,12 @@ python scripts/test_p2_smoke.py   # network + commits seed data to the developme
 python scripts/test_p4_smoke.py   # offline Fake travel_engine pipeline
 python scripts/test_agent.py      # P5 agent smoke (needs LLM_*)
 python scripts/test_p6_smoke.py   # P6 SSE + trips + cache
+python scripts/test_p7_smoke.py   # P7 day edits + TripEditEvent
+python scripts/run_evals.py --destination darjeeling
 uvicorn src.main:app --reload
 ```
 
-Focused packages: `python -m pytest tests/geo tests/destinations tests/places tests/scripts tests/search tests/travel_engine tests/planner tests/trips tests/core -v`.
+Focused packages: `python -m pytest tests/geo tests/destinations tests/places tests/scripts tests/search tests/travel_engine tests/planner tests/trips tests/evaluation tests/core -v`.
 
 DB URL uses port **5433** locally — see `docs/context.md`.
 

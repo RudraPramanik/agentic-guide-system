@@ -5,11 +5,11 @@
 > **Post-P7 / v7 build SSOT (V0–V6):** `docs/v2_blueprint.md` — CI → observability → harness → hybrid RRF; notes in `docs/next_version.md`.
 > **Deployment (MVP):** frontend + API under the same registrable domain; auth cookies stay `SameSite=Lax` (Option A).
 > Deep reference: `docs/app/system.md` (architecture), `docs/app/lld.md` (patterns).
-> Junior map (layers / files / imports): `docs/app/documentation.md` → `docs/manual/` (refresh on phase end or every 4–5 steps — not every step).
+> Junior map (layers / files / imports): `docs/app/documentation.md` → `docs/manual/` (Last refreshed 2026-08-27 · Through P7 + V6.1 — refresh on phase end or every 4–5 steps — not every step).
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-26 · **Phase:** post-P7 / v7 · **Next step:** FE companion poll prepare → generate → trip; VPS via `docs/steps/blueprint_production.md`; V6.2/V6.3 only if future live evals show retrieval-dominant misses (currently deferred)
+**Last updated:** 2026-08-27 · **Phase:** post-P7 / v7 · **Next step:** FE companion poll prepare → generate → trip; VPS via `docs/steps/blueprint_production.md`; V6.2/V6.3 only if future live evals show retrieval-dominant misses (currently deferred)
 
 ---
 
@@ -102,7 +102,7 @@ P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode 
 | 7.6 | ✅ Done | P7 smoke (`scripts/test_p7_smoke.py`) + import guards; context P7-complete stamp |
 | V0 | ✅ Done | `.github/workflows/ci.yml` — pytest + PostGIS service + `docker build` (no deploy) |
 | V1 | ✅ Done | `search_places` → `client.query_points`; three pinned tests mock `query_points` |
-| V2 | ✅ Done | `LLMUsage` + state `token_usage`; Langfuse trace around `PlannerService.generate` (NoOp default) |
+| V2 | ✅ Done | `LLMUsage` + state `token_usage`; Langfuse parent trace around `PlannerService.generate` (start/end + tool spans; NoOp when keys empty) |
 | V3 | ✅ Done | Golden harness `evals/` + `scripts/run_evals.py` + `src/evaluation/scorers.py` |
 | V4 | ✅ Done | `_canonical_text` includes `name` + `category`; reindex required for gains |
 | V5 | ✅ Done | `places_collection()` + `sparse.py` + `places_v2` named vectors + RRF; kill-switch dense-only; **live** golden harness gate closed 2026-08-26 (`mode: generate` baseline) |
@@ -116,7 +116,7 @@ P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode 
 |--------|-----------------|
 | `src/config.py` | `get_settings()` — Qdrant/embeddings (`QDRANT_PLACES_COLLECTION`, `_V2`, `SEARCH_SPARSE_ENABLED`, `SEARCH_RRF_K`, `SEARCH_FUSION_DIAGNOSTICS`), OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo (`PLACES_SOURCES`, OpenTripMap/Geoapify keys), CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL`, `ROUTING_BACKEND` (`haversine` default \| `osrm`) |
 | `src/core/llm/client.py` | `chat_completion` / `chat_with_tools` / `embed_texts` — **only** litellm import; `LLMUsage` + retry counts |
-| `src/core/observability/tracing.py` | `get_tracer()` / `flush_tracer()` / generate trace + tool spans (fail-soft) |
+| `src/core/observability/tracing.py` | `get_tracer()` / `flush_tracer()` / `start_generation_trace` + `end_generation_trace` + tool spans around generate (fail-soft) |
 | `src/evaluation/scorers.py` | Pure golden-case scorers |
 | `scripts/run_evals.py` | Golden harness runner + baseline diff |
 | `src/search/embeddings.py` | `local` MiniLM or `hosted` via `embed_texts`; fail-soft; lazy ST import |

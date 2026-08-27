@@ -67,5 +67,6 @@ Prefer **links and tables** over prose.
 | 2026-07-30 | P4.10 | P3+P4 catch-up — search/enrich/index + travel_engine + CORS + tools envelope + p4 smoke |
 | 2026-07-31 | P5.11 | Cadence — P5.1–5.11 (tools + graph loop + narrative/eval + compile); 5.12–5.14 not yet context-✅ |
 | 2026-08-06 | P6.5 | P5+P6 catch-up — PlannerService/SSE/trips HTTP/cache backends + p6 smoke; Next → P7.1 |
+| 2026-08-27 | P7 + V6.1 | P7 + post-P7/v7 catch-up — trip day edits, Langfuse generate wrap, golden harness, hybrid search; evaluation HTTP still stub |
 
-Next natural refresh: when **P7** completes, or after ~4–5 validated P7 steps since this marker.
+Next natural refresh: when the next full phase completes, or after ~4–5 validated steps since this marker.

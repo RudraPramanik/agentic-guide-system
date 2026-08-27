@@ -263,7 +263,7 @@ Proxy must disable response buffering for `/api/v1/planner/generate`. Clients: P
 
 ---
 
-## Trips HTTP (P6.1–6.3)
+## Trips HTTP (P6.1–6.3) + day edits (P7)
 
 ```mermaid
 flowchart LR
@@ -271,15 +271,31 @@ flowchart LR
   TS --> TREP[trips/repository.py]
   TS --> POLY[trips/polyline.py]
   TR --> AUTH[require_auth / optional_auth]
+  TR --> RL[rate_limit_trip_edit]
+  TS --> EV[evaluation/service mark_trip_edited]
 ```
 
 | From | Imports | Why |
 |------|---------|-----|
-| `trips/router.py` | `TripService` helpers | list/get/delete/geojson/claim |
-| `trips/service.py` | `TripRepository`, ownership, `build_geojson` | UoW `save_from_state`; no `PlannerService` import |
+| `trips/router.py` | `TripService` helpers | list/get/delete/geojson/claim + reorder/remove/add/reoptimize |
+| `trips/dependencies.py` | `get_rate_limiter()` | User-keyed `{user_id}:trip_edit`; fail-open |
+| `trips/service.py` | `TripRepository`, ownership, `build_geojson`, routing provider | Day surgery UoW + TripEditEvent; no `PlannerService` import |
 | `trips/polyline.py` | pure decode | Invalid encoded string → `[]` |
 
-Ownership: guest session or owner for GET; DELETE requires auth; claim matches `wandr_session` + unclaimed.
+Ownership: guest session or owner for GET; DELETE requires auth; claim matches `wandr_session` + unclaimed. Edit routes require owner + `rate_limit_trip_edit`.
+
+---
+
+## Observability (V2 Langfuse)
+
+| From | Imports | Why |
+|------|---------|-----|
+| `planner/service.py` | `start_generation_trace` / `emit_tool_spans_from_trace` / `end_generation_trace` | One parent trace per generate; finally always ends |
+| `core/llm/client.py` | `safe_generation_span` | Per-call generation spans + token usage |
+| `main.py` lifespan | `flush_tracer()` | Shutdown flush |
+| Empty `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | `NoOpTracer` | No network; generate unchanged |
+
+Golden accuracy is **offline** (`scripts/run_evals.py`) — not Langfuse Datasets.
 
 ---
 
@@ -306,26 +322,29 @@ Ownership: guest session or owner for GET; DELETE requires auth; claim matches `
 
 ## What is *not* wired yet
 
-- P7 trip edit/replan HTTP — not registered.
-- Evaluation HTTP — generation persist is real; no evaluation router.
+- Evaluation HTTP — generation persist + edit flag are real; no evaluation router.
 - `auth/dependencies.py` — unused placeholder.
+- V6.2 / V6.3 embedding bump / cross-encoder — deferred.
 
-Planner SSE generate, trips HTTP, and Redis/in-memory cache backends **are** wired — see sections above.
+Planner SSE generate, trips HTTP + day edits, Redis/in-memory cache backends, and Langfuse generate wrap **are** wired — see sections above.
 
-## P2–P6 verification wiring
+## P2–P7 + v7 verification wiring
 
 | Path | Role |
 |------|------|
 | `tests/geo/` | Mocked Nominatim / Overpass / OSRM gateway tests |
-| `tests/destinations/`, `tests/places/` | Readiness, repository, and HTTP router tests |
-| `tests/scripts/test_seed_destination.py` | Seed failure boundaries via `seed_destination_into` / `seed_places` |
-| `scripts/test_p2_smoke.py` | Live fail-fast proof (network + commits to the development database) |
-| `tests/search/` | Qdrant / embeddings / index tests |
-| `tests/travel_engine/`, `tests/planner/` | Purity + tool-loop + SSE/cache tests |
-| `tests/trips/` | Trips HTTP / ownership / claim |
+| `tests/destinations/`, `tests/places/` | Readiness, prepare, repository, HTTP router tests |
+| `tests/scripts/test_seed_destination.py` | Seed failure boundaries |
+| `scripts/test_p2_smoke.py` | Live fail-fast proof |
+| `tests/search/` | Qdrant / embeddings / hybrid index tests |
+| `tests/travel_engine/`, `tests/planner/` | Purity + tool-loop + SSE/cache + tracing wrap |
+| `tests/trips/` | Trips HTTP / ownership / claim / day edits |
+| `tests/evaluation/` | Evaluation service / scorers |
 | `tests/core/` | Cache backends + Redis rate limiter fail-open |
-| `scripts/test_p4_smoke.py` | Offline Fake travel_engine pipeline (+ optional live OSRM) |
+| `scripts/test_p4_smoke.py` | Offline Fake travel_engine pipeline |
 | `scripts/test_agent.py` | P5 agent smoke |
 | `scripts/test_p6_smoke.py` | P6 SSE + trips + cache proof |
+| `scripts/test_p7_smoke.py` | P7 edit + TripEditEvent + GeoJSON |
+| `scripts/run_evals.py` | Golden harness + baseline diff |
 
 Next: [05 — How to change](05-how-to-change.md)

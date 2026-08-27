@@ -83,7 +83,7 @@ External map providers are **unstable and rate-limited**. All Nominatim / Overpa
 - LLM may help with **narrative / language**.  
 - LLM must **not** invent place IDs, coordinates, stop order, or clock times — those come from DB, geo, `travel_engine`, and planner tools.
 
-Today: LLM client is real; **`travel_engine` is real**; **planner tools + graph + SSE generate are real**; trips HTTP is real. Still not built: P7 edit/replan HTTP, evaluation HTTP.
+Today: LLM client is real; **`travel_engine` is real**; **planner tools + graph + SSE generate are real**; trips HTTP + day edits are real; Langfuse tracing + token usage + golden evals are real (empty Langfuse keys = NoOp). Still not built: evaluation HTTP.
 
 ---
 

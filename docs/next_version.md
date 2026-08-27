@@ -208,23 +208,24 @@ Never retry on 4xx from Qdrant (config bugs, not transient).
 ---
 
 # Blueprint v7.1 — Observability & Evaluation Harness (Langfuse + Golden Datasets)
-> **Status 2026-08-26: SHIPPED** via OpenSpec `wire-langfuse-tracing-and-eval-harness` (Stages 1–4).
+> **Status 2026-08-27: SHIPPED** (token usage + golden harness + Langfuse generate wrap).
+> Historical staged plan below — **do not treat “Problem today” or Stage 2 “token_usage is NOT in TravelState” as current facts.**
+> Current truth: `docs/context.md` + `docs/v2_blueprint.md` V2–V3. `TravelState.token_usage` is seeded and persisted; `PlannerService.generate` starts/ends a Langfuse parent trace (NoOp when keys empty).
 > Build SSOT remains `docs/v2_blueprint.md` V2–V3.
 > Extends `docs/blueprint_final.md` (v6.1). Companion to Part 1 above — independent scope, independently shippable.
-> Scope: light up LLM observability (token/retry capture + Langfuse tracing via the existing dead-code facade) and build an offline golden-dataset regression harness — without breaking any architecture rule, resilience contract, or existing consumer.
+> Scope (as originally planned): light up LLM observability (token/retry capture + Langfuse tracing via the existing facade) and build an offline golden-dataset regression harness — without breaking any architecture rule, resilience contract, or existing consumer.
 >
-> **Supersedes nothing.** Machine-actionable artifacts live in
-> `openspec/changes/wire-langfuse-tracing-and-eval-harness/` (proposal, specs, design, tasks).
-> This section is the human-readable staged build plan.
+> Machine-actionable history: archived OpenSpec `wire-langfuse-tracing-and-eval-harness`; wrap completion change `fix-langfuse-generate-wrap-and-refresh-manual`.
+> This section is the human-readable staged build plan (kept for audit).
 
-## Why
+## Why (historical — pre-ship)
 
-| Problem today | Evidence |
+| Problem (then) | Evidence (then) |
 |---|---|
-| Token usage is never recorded | `core/llm/client.py` discards `response.usage` → `TripEvaluation.token_usage` always `{}` |
-| Retry counts are fiction | `llm_retry_count` column exists; nothing writes it |
-| Tracer is dead code | `core/observability/tracing.py::get_tracer()` has zero callers despite `langfuse==2.60.10` pinned + keys declared |
-| No regression gate for pipeline changes | v7.0 Stage 3 promises "evaluation-driven polish" with no eval infrastructure to drive it |
+| Token usage was never recorded | `core/llm/client.py` discarded `response.usage` → `TripEvaluation.token_usage` always `{}` |
+| Retry counts were fiction | `llm_retry_count` column existed; nothing wrote it |
+| Tracer was dead code | `get_tracer()` had zero callers despite `langfuse` pinned + keys declared |
+| No regression gate for pipeline changes | v7.0 Stage 3 promised “evaluation-driven polish” with no eval infrastructure |
 
 **Non-goals**
 - No HITL review/approval gate (implicit edit signals suffice for now).
@@ -256,8 +257,9 @@ Inside `src/core/llm/client.py` only:
 
 ### Stage 2 — Thread usage into state and evaluation
 
-- ⚠️ **`token_usage` is NOT in `TravelState` today** (`src/planner/graph/state.py` declares `llm_retry_count` but not `token_usage`). Stage 2 must add the field to `TravelState` AND seed `"token_usage": {}` in `_initial_state()` alongside `"llm_retry_count": 0`.
+- ✅ **Done:** `token_usage` is on `TravelState` and seeded in `_initial_state()` (historical note below claimed otherwise pre-ship).
 - Planner nodes accumulate per-call usage into `state["token_usage"]` (summed) and retries into `state["llm_retry_count"]`.
+- (Historical) ⚠️ Pre-ship: `token_usage` was missing from `TravelState` — Stage 2 added it. Do not re-add.
 - Reconcile with existing crude increment: `agent.py` already does `llm_retry_count + 1` on `WandrLLMError` (and `parse_preferences.py` / `write_narrative.py` have similar) — replace these with honest per-call counts from Stage 1 so retries aren't double-counted.
 - `EvaluationService.record_generation` already reads these keys — mapping verified, columns exist, **no migration**.
 
