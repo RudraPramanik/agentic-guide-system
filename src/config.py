@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import ValidationError
+from pydantic import AliasChoices, Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -71,9 +71,13 @@ class Settings(BaseSettings):
     # Planner result cache TTL — used from P6.4; declared now
     PLANNER_CACHE_TTL_SECONDS: int = 3600
 
-    # Observability
+    # Observability — empty keys → NoOpTracer; LANGFUSE_BASE_URL accepted as alias
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""
+    LANGFUSE_HOST: str = Field(
+        default="https://cloud.langfuse.com",
+        validation_alias=AliasChoices("LANGFUSE_HOST", "LANGFUSE_BASE_URL"),
+    )
 
     # Geo
     NOMINATIM_USER_AGENT: str

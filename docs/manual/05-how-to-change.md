@@ -149,10 +149,12 @@ OSRM: use `src/geo/osrm.py` → `get_route()` (never call OSRM HTTP outside `geo
 ## I want live Langfuse traces / token visualization
 
 1. Set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` in `.env` (via `get_settings()` — never invent new env accessors)  
-2. Empty keys → `NoOpTracer`; generate behavior unchanged; no Langfuse network traffic  
-3. With keys: each `PlannerService.generate` opens one parent trace; LLM calls emit generation spans; tools emit post-hoc spans from `tool_trace`  
-4. Token totals also land in `trip_evaluations.token_usage` (Postgres) regardless of Langfuse  
-5. Cost ($) — use Langfuse model pricing in their UI; Wandr does not compute USD  
+2. Optional `LANGFUSE_HOST` (default EU `https://cloud.langfuse.com`; `LANGFUSE_BASE_URL` works as alias)  
+3. Empty keys → `NoOpTracer`; generate behavior unchanged; no Langfuse network traffic  
+4. With keys: each `PlannerService.generate` opens one parent trace with first-class `session_id` (and `user_id` when authenticated); LiteLLM calls nest generation observations under that trace; tools emit post-hoc spans from `tool_trace`  
+5. Verify: `python scripts/prove_langfuse.py` (keys set) or one generate → Langfuse **Traces** + **Sessions** views  
+6. Token totals also land in `trip_evaluations.token_usage` (Postgres) regardless of Langfuse  
+7. Cost ($) — use Langfuse model pricing in their UI; Wandr does not compute USD  
 
 ---
 

@@ -115,6 +115,7 @@ class PlannerService:
         session_id: str,
         on_event: Callable[[str, dict], None] | None = None,
         routing: Any | None = None,
+        user_id: UUID | str | None = None,
     ) -> dict[str, Any]:
         """Run compiled planner graph with timeout + emit checkpoints.
 
@@ -163,9 +164,10 @@ class PlannerService:
         }
 
         start_generation_trace(
+            session_id=session_id,
+            user_id=str(user_id) if user_id is not None else None,
             metadata={
                 "destination_id": str(dest_uuid),
-                "session_id": session_id,
             },
         )
         final: dict[str, Any] = last_known_state

@@ -115,7 +115,7 @@ async def test_generate_calls_trace_lifecycle_on_success() -> None:
     assert start_mock.call_args.kwargs["metadata"]["destination_id"] == fake_final[
         "destination_id"
     ]
-    assert start_mock.call_args.kwargs["metadata"]["session_id"] == "sess-1"
+    assert start_mock.call_args.kwargs["session_id"] == "sess-1"
     emit_mock.assert_called_once_with(tool_trace)
     end_mock.assert_called_once()
     assert end_mock.call_args.kwargs["outcome"] == "success"
@@ -239,3 +239,43 @@ def test_tracer_exception_does_not_raise() -> None:
     ):
         assert start_generation_trace() is None
         end_generation_trace(outcome="aborted")  # must not raise
+
+
+def test_end_generation_trace_updates_without_end() -> None:
+    """Parent StatefulTraceClient has no end(); finalize via update only."""
+    trace = MagicMock()
+    trace.end = MagicMock(side_effect=AttributeError("no end"))
+    with patch("src.core.observability.tracing._active_trace", trace):
+        end_generation_trace(outcome="success", metadata={"destination_id": "x"})
+    trace.update.assert_called_once()
+    assert trace.update.call_args.kwargs["output"] == {"outcome": "success"}
+    trace.end.assert_not_called()
+
+
+def test_langfuse_litellm_metadata_when_active() -> None:
+    trace = MagicMock()
+    trace.trace_id = "abc-123"
+    with (
+        patch(
+            "src.core.observability.tracing.is_langfuse_tracing_active",
+            return_value=True,
+        ),
+        patch("src.core.observability.tracing._active_trace", trace),
+    ):
+        from src.core.observability.tracing import langfuse_litellm_metadata
+
+        meta = langfuse_litellm_metadata(generation_name="chat_completion")
+    assert meta == {
+        "existing_trace_id": "abc-123",
+        "generation_name": "chat_completion",
+    }
+
+
+def test_langfuse_litellm_metadata_none_when_inactive() -> None:
+    with patch(
+        "src.core.observability.tracing.is_langfuse_tracing_active",
+        return_value=False,
+    ):
+        from src.core.observability.tracing import langfuse_litellm_metadata
+
+        assert langfuse_litellm_metadata(generation_name="chat_completion") is None
