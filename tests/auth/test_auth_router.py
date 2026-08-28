@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import uuid
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from src.auth.repository import UserRepository
+from src.auth.service import AuthService
+from src.config import get_settings
 from src.core.security.jwt import create_access_token
 
 
@@ -39,11 +44,26 @@ async def test_auth_logout_no_auth(client) -> None:
 
 @pytest.mark.asyncio
 async def test_auth_google_not_configured(client) -> None:
-    r = await client.get("/api/v1/auth/google")
+    settings = get_settings()
+    settings.GOOGLE_CLIENT_ID = ""
+    with patch("src.auth.router.get_settings", return_value=settings):
+        r = await client.get("/api/v1/auth/google", follow_redirects=False)
     assert r.status_code == 200
     data = r.json()
     assert data["success"] is True
     assert "not configured" in data["data"]["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_auth_google_redirects_when_configured(client) -> None:
+    settings = get_settings()
+    if not settings.GOOGLE_CLIENT_ID:
+        pytest.skip("GOOGLE_CLIENT_ID not set in environment")
+    r = await client.get("/api/v1/auth/google", follow_redirects=False)
+    assert r.status_code == 307
+    location = r.headers["location"]
+    assert location.startswith("https://accounts.google.com/")
+    assert "client_id=" in location
 
 
 @pytest.mark.asyncio
@@ -73,3 +93,130 @@ async def test_no_password_register_route(client) -> None:
     assert r.status_code == 404
     r2 = await client.post("/api/v1/auth/login", json={})
     assert r2.status_code == 404
+
+
+def _settings_with_frontend(frontend_url: str = "http://localhost:3000"):
+    settings = get_settings()
+    settings.FRONTEND_URL = frontend_url
+    return settings
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_error_redirects_to_frontend(client) -> None:
+    with patch("src.auth.router.get_settings", return_value=_settings_with_frontend()):
+        r = await client.get("/api/v1/auth/callback?error=access_denied", follow_redirects=False)
+    assert r.status_code == 307
+    assert r.headers["location"] == "http://localhost:3000/auth/error?reason=access_denied"
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_missing_code_redirects_to_frontend(client) -> None:
+    with patch("src.auth.router.get_settings", return_value=_settings_with_frontend()):
+        r = await client.get("/api/v1/auth/callback", follow_redirects=False)
+    assert r.status_code == 307
+    assert r.headers["location"] == "http://localhost:3000/auth/error?reason=oauth_failed"
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_success_redirects_with_token_cookie(
+    client, db_session
+) -> None:
+    mock_user = await UserRepository(db_session).create(
+        {
+            "email": "oauth@wandr.dev",
+            "name": "OAuth User",
+            "google_id": "g-oauth",
+            "avatar_url": None,
+            "is_active": True,
+        }
+    )
+
+    with (
+        patch("src.auth.router.get_settings", return_value=_settings_with_frontend()),
+        patch.object(
+            AuthService,
+            "exchange_code_for_token",
+            new=AsyncMock(return_value="google-access"),
+        ),
+        patch.object(
+            AuthService,
+            "verify_google_token",
+            new=AsyncMock(
+                return_value={
+                    "sub": "g-oauth",
+                    "email": "oauth@wandr.dev",
+                    "name": "OAuth User",
+                }
+            ),
+        ),
+        patch.object(
+            AuthService,
+            "upsert_google_user",
+            new=AsyncMock(return_value=mock_user),
+        ),
+    ):
+        r = await client.get(
+            "/api/v1/auth/callback?code=valid-code",
+            follow_redirects=False,
+        )
+
+    assert r.status_code == 302
+    assert r.headers["location"] == "http://localhost:3000/auth/done"
+    set_cookie = r.headers.get("set-cookie", "").lower()
+    assert "wandr_token=" in set_cookie
+    assert "httponly" in set_cookie
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_success_json_fallback_without_frontend_url(
+    client, db_session
+) -> None:
+    settings = get_settings()
+    settings.FRONTEND_URL = ""
+
+    mock_user = await UserRepository(db_session).create(
+        {
+            "email": "fallback@wandr.dev",
+            "name": "Fallback User",
+            "google_id": "g-fallback",
+            "avatar_url": None,
+            "is_active": True,
+        }
+    )
+
+    with (
+        patch("src.auth.router.get_settings", return_value=settings),
+        patch.object(
+            AuthService,
+            "exchange_code_for_token",
+            new=AsyncMock(return_value="google-access"),
+        ),
+        patch.object(
+            AuthService,
+            "verify_google_token",
+            new=AsyncMock(
+                return_value={
+                    "sub": "g-fallback",
+                    "email": "fallback@wandr.dev",
+                    "name": "Fallback User",
+                }
+            ),
+        ),
+        patch.object(
+            AuthService,
+            "upsert_google_user",
+            new=AsyncMock(return_value=mock_user),
+        ),
+    ):
+        r = await client.get(
+            "/api/v1/auth/callback?code=valid-code",
+            follow_redirects=False,
+        )
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["success"] is True
+    assert data["data"]["access_token"]
+    assert data["data"]["user"]["email"] == "fallback@wandr.dev"
+    assert "wandr_token=" in r.headers.get("set-cookie", "").lower()
+

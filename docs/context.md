@@ -114,7 +114,7 @@ P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode 
 
 | Module | Exports / notes |
 |--------|-----------------|
-| `src/config.py` | `get_settings()` — Qdrant/embeddings (`QDRANT_PLACES_COLLECTION`, `_V2`, `SEARCH_SPARSE_ENABLED`, `SEARCH_RRF_K`, `SEARCH_FUSION_DIAGNOSTICS`), OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo (`PLACES_SOURCES`, OpenTripMap/Geoapify keys), CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL`, `ROUTING_BACKEND` (`haversine` default \| `osrm`) |
+| `src/config.py` | `get_settings()` — Qdrant/embeddings (`QDRANT_PLACES_COLLECTION`, `_V2`, `SEARCH_SPARSE_ENABLED`, `SEARCH_RRF_K`, `SEARCH_FUSION_DIAGNOSTICS`), OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo (`PLACES_SOURCES`, OpenTripMap/Geoapify keys), CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL`, `ROUTING_BACKEND` (`haversine` default \| `hybrid` \| `osrm`) |
 | `src/core/llm/client.py` | `chat_completion` / `chat_with_tools` / `embed_texts` — **only** litellm import; `LLMUsage` + retry counts |
 | `src/core/observability/tracing.py` | `get_tracer()` / `flush_tracer()` / `start_generation_trace` + `end_generation_trace` + tool spans around generate (fail-soft) |
 | `src/evaluation/scorers.py` | Pure golden-case scorers |
@@ -137,7 +137,7 @@ P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode 
 | `src/travel_engine/route_optimizer.py` | `optimize_route` — full-matrix legs; drop until under travel or 1 stop; public `populate_leg_polylines` for winning/fixed order |
 | `src/travel_engine/schedule_builder.py` | `build_day_schedule` — morning extract ≤2; `preserve_order=True` skips extract (P7 reorder) |
 | `src/travel_engine/trip_validator.py` | `validate_trip`, `ValidationResult`, `DayPlan`, `TripItinerary` — pure CoR rules; morning errors prefixed `morning_slot_violation:` |
-| `src/planner/routing_provider.py` | `get_routing_provider()` — `HaversineRoutingProvider` (default, `estimate_route`, no HTTP) or `OsrmRoutingProvider` (`get_route` + fail-soft `route_polyline`) |
+| `src/planner/routing_provider.py` | `get_routing_provider()` — `HaversineRoutingProvider` (default), `HybridRoutingProvider` (haversine matrix + OSRM `route_polyline`), or `OsrmRoutingProvider` (full live matrix + polylines) |
 | `src/planner/tools/schemas.py` | `AgentPhase`, `PHASE_TOOLS`, `ToolResult` (+`fallback_used`), `ToolContext`, 12 input models |
 | `src/planner/tools/registry.py` | 12-tool `TOOL_REGISTRY`, phase/precondition `execute_tool`, re-exports orchestration helpers |
 | `src/planner/tools/orchestration.py` | `check_preconditions`, `apply_tool_result` (sole writer), `maybe_transition_phase`, `_make_test_state` |
@@ -202,7 +202,7 @@ P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode 
 
 **Scripts:** `scripts/test_db_conn.py`, `scripts/test_p1_smoke.py`, `scripts/test_p2_smoke.py`, `scripts/test_p4_smoke.py`, `scripts/test_agent.py`, `scripts/test_p6_smoke.py`, `scripts/test_p7_smoke.py`, `scripts/test_geocoder.py`, `scripts/test_overpass.py`, `scripts/seed_destination.py`, `scripts/enrich_places.py`, `scripts/index_places.py`
 
-**Known limitations / TODO (post-P7):** geocoder cache + Nominatim throttle are per-process; empty `REDIS_URL` keeps rate limit + planner cache in-memory (not shared across workers) — set `REDIS_URL` for multi-worker prod. Prod uses **hosted** embeddings (`PLACES_EMBEDDING_BACKEND=hosted`, Gemini via LiteLLM) — dim cutover 384→768 requires Qdrant recreate + `index_places` reindex (see `docs/steps/blueprint_production.md`). Local MiniLM remains `BACKEND=local`. **P7 MVP:** concurrent trip edits are last-write-wins (no row locking). **Cold generate SSE (2026-08-16):** live path emits `preferences_done` / `phase_changed` / terminal `itinerary_done`\|`clarification_needed`\|`error` (incl. `generation_aborted`); router yields `missing_terminal` if no terminal buffered. Default `ROUTING_BACKEND=haversine` (in-process times, Point-only GeoJSON until `osrm`). Proof: destination `458854b1-…` (132 places, tier `limited`) → `itinerary_done` + `trip_id` in ~10s wall (under 45s graph ceiling; public OSRM not required).
+**Known limitations / TODO (post-P7):** geocoder cache + Nominatim throttle are per-process; empty `REDIS_URL` keeps rate limit + planner cache in-memory (not shared across workers) — set `REDIS_URL` for multi-worker prod. Prod uses **hosted** embeddings (`PLACES_EMBEDDING_BACKEND=hosted`, Gemini via LiteLLM) — dim cutover 384→768 requires Qdrant recreate + `index_places` reindex (see `docs/steps/blueprint_production.md`). Local MiniLM remains `BACKEND=local`. **P7 MVP:** concurrent trip edits are last-write-wins (no row locking). **Cold generate SSE (2026-08-16):** live path emits `preferences_done` / `phase_changed` / terminal `itinerary_done`\|`clarification_needed`\|`error` (incl. `generation_aborted`); router yields `missing_terminal` if no terminal buffered. Default `ROUTING_BACKEND=haversine` (in-process times, Point-only GeoJSON). Set `ROUTING_BACKEND=hybrid` for map LineStrings (haversine times + OSRM fail-soft polylines via `HybridRoutingProvider`); full `osrm` remains optional/spike (pairwise matrix). Trips saved under haversine stay Point-only until regenerate or owner day reoptimize — GeoJSON schema unchanged. Sibling FE OpenSpec: `trip-route-polyline-map`. Proof: destination `458854b1-…` (132 places, tier `limited`) → `itinerary_done` + `trip_id` in ~10s wall (under 45s graph ceiling; public OSRM not required for generate times).
 
 ---
 
@@ -277,7 +277,7 @@ python -m pytest tests/ -v
 - `LLM_API_KEY` is optional for catalog/health boot (defaults empty). Generate/enrich need a real key in `guideagent/.env` (bind-mounted at `/app/.env` plus Compose `env_file`) — not in the Next app. `docker compose down` unbinds `:8000` until `up` and `wandr_api` is healthy. If `wandr_api` is `Exited` while Postgres is healthy, host `:8000` `ERR_CONNECTION_REFUSED` means the API never bound the port — `docker logs wandr_api` (other missing required env), not a Next.js URL bug. Tracking: `docs/issue_solve.md`
 - Root `.gitignore` ignores `.env` / `.env.*` (keeps `.env.example`). `.env` is untracked; git history still has old blobs until a separate rewrite
 - Geo: `NOMINATIM_BASE_URL`, `OVERPASS_API_URL`, `NOMINATIM_USER_AGENT`, `PLACES_SOURCES` (`overpass` default; optional `opentripmap`,`geoapify`), `OPENTRIPMAP_*`, `GEOAPIFY_*` via `get_settings()`
-- Routing: `ROUTING_BACKEND=haversine` (default, in-process) or `osrm` + `OSRM_BASE_URL` (live pairwise; not required for 45s generate)
+- Routing: `ROUTING_BACKEND=haversine` (default, in-process, Point-only GeoJSON), `hybrid` (haversine times + OSRM polylines for map LineStrings), or `osrm` + `OSRM_BASE_URL` (live pairwise matrix; spike / self-host)
 - Overpass: `read=90s` + retry on 5xx (amendment vs step `read=30`); failure → `[]`
 
 ---

@@ -100,6 +100,7 @@ class Settings(BaseSettings):
     GOOGLE_AUTH_URL: str = "https://accounts.google.com/o/oauth2/v2/auth"
     GOOGLE_TOKEN_URL: str = "https://oauth2.googleapis.com/token"
     GOOGLE_USERINFO_URL: str = "https://www.googleapis.com/oauth2/v3/userinfo"
+    FRONTEND_URL: str = "http://localhost:3000"
 
     # Rate limiting (in-memory backend; Redis at P6 via REDIS_URL)
     RATE_LIMIT_DEFAULT_REQUESTS: int = 60
