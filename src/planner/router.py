@@ -84,6 +84,7 @@ async def generate_plan(
                     base_lng=base_lng,
                     session_id=session_id,
                     on_event=on_event,
+                    user_id=user_id,
                 )
             )
 

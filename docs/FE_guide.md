@@ -350,12 +350,21 @@ Happy path: search → prepare (if `place_count` is below the floor) → poll re
 
 ---
 
-## 11. Known gap — OAuth return to app
+## 11. OAuth return to app
 
-Today Google redirects to the **API** (`GOOGLE_REDIRECT_URI=…/api/v1/auth/callback`). On success the API returns **JSON + Set-Cookie**, not a redirect to the Next.js origin. Failures redirect to `/auth/error` on the API host.
+Google redirects to the **API** (`GOOGLE_REDIRECT_URI=…/api/v1/auth/callback`). On success the API sets `wandr_token` and **redirects** to `{FRONTEND_URL}/auth/done` (default `http://localhost:3000/auth/done`). Failures redirect to `{FRONTEND_URL}/auth/error?reason=…`.
 
-**MVP:** ship guest generate → trip → map without depending on polished login return.  
-**Follow-up (backend):** add something like `FRONTEND_URL` and redirect after setting `wandr_token` (e.g. to `{FRONTEND_URL}/auth/done` or deep-link to trip). Until then, document login UX as incomplete.
+When `FRONTEND_URL` is empty, success falls back to JSON + Set-Cookie on the API host (local debugging only).
+
+### Google Cloud Console checklist
+
+1. Create an OAuth 2.0 **Web application** client.
+2. **Authorized redirect URI:** must match `GOOGLE_REDIRECT_URI` exactly (dev: `http://localhost:8000/api/v1/auth/callback`; prod: `https://<api-host>/api/v1/auth/callback`).
+3. Copy **Client ID** and **Client secret** into backend `.env` as `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+4. Set `FRONTEND_URL` to the Next.js origin (dev: `http://localhost:3000`; prod: `https://<app-host>`).
+5. Ensure `CORS_ALLOWED_ORIGINS` includes the frontend origin (never `*` with credentials).
+
+The frontend `/auth/done` page re-probes `GET /api/v1/auth/me` and navigates into the app. Login and signup are the same flow (OAuth upsert creates the user on first sign-in).
 
 ---
 
@@ -575,6 +584,8 @@ type TripLineFeature = {
 ```
 
 MapLibre: use Point features for markers; LineString features for day routes. Missing polylines → points only (never invent coordinates).
+
+**Backend routing for lines:** `TripPlace.polyline` is populated at generate/edit via `RoutingProvider.route_polyline`. Default `ROUTING_BACKEND=haversine` yields Point-only GeoJSON. Operators who want road routes set `ROUTING_BACKEND=hybrid` (in-process travel times + OSRM geometry; fail-soft → still Point-only). Full `osrm` is optional/spike. Existing trips stay Point-only until regenerate or owner day reoptimize — no GeoJSON schema change. FE sibling OpenSpec: `trip-route-polyline-map`. `build_geojson` remains decode-only (no network I/O).
 
 ---
 

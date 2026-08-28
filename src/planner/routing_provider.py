@@ -1,7 +1,8 @@
 ﻿"""Routing adapters — RoutingProvider via geo/osrm (live or in-process estimate).
 
 OsrmRoutingProvider maps get_route fallback_used onto RouteLeg.used_fallback.
-HaversineRoutingProvider never HTTP-calls. Does not touch LangGraph / TravelState
+HaversineRoutingProvider never HTTP-calls. HybridRoutingProvider uses haversine
+times + OSRM fail-soft polylines. Does not touch LangGraph / TravelState
 (used_osrm_fallback is P5).
 """
 
@@ -15,6 +16,7 @@ from src.geo.osrm import estimate_route, get_route
 from src.travel_engine.protocols import RouteLeg
 
 _ROUTING_BACKEND_OSRM = "osrm"
+_ROUTING_BACKEND_HYBRID = "hybrid"
 
 
 class OsrmRoutingProvider:
@@ -103,9 +105,31 @@ class HaversineRoutingProvider:
         return None
 
 
-def get_routing_provider() -> OsrmRoutingProvider | HaversineRoutingProvider:
+class HybridRoutingProvider:
+    """Haversine travel_matrix + OSRM fail-soft route_polyline (map geometry)."""
+
+    def __init__(self) -> None:
+        self._times = HaversineRoutingProvider()
+        self._geom = OsrmRoutingProvider()
+
+    async def travel_matrix(
+        self, waypoints: list[tuple[UUID, float, float]]
+    ) -> list[RouteLeg]:
+        return await self._times.travel_matrix(waypoints)
+
+    async def route_polyline(
+        self, waypoints: list[tuple[float, float]]
+    ) -> str | None:
+        return await self._geom.route_polyline(waypoints)
+
+
+def get_routing_provider() -> (
+    OsrmRoutingProvider | HaversineRoutingProvider | HybridRoutingProvider
+):
     """Select generate/edit adapter from ROUTING_BACKEND (unknown → haversine)."""
     raw = str(get_settings().ROUTING_BACKEND or "").strip().lower()
     if raw == _ROUTING_BACKEND_OSRM:
         return OsrmRoutingProvider()
+    if raw == _ROUTING_BACKEND_HYBRID:
+        return HybridRoutingProvider()
     return HaversineRoutingProvider()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, Any
 
 from src.core.observability.logging import get_logger
@@ -21,6 +22,7 @@ log = get_logger()
 _tracer: Langfuse | NoOpTracer | None = None
 _tracer_error_logged: bool = False
 _active_trace: Any | None = None
+_litellm_callback_registered: bool = False
 
 
 class NoOpTracer:
@@ -52,6 +54,34 @@ def _log_tracer_once(event: str, error: Exception) -> None:
         log.warning(event, error=str(error))
 
 
+def _langfuse_keys_configured(settings: Any) -> bool:
+    return bool(settings.LANGFUSE_PUBLIC_KEY and settings.LANGFUSE_SECRET_KEY)
+
+
+def _sync_langfuse_env(settings: Any) -> None:
+    """LiteLLM Langfuse callback reads credentials from os.environ."""
+    os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.LANGFUSE_PUBLIC_KEY)
+    os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.LANGFUSE_SECRET_KEY)
+    os.environ.setdefault("LANGFUSE_HOST", settings.LANGFUSE_HOST)
+
+
+def _ensure_litellm_langfuse_callback() -> None:
+    """Register LiteLLM success callback once when Langfuse is live."""
+    global _litellm_callback_registered
+    if _litellm_callback_registered:
+        return
+    try:
+        import litellm
+
+        if "langfuse" not in litellm.success_callback:
+            litellm.success_callback.append("langfuse")
+        if "langfuse" not in litellm._async_success_callback:
+            litellm._async_success_callback.append("langfuse")
+        _litellm_callback_registered = True
+    except Exception as exc:
+        _log_tracer_once("langfuse_litellm_callback_failed", exc)
+
+
 def get_tracer() -> Langfuse | NoOpTracer:
     """Return cached Langfuse client or NoOpTracer when keys are missing."""
 
@@ -63,12 +93,15 @@ def get_tracer() -> Langfuse | NoOpTracer:
         from src.config import get_settings
 
         settings = get_settings()
-        if settings.LANGFUSE_PUBLIC_KEY and settings.LANGFUSE_SECRET_KEY and _Langfuse is not None:
+        if _langfuse_keys_configured(settings) and _Langfuse is not None:
             try:
+                _sync_langfuse_env(settings)
                 _tracer = _Langfuse(
                     public_key=settings.LANGFUSE_PUBLIC_KEY,
                     secret_key=settings.LANGFUSE_SECRET_KEY,
+                    host=settings.LANGFUSE_HOST,
                 )
+                _ensure_litellm_langfuse_callback()
                 return _tracer
             except Exception as exc:
                 log.warning("langfuse_init_failed", error=str(exc))
@@ -77,6 +110,32 @@ def get_tracer() -> Langfuse | NoOpTracer:
 
     _tracer = NoOpTracer()
     return _tracer
+
+
+def is_langfuse_tracing_active() -> bool:
+    """True when Langfuse keys are set and tracer is not NoOp."""
+    tracer = get_tracer()
+    return not isinstance(tracer, NoOpTracer)
+
+
+def get_active_trace_id() -> str | None:
+    """Return active parent trace id for LiteLLM nesting, or None."""
+    trace = _active_trace
+    if trace is None:
+        return None
+    trace_id = getattr(trace, "trace_id", None) or getattr(trace, "id", None)
+    return str(trace_id) if trace_id else None
+
+
+def langfuse_litellm_metadata(*, generation_name: str) -> dict[str, Any] | None:
+    """Metadata for LiteLLM to nest generations under the active parent trace."""
+    trace_id = get_active_trace_id()
+    if trace_id is None or not is_langfuse_tracing_active():
+        return None
+    return {
+        "existing_trace_id": trace_id,
+        "generation_name": generation_name,
+    }
 
 
 def flush_tracer() -> None:
@@ -88,12 +147,23 @@ def flush_tracer() -> None:
         log.warning("langfuse_flush_failed", error=str(exc))
 
 
-def start_generation_trace(name: str = "planner.generate", **kwargs: Any) -> Any | None:
+def start_generation_trace(
+    name: str = "planner.generate",
+    *,
+    session_id: str | None = None,
+    user_id: str | None = None,
+    **kwargs: Any,
+) -> Any | None:
     """Start one Langfuse trace for a planner generation. Fail-soft."""
     global _active_trace
     try:
         tracer = get_tracer()
-        _active_trace = tracer.trace(name=name, **kwargs)
+        trace_kwargs: dict[str, Any] = {"name": name, **kwargs}
+        if session_id is not None:
+            trace_kwargs["session_id"] = session_id
+        if user_id is not None:
+            trace_kwargs["user_id"] = user_id
+        _active_trace = tracer.trace(**trace_kwargs)
         return _active_trace
     except Exception as exc:
         _log_tracer_once("langfuse_trace_start_failed", exc)
@@ -106,7 +176,7 @@ def end_generation_trace(
     outcome: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    """End the active generation trace. Fail-soft."""
+    """Finalize the active generation trace. Fail-soft."""
     global _active_trace
     trace = _active_trace
     _active_trace = None
@@ -120,7 +190,8 @@ def end_generation_trace(
             update_kwargs["metadata"] = metadata
         if update_kwargs:
             trace.update(**update_kwargs)
-        trace.end()
+        if is_langfuse_tracing_active():
+            flush_tracer()
     except Exception as exc:
         _log_tracer_once("langfuse_trace_end_failed", exc)
 
@@ -134,6 +205,8 @@ def safe_generation_span(
     retry_count: int,
 ) -> None:
     """Emit a generation span under the active trace when present. Fail-soft."""
+    if is_langfuse_tracing_active() and get_active_trace_id() is not None:
+        return
     try:
         parent = _active_trace
         tracer = get_tracer()

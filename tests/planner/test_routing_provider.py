@@ -13,6 +13,7 @@ import pytest
 from src.geo.schemas import RouteResult
 from src.planner.routing_provider import (
     HaversineRoutingProvider,
+    HybridRoutingProvider,
     OsrmRoutingProvider,
     get_routing_provider,
 )
@@ -211,6 +212,72 @@ def test_factory_osrm_returns_osrm_adapter():
     fake = SimpleNamespace(ROUTING_BACKEND="osrm")
     with patch("src.planner.routing_provider.get_settings", return_value=fake):
         assert isinstance(get_routing_provider(), OsrmRoutingProvider)
+
+
+def test_factory_hybrid_returns_hybrid_adapter():
+    fake = SimpleNamespace(ROUTING_BACKEND="hybrid")
+    with patch("src.planner.routing_provider.get_settings", return_value=fake):
+        assert isinstance(get_routing_provider(), HybridRoutingProvider)
+
+
+@pytest.mark.asyncio
+async def test_hybrid_matrix_three_waypoints_no_get_route():
+    provider = HybridRoutingProvider()
+    a, b, c = uuid4(), uuid4(), uuid4()
+    waypoints = [
+        (a, 27.04, 88.26),
+        (b, 27.03, 88.27),
+        (c, 27.05, 88.25),
+    ]
+    with patch(
+        "src.planner.routing_provider.get_route",
+        new_callable=AsyncMock,
+    ) as mock_route:
+        legs = await provider.travel_matrix(waypoints)
+    assert mock_route.await_count == 0
+    assert len(legs) == 6
+    assert all(leg.used_fallback is True for leg in legs)
+    assert all(leg.distance_km > 0 for leg in legs)
+
+
+@pytest.mark.asyncio
+async def test_hybrid_polyline_returns_geometry():
+    provider = HybridRoutingProvider()
+    mock_result = RouteResult(
+        distance_km=1.0,
+        duration_min=10.0,
+        encoded_polyline="encoded_hybrid",
+        fallback_used=False,
+    )
+    with patch(
+        "src.planner.routing_provider.get_route",
+        new_callable=AsyncMock,
+        return_value=mock_result,
+    ):
+        assert (
+            await provider.route_polyline([(0.0, 0.0), (0.1, 0.1)])
+            == "encoded_hybrid"
+        )
+
+
+@pytest.mark.asyncio
+async def test_hybrid_polyline_fallback_and_errors_are_none():
+    provider = HybridRoutingProvider()
+    with patch(
+        "src.planner.routing_provider.get_route",
+        new_callable=AsyncMock,
+        return_value=RouteResult(
+            distance_km=1.0, duration_min=10.0, fallback_used=True
+        ),
+    ):
+        assert await provider.route_polyline([(0.0, 0.0), (0.1, 0.1)]) is None
+
+    with patch(
+        "src.planner.routing_provider.get_route",
+        new_callable=AsyncMock,
+        side_effect=ValueError("need 2"),
+    ):
+        assert await provider.route_polyline([(0.0, 0.0)]) is None
 
 
 @pytest.mark.asyncio

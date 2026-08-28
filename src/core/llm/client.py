@@ -6,6 +6,7 @@ import asyncio
 import contextvars
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 import litellm
 from tenacity import (
@@ -166,6 +167,32 @@ def merge_token_usage(existing: dict | None, usage: LLMUsage) -> dict[str, int]:
     }
 
 
+def _litellm_metadata(generation_name: str) -> dict[str, Any] | None:
+    try:
+        from src.core.observability.tracing import langfuse_litellm_metadata
+
+        return langfuse_litellm_metadata(generation_name=generation_name)
+    except Exception:
+        return None
+
+
+def _merge_litellm_kwargs(
+    base: dict[str, Any],
+    *,
+    generation_name: str,
+) -> dict[str, Any]:
+    lf_meta = _litellm_metadata(generation_name)
+    if not lf_meta:
+        return base
+    merged = dict(base)
+    existing = merged.get("metadata")
+    if isinstance(existing, dict):
+        merged["metadata"] = {**existing, **lf_meta}
+    else:
+        merged["metadata"] = lf_meta
+    return merged
+
+
 def _emit_generation_span(
     *,
     name: str,
@@ -208,12 +235,17 @@ async def _chat_completion_inner(
     resolved_model = model or settings.LLM_MODEL
     try:
         response = await litellm.acompletion(
-            model=resolved_model,
-            messages=messages,
-            response_format=response_format,
-            api_key=api_key,
-            api_base=settings.LLM_API_BASE or None,
-            timeout=settings.LLM_TIMEOUT_SECONDS,
+            **_merge_litellm_kwargs(
+                {
+                    "model": resolved_model,
+                    "messages": messages,
+                    "response_format": response_format,
+                    "api_key": api_key,
+                    "api_base": settings.LLM_API_BASE or None,
+                    "timeout": settings.LLM_TIMEOUT_SECONDS,
+                },
+                generation_name="chat_completion",
+            )
         )
         content = response.choices[0].message.content
         return (
@@ -269,13 +301,18 @@ async def _chat_with_tools_inner(
     resolved_model = model or settings.LLM_MODEL
     try:
         response = await litellm.acompletion(
-            model=resolved_model,
-            messages=messages,
-            api_key=api_key,
-            api_base=settings.LLM_API_BASE or None,
-            timeout=settings.LLM_TIMEOUT_SECONDS,
-            tools=tools,
-            tool_choice=tool_choice,
+            **_merge_litellm_kwargs(
+                {
+                    "model": resolved_model,
+                    "messages": messages,
+                    "api_key": api_key,
+                    "api_base": settings.LLM_API_BASE or None,
+                    "timeout": settings.LLM_TIMEOUT_SECONDS,
+                    "tools": tools,
+                    "tool_choice": tool_choice,
+                },
+                generation_name="chat_with_tools",
+            )
         )
         usage = _usage_from_response(response)
         message = response.choices[0].message
@@ -348,11 +385,16 @@ async def _embed_texts_inner(
     try:
         embed_model = model or settings.PLACES_EMBEDDING_MODEL
         response = await litellm.aembedding(
-            model=embed_model,
-            input=texts,
-            api_key=api_key,
-            timeout=settings.LLM_TIMEOUT_SECONDS,
-            dimensions=settings.PLACES_EMBEDDING_DIM,
+            **_merge_litellm_kwargs(
+                {
+                    "model": embed_model,
+                    "input": texts,
+                    "api_key": api_key,
+                    "timeout": settings.LLM_TIMEOUT_SECONDS,
+                    "dimensions": settings.PLACES_EMBEDDING_DIM,
+                },
+                generation_name="embed_texts",
+            )
         )
 
         def _index(row: object) -> int:

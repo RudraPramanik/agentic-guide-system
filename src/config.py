@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import ValidationError
+from pydantic import AliasChoices, Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -71,9 +71,13 @@ class Settings(BaseSettings):
     # Planner result cache TTL — used from P6.4; declared now
     PLANNER_CACHE_TTL_SECONDS: int = 3600
 
-    # Observability
+    # Observability — empty keys → NoOpTracer; LANGFUSE_BASE_URL accepted as alias
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""
+    LANGFUSE_HOST: str = Field(
+        default="https://cloud.langfuse.com",
+        validation_alias=AliasChoices("LANGFUSE_HOST", "LANGFUSE_BASE_URL"),
+    )
 
     # Geo
     NOMINATIM_USER_AGENT: str
@@ -100,6 +104,7 @@ class Settings(BaseSettings):
     GOOGLE_AUTH_URL: str = "https://accounts.google.com/o/oauth2/v2/auth"
     GOOGLE_TOKEN_URL: str = "https://oauth2.googleapis.com/token"
     GOOGLE_USERINFO_URL: str = "https://www.googleapis.com/oauth2/v3/userinfo"
+    FRONTEND_URL: str = "http://localhost:3000"
 
     # Rate limiting (in-memory backend; Redis at P6 via REDIS_URL)
     RATE_LIMIT_DEFAULT_REQUESTS: int = 60

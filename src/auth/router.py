@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.auth.exceptions import AccountInactiveError
 from src.auth.schemas import AuthMeResponse, TokenResponse, UserOut
 from src.auth.service import AuthService
-from src.config import get_settings
+from src.config import Settings, get_settings
 from src.core.database.session import get_db
 from src.core.exceptions import UnauthorizedError, WandrError
 from src.core.responses import ApiResponse
@@ -32,6 +32,31 @@ def _cookie_secure() -> bool:
 
 def _token_max_age() -> int:
     return get_settings().ACCESS_TOKEN_EXPIRE_DAYS * 24 * 3600
+
+
+def _frontend_base(settings: Settings) -> str:
+    return settings.FRONTEND_URL.rstrip("/") if settings.FRONTEND_URL else ""
+
+
+def _frontend_auth_url(settings: Settings, path: str, **query: str) -> str | None:
+    base = _frontend_base(settings)
+    if not base:
+        return None
+    url = f"{base}{path}"
+    if query:
+        url = f"{url}?{urlencode(query)}"
+    return url
+
+
+def _set_token_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        COOKIE_TOKEN,
+        token,
+        httponly=True,
+        samesite="lax",
+        secure=_cookie_secure(),
+        max_age=_token_max_age(),
+    )
 
 
 def _ensure_session_id(request: Request, response: Response) -> str:
@@ -73,13 +98,20 @@ async def google_oauth_callback(
     db: AsyncSession = Depends(get_db),
 ):
     """Handle OAuth redirect from Google; set wandr_token on success."""
+    settings = get_settings()
+
     if error:
+        done_url = _frontend_auth_url(settings, "/auth/error", reason=error)
+        if done_url:
+            return RedirectResponse(url=done_url)
         return RedirectResponse(url=f"/auth/error?reason={error}")
 
     if not code:
+        done_url = _frontend_auth_url(settings, "/auth/error", reason="oauth_failed")
+        if done_url:
+            return RedirectResponse(url=done_url)
         return RedirectResponse(url="/auth/error?reason=oauth_failed")
 
-    settings = get_settings()
     svc = AuthService(db)
 
     try:
@@ -98,7 +130,16 @@ async def google_oauth_callback(
         )
         token = create_access_token(user.id, user.email)
     except WandrError:
+        done_url = _frontend_auth_url(settings, "/auth/error", reason="oauth_failed")
+        if done_url:
+            return RedirectResponse(url=done_url)
         return RedirectResponse(url="/auth/error?reason=oauth_failed")
+
+    done_url = _frontend_auth_url(settings, "/auth/done")
+    if done_url:
+        response = RedirectResponse(url=done_url, status_code=302)
+        _set_token_cookie(response, token)
+        return response
 
     body = ApiResponse(
         data=TokenResponse(
@@ -107,14 +148,7 @@ async def google_oauth_callback(
         )
     )
     response = JSONResponse(content=body.model_dump(mode="json"))
-    response.set_cookie(
-        COOKIE_TOKEN,
-        token,
-        httponly=True,
-        samesite="lax",
-        secure=_cookie_secure(),
-        max_age=_token_max_age(),
-    )
+    _set_token_cookie(response, token)
     return response
 
 

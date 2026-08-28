@@ -1,30 +1,4 @@
-## Purpose
-
-Trace and token instrumentation of the LLM gateway and planner generation lifecycle via the existing NoOpTracer/Langfuse facade — fail-soft by contract, kill-switched by empty keys, so observability can never break a generation.
-
-## Requirements
-
-### Requirement: LLM gateway captures token usage
-The LLM gateway functions (`chat_completion`, `chat_with_tools`, `embed_texts`) SHALL capture the provider response's usage data (prompt/completion/total tokens where available) and expose it on their return values without changing existing return contracts. When the provider returns no usage data, capture MUST degrade to an empty/zero-value result rather than raising.
-
-#### Scenario: Usage captured from provider response
-- **WHEN** a provider response includes usage data
-- **THEN** the gateway's return value carries prompt, completion, and total token counts
-
-#### Scenario: Missing usage degrades silently
-- **WHEN** a provider response contains no usage object
-- **THEN** the call succeeds with empty/zero token counts and no exception
-
-### Requirement: Generation records token usage in evaluation
-A completed planner generation SHALL record actual cumulative token usage and LLM retry count into its `TripEvaluation` row (columns already exist). Generations that make zero LLM calls MUST record empty/zero values, not nulls-from-never-written.
-
-#### Scenario: Evaluation row reflects real tokens
-- **WHEN** a generation completes after N successful LLM calls
-- **THEN** the written `TripEvaluation` has `token_usage` summing across those calls and a non-zero `llm_retry_count` only if retries occurred
-
-#### Scenario: Zero-LLM-call generation still writes valid evaluation
-- **WHEN** a generation completes without any LLM call (e.g., fully cached or fallback path)
-- **THEN** `token_usage` is written as an empty/zero value and the evaluation row is created
+## MODIFIED Requirements
 
 ### Requirement: Fail-soft tracing facade with kill-switch
 Tracing SHALL be active only when both Langfuse keys are configured; with default empty keys the system MUST behave byte-identically to the untraced implementation (no-op tracer, no network calls, no log noise beyond startup). When keys are configured, the tracer MUST honor an optional host setting (`LANGFUSE_HOST`, accepting the existing `LANGFUSE_BASE_URL` env alias) so Cloud EU/US and self-hosted deployments route correctly. Any tracer failure (construction, span creation, flush) MUST be swallowed and logged once per process without propagating to the caller.
@@ -63,6 +37,8 @@ Each `PlannerService.generate()` invocation SHALL produce at most one logical tr
 #### Scenario: Session groups traces in Langfuse UI
 - **WHEN** a generate call includes a guest or authenticated session id and Langfuse keys are configured
 - **THEN** the parent trace carries that value as Langfuse `session_id` so Sessions view can group related generations
+
+## ADDED Requirements
 
 ### Requirement: LLM gateway uses Langfuse callback when tracing is active
 When both Langfuse keys are configured and a parent generation trace is active, LLM gateway calls (`chat_completion`, `chat_with_tools`, `embed_texts`) SHALL emit Langfuse generation observations via the official LiteLLM callback integration (or equivalent supported v2 handler), capturing model name and token usage automatically. When keys are empty or no parent trace is active, the gateway MUST NOT register callbacks and MUST behave identically to today. Duplicate manual generation spans for the same call MUST NOT be emitted when the callback already records the observation.
