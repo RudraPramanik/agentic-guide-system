@@ -64,16 +64,16 @@ Each `PlannerService.generate()` invocation SHALL produce at most one logical tr
 - **WHEN** a generate call includes a guest or authenticated session id and Langfuse keys are configured
 - **THEN** the parent trace carries that value as Langfuse `session_id` so Sessions view can group related generations
 
-### Requirement: LLM gateway uses Langfuse callback when tracing is active
-When both Langfuse keys are configured and a parent generation trace is active, LLM gateway calls (`chat_completion`, `chat_with_tools`, `embed_texts`) SHALL emit Langfuse generation observations via the official LiteLLM callback integration (or equivalent supported v2 handler), capturing model name and token usage automatically. When keys are empty or no parent trace is active, the gateway MUST NOT register callbacks and MUST behave identically to today. Duplicate manual generation spans for the same call MUST NOT be emitted when the callback already records the observation.
+### Requirement: LLM gateway emits generation observations when tracing is active
+When both Langfuse keys are configured and a parent generation trace is active, LLM gateway calls (`chat_completion`, `chat_with_tools`, `embed_texts`) SHALL emit Langfuse generation observations nested under that parent, capturing model name and token usage. When keys are empty or no parent trace is active, the gateway MUST NOT emit generation observations and MUST behave identically to today.
 
-#### Scenario: Active trace gets automatic LLM generations
+#### Scenario: Active trace gets LLM generations
 - **WHEN** `PlannerService.generate()` runs with Langfuse keys set and the agent invokes `chat_with_tools`
-- **THEN** Langfuse shows a generation observation under the parent trace with model and token fields populated without requiring duplicate manual span code for that call
+- **THEN** Langfuse shows a generation observation under the parent trace with model and token fields populated
 
-#### Scenario: NoOp path skips callback registration
+#### Scenario: NoOp path skips generation observations
 - **WHEN** Langfuse keys are empty
-- **THEN** LiteLLM calls proceed with no Langfuse callbacks and no extra network I/O
+- **THEN** LiteLLM calls proceed with no Langfuse generation observations and no extra network I/O
 
 ### Requirement: Tracer flush on application shutdown
 The FastAPI application lifespan SHALL call the tracer flush helper during shutdown so batched Langfuse events are delivered before the process exits (including dev reload and short CLI runs that call `flush_tracer()` explicitly).

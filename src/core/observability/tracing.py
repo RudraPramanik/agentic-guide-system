@@ -21,8 +21,9 @@ log = get_logger()
 
 _tracer: Langfuse | NoOpTracer | None = None
 _tracer_error_logged: bool = False
+# Module-scoped parent: LangGraph/LiteLLM hops do not reliably inherit ContextVars.
+# Planner generate is rate-limited; overlapping generates may interleave spans.
 _active_trace: Any | None = None
-_litellm_callback_registered: bool = False
 
 
 class NoOpTracer:
@@ -59,27 +60,11 @@ def _langfuse_keys_configured(settings: Any) -> bool:
 
 
 def _sync_langfuse_env(settings: Any) -> None:
-    """LiteLLM Langfuse callback reads credentials from os.environ."""
-    os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.LANGFUSE_PUBLIC_KEY)
-    os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.LANGFUSE_SECRET_KEY)
-    os.environ.setdefault("LANGFUSE_HOST", settings.LANGFUSE_HOST)
-
-
-def _ensure_litellm_langfuse_callback() -> None:
-    """Register LiteLLM success callback once when Langfuse is live."""
-    global _litellm_callback_registered
-    if _litellm_callback_registered:
-        return
-    try:
-        import litellm
-
-        if "langfuse" not in litellm.success_callback:
-            litellm.success_callback.append("langfuse")
-        if "langfuse" not in litellm._async_success_callback:
-            litellm._async_success_callback.append("langfuse")
-        _litellm_callback_registered = True
-    except Exception as exc:
-        _log_tracer_once("langfuse_litellm_callback_failed", exc)
+    """Keep process env aligned with Settings (SDK fallbacks)."""
+    os.environ["LANGFUSE_PUBLIC_KEY"] = settings.LANGFUSE_PUBLIC_KEY
+    os.environ["LANGFUSE_SECRET_KEY"] = settings.LANGFUSE_SECRET_KEY
+    os.environ["LANGFUSE_HOST"] = settings.LANGFUSE_HOST
+    os.environ["LANGFUSE_BASE_URL"] = settings.LANGFUSE_HOST
 
 
 def get_tracer() -> Langfuse | NoOpTracer:
@@ -101,7 +86,6 @@ def get_tracer() -> Langfuse | NoOpTracer:
                     secret_key=settings.LANGFUSE_SECRET_KEY,
                     host=settings.LANGFUSE_HOST,
                 )
-                _ensure_litellm_langfuse_callback()
                 return _tracer
             except Exception as exc:
                 log.warning("langfuse_init_failed", error=str(exc))
@@ -119,23 +103,12 @@ def is_langfuse_tracing_active() -> bool:
 
 
 def get_active_trace_id() -> str | None:
-    """Return active parent trace id for LiteLLM nesting, or None."""
+    """Return active parent trace id, or None."""
     trace = _active_trace
     if trace is None:
         return None
     trace_id = getattr(trace, "trace_id", None) or getattr(trace, "id", None)
     return str(trace_id) if trace_id else None
-
-
-def langfuse_litellm_metadata(*, generation_name: str) -> dict[str, Any] | None:
-    """Metadata for LiteLLM to nest generations under the active parent trace."""
-    trace_id = get_active_trace_id()
-    if trace_id is None or not is_langfuse_tracing_active():
-        return None
-    return {
-        "existing_trace_id": trace_id,
-        "generation_name": generation_name,
-    }
 
 
 def flush_tracer() -> None:
@@ -204,12 +177,11 @@ def safe_generation_span(
     latency_ms: float,
     retry_count: int,
 ) -> None:
-    """Emit a generation span under the active trace when present. Fail-soft."""
-    if is_langfuse_tracing_active() and get_active_trace_id() is not None:
+    """Emit a generation span under the active parent trace. Fail-soft."""
+    parent = _active_trace
+    if parent is None:
         return
     try:
-        parent = _active_trace
-        tracer = get_tracer()
         kwargs: dict[str, Any] = {
             "name": name,
             "model": model,
@@ -223,10 +195,10 @@ def safe_generation_span(
                 "total": usage.total_tokens,
             },
         }
-        if parent is not None and hasattr(parent, "generation"):
+        if hasattr(parent, "generation"):
             gen = parent.generation(**kwargs)
         else:
-            gen = tracer.generation(**kwargs)
+            gen = get_tracer().generation(**kwargs)
         if hasattr(gen, "end"):
             gen.end()
     except Exception as exc:
