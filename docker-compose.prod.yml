@@ -1,13 +1,17 @@
 # Production VPS — API + TLS proxy only.
 # Data plane (PostGIS, Qdrant, Redis) is hosted; set env via .env.production.
 # Local PostGIS/Qdrant/Redis/API: use root docker-compose.yml (dev-only).
+#
+# Usage: docker compose --env-file .env.production -f docker-compose.prod.yml up -d
+# CI/CD sets WANDR_IMAGE to ghcr.io/<owner>/wandr-api:<sha> — do not build on 1GB VPS.
 
 services:
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: wandr-api:prod
+    image: ${WANDR_IMAGE:-wandr-api:prod}
+    # Local manual build only (not on VPS):
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
     env_file:
       - .env.production
     expose:
@@ -16,6 +20,8 @@ services:
 
   caddy:
     image: caddy:2-alpine
+    environment:
+      WANDR_API_HOST: ${WANDR_API_HOST:-api.example.com}
     ports:
       - "80:80"
       - "443:443"

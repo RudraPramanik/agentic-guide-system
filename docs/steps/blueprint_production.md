@@ -4,9 +4,11 @@
 > **Not in scope:** workers/queues, self-hosted DB/Qdrant/Redis on the box, frontend hosting, multi-worker scale-out.  
 > **Dev infra:** root `docker-compose.yml` (PostGIS + Qdrant + Redis + API) is **local development only** — never use it as the production data plane.
 
-**OpenSpec change:** `production-vps-hosted`  
+**OpenSpec change:** `production-vps-deploy`  
 **Image:** `Dockerfile` + `requirements-prod.txt` (no MiniLM/torch)  
-**Optional VPS compose:** `docker-compose.prod.yml` (api + Caddy only)
+**Compose:** `docker-compose.prod.yml` (api + Caddy only)  
+**Env template:** `.env.production.example` → copy to `.env.production` on VPS (never commit)  
+**Ops:** `ops/migrate.sh` → `ops/deploy.sh` → `ops/health.sh` (see §3)
 
 ---
 
@@ -63,7 +65,7 @@
 
 ## 2. Env vars to populate (production)
 
-Create `.env.production` on the VPS (never commit secrets).
+Create `.env.production` on the VPS from `.env.production.example` (never commit secrets).
 
 | Variable | Prod value |
 |----------|------------|
@@ -86,7 +88,7 @@ Create `.env.production` on the VPS (never commit secrets).
 | `NOMINATIM_USER_AGENT` | identifiable contact string (OSM policy) |
 | Geo URLs | defaults OK for MVP (`NOMINATIM_BASE_URL`, `OVERPASS_API_URL`, `OSRM_BASE_URL`) |
 
-Also see commented block at the bottom of `.env.example`.
+Also see `.env.production.example` (committed template with correct Settings field names).
 
 **Dev note:** local MiniLM uses `PLACES_EMBEDDING_BACKEND=local`, dim `384`, model `sentence-transformers/all-MiniLM-L6-v2` against root `docker-compose.yml` (`docker compose up --build` starts PostGIS, Qdrant, Redis, and the API). That compose file is still **not** the VPS data plane.
 
@@ -94,14 +96,25 @@ Also see commented block at the bottom of `.env.example`.
 
 ## 3. Build & run API on the VPS
 
+**First deploy order (hosted data plane):**
+
+1. Copy `.env.production.example` → `.env.production`; fill secrets; set `WANDR_API_HOST` and `WANDR_GHCR_OWNER`.
+2. `ops/migrate.sh` — Alembic against hosted `DATABASE_URL`.
+3. §5 Qdrant dim cutover + `scripts/index_places.py` if moving from local MiniLM 384 → hosted 768.
+4. `ops/deploy.sh [sha]` — pull GHCR image (or local `wandr-api:prod`) and `compose up -d`.
+5. `ops/health.sh` — `GET /api/v1/health` over HTTPS.
+6. Planner SSE smoke (§7).
+
 ```bash
-# On a machine with Docker (build locally or on VPS)
+# Build image off the 1GB VPS (laptop or CI), not on the box:
 docker build -t wandr-api:prod -f Dockerfile .
 
-# Or compose (api + Caddy):
-# 1) Copy .env.production and set WANDR_API_HOST in Caddy env / file
-# 2) Edit deploy/Caddyfile hostname
-docker compose -f docker-compose.prod.yml up -d --build
+# Or GHCR image from .github/workflows/deploy.yml (workflow_dispatch)
+
+# On VPS after .env.production is ready:
+./ops/migrate.sh
+./ops/deploy.sh          # or ./ops/deploy.sh <git-sha> after CI push
+./ops/health.sh
 ```
 
 Default process: `uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 1`.
@@ -112,7 +125,7 @@ Default process: `uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 1`.
 
 ## 4. Migrate DB (not in app lifespan)
 
-Against **hosted** `DATABASE_URL`:
+Prefer `ops/migrate.sh`. Equivalent one-off:
 
 ```bash
 # Example: one-off container with same image + env
@@ -168,6 +181,8 @@ Repeat per destination (or your batch process). Enrich first if summaries/tags m
 | `requirements-prod.txt` | Prod deps (no sentence-transformers) |
 | `docker-compose.prod.yml` | VPS: api + Caddy |
 | `docker-compose.yml` | **Dev only** PostGIS + Qdrant + Redis + API |
+| `.env.production.example` | Committed prod env template (no secrets) |
+| `ops/*.sh` | migrate, deploy, health, status, logs, rollback, backup |
 | `deploy/Caddyfile` | TLS + SSE flush |
 | `deploy/nginx.conf.example` | Nginx SSE alternative |
 | `.env.example` | Dev defaults + commented prod checklist |

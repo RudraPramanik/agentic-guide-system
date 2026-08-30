@@ -1,7 +1,11 @@
-# Secrets — keep .env.example tracked
+# Secrets — keep env templates tracked
 .env
 .env.*
 !.env.example
+!.env.production.example
+
+# VPS deploy stamps (written by ops/deploy.sh)
+.deploy-*
 
 # Python
 __pycache__/

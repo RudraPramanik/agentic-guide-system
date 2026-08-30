@@ -1,5 +1,5 @@
-# Replace api.example.com with your API hostname (DNS A/AAAA → this VPS).
-# Caddy obtains TLS automatically.
+# TLS hostname: set WANDR_API_HOST in .env.production (passed via docker-compose.prod.yml).
+# DNS A/AAAA must point to this VPS. Caddy obtains TLS automatically.
 
 {$WANDR_API_HOST:api.example.com} {
 	encode gzip
