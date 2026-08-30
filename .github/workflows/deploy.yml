@@ -1,0 +1,78 @@
+# Phase B-lite CD — build + push to GHCR, optional SSH deploy via ops/*.sh
+#
+# Required GitHub Secrets (repository settings):
+#   VPS_HOST          — public IP or hostname of Oracle VPS
+#   VPS_USER          — SSH user (e.g. ubuntu)
+#   VPS_SSH_KEY       — private key for deploy user
+#   VPS_APP_DIR       — optional; default ~/guideagent (repo path on VPS)
+#
+# VPS one-time setup:
+#   - docker login ghcr.io (PAT with read:packages)
+#   - clone repo, cp .env.production.example → .env.production, fill secrets
+#   - set WANDR_GHCR_OWNER and WANDR_API_HOST in .env.production
+#
+# Triggers: manual workflow_dispatch only (enable push-to-main after secrets verified).
+
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_ssh_deploy:
+        description: Build and push image only (no VPS SSH)
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/wandr-api
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+  deploy:
+    needs: build-push
+    if: ${{ inputs.skip_ssh_deploy != true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH migrate, deploy, health
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            APP_DIR="${{ secrets.VPS_APP_DIR }}"
+            if [ -z "$APP_DIR" ]; then APP_DIR="$HOME/guideagent"; fi
+            cd "$APP_DIR"
+            export WANDR_GHCR_OWNER="${{ github.repository_owner }}"
+            export WANDR_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+            ./ops/migrate.sh
+            ./ops/deploy.sh "${{ github.sha }}"
+            ./ops/health.sh

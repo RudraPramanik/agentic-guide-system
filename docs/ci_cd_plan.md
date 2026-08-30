@@ -4,8 +4,9 @@
 > CI/CD rollout in two deliberately separated phases: **minimal CI now** (test gate)
 > and **full CD later** (auto-deploy), triggered by deploy pain — not by calendar.
 >
-> Status as of 2026-08-24: **no pipelines exist** (no `.github/workflows/`).
-> Deployment is manual via `ops/*.sh` + `docker-compose.prod.yml`.
+> Status as of 2026-08-30: **Phase A live** (`.github/workflows/ci.yml` — pytest + docker build).  
+> **Phase B-lite in progress** (`.github/workflows/deploy.yml` — GHCR push + SSH `ops/*.sh`; `workflow_dispatch` only).  
+> Deployment on VPS: `ops/*.sh` + `docker-compose.prod.yml` + `.env.production` (from `.env.production.example`).
 
 ---
 
@@ -133,10 +134,10 @@ THEN         →  P1.Stage 1  (safe under CI already)
 THEN         →  P2.Stages 1→2→3→4  (observability + harness)
 THEN         →  P1.Stage 2  (RRF cutover, harness-gated)
 LATER        →  P1.Stage 3  (only if evidence demands)
-MUCH LATER   →  Phase B: full CD (auto-deploy) whenever deploy pain appears
+MUCH LATER   →  Phase B: full CD (auto-deploy on every main merge) after VPS secrets verified
 ```
 
 Rationale: P2.Stage 4 (golden harness) lands *before* P1.Stage 2 (RRF cutover),
-so the retrieval change is proven by the harness instead of hoped-for. Phase B
-stays deferred because none of the v7 stages depend on auto-deploy — the manual
-`ops/*.sh` flow works today.
+so the retrieval change is proven by the harness instead of hoped-for. Phase B-lite
+(`deploy.yml`) ships with manual dispatch first; enable push-to-main deploy when
+`VPS_*` secrets and `.env.production` on the box are validated.

@@ -9,7 +9,7 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-08-27 · **Phase:** post-P7 / v7 · **Next step:** FE companion poll prepare → generate → trip; VPS via `docs/steps/blueprint_production.md`; V6.2/V6.3 only if future live evals show retrieval-dominant misses (currently deferred)
+**Last updated:** 2026-08-30 · **Phase:** post-P7 / v7 · **Next step:** first VPS deploy — copy `.env.production.example` → `.env.production` on Oracle box, `ops/migrate.sh` → `ops/deploy.sh` → `ops/health.sh`; then FE → staging API URL
 
 ---
 
@@ -210,7 +210,7 @@ P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode 
 
 trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/generate` **real** (6.2); planner cache + Redis/in-memory backends **real** (6.4). evaluation HTTP still stub (generation persist + locked flag-only `mark_trip_edited` **real**); `src/auth/dependencies.py` — still step 0.1 placeholders. Planner **tools** + **orchestration** + **graph** + `PlannerService.generate` (5.1–5.14) are **real**. Route geometry (`route_polyline`, schedule polylines) **real** (6.0); shared `populate_leg_polylines` **real** (7.1); TripService day surgery + preserve-order schedule **real** (7.2); trips edit HTTP + user-keyed `rate_limit_trip_edit` **real** (7.3); full edit/replan pytest **real** (7.4); evaluation flag polish **real** (7.5); P7 smoke + context close-out **real** (7.6). Clarification path ends at END without graph `record_evaluation`; service always calls `record_evaluation` after invoke/timeout. Search + enrich/index scripts **real** (P3). `travel_engine/*` through validator **real** (P4). **P7 complete** — do not claim evaluation HTTP done.
 
-**Deployment / frontend notes:** Operator SOP `docs/steps/blueprint_production.md` — VPS API Docker (`Dockerfile`, `docker-compose.prod.yml` api+Caddy); root `docker-compose.yml` is **dev-only** (PostGIS + Qdrant + Redis + API). Proxy MUST not buffer `/api/v1/planner/generate` (Caddy `flush_interval -1` / nginx `proxy_buffering off`). Frontend must use `fetch()` + manual SSE parsing — native `EventSource` is GET-only and cannot POST. After login, retain `wandr_session` cookie to `POST /trips/{id}/claim`. Empty `REDIS_URL` → in-memory rate limit + planner cache. **FE stack + integration contract:** `docs/FE_guide.md` (sibling Next.js repo; env-swappable `NEXT_PUBLIC_API_URL`). **FE phased build bible (v1.1 SSOT):** `docs/blueprint_frontend.md` (principles, AGENT, F0–F7 — not a Progress-table phase; do not use retired `front_blueprint_2.md`).
+**Deployment / frontend notes:** Operator SOP `docs/steps/blueprint_production.md` + VPS log `docs/vps.md` — `.env.production.example`, `ops/*.sh` (migrate/deploy/health), `docker-compose.prod.yml` (api+Caddy, `WANDR_IMAGE` from GHCR); root `docker-compose.yml` is **dev-only**. CD: `.github/workflows/deploy.yml` (`workflow_dispatch`). Proxy MUST not buffer `/api/v1/planner/generate`. FE: `fetch()` + manual SSE (not `EventSource`); `docs/FE_guide.md`. Live API URL TBD after first VPS bring-up.
 
 ---
 

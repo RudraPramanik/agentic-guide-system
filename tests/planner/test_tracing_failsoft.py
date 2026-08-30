@@ -252,30 +252,35 @@ def test_end_generation_trace_updates_without_end() -> None:
     trace.end.assert_not_called()
 
 
-def test_langfuse_litellm_metadata_when_active() -> None:
-    trace = MagicMock()
-    trace.trace_id = "abc-123"
-    with (
-        patch(
-            "src.core.observability.tracing.is_langfuse_tracing_active",
-            return_value=True,
-        ),
-        patch("src.core.observability.tracing._active_trace", trace),
-    ):
-        from src.core.observability.tracing import langfuse_litellm_metadata
+def test_safe_generation_span_emits_under_parent() -> None:
+    from src.core.llm.client import LLMUsage
+    from src.core.observability.tracing import safe_generation_span
 
-        meta = langfuse_litellm_metadata(generation_name="chat_completion")
-    assert meta == {
-        "existing_trace_id": "abc-123",
-        "generation_name": "chat_completion",
-    }
+    parent = MagicMock()
+    gen = MagicMock()
+    parent.generation.return_value = gen
+    with patch("src.core.observability.tracing._active_trace", parent):
+        safe_generation_span(
+            name="chat_with_tools",
+            model="test-model",
+            usage=LLMUsage(prompt_tokens=1, completion_tokens=2, total_tokens=3),
+            latency_ms=12.5,
+            retry_count=0,
+        )
+    parent.generation.assert_called_once()
+    assert parent.generation.call_args.kwargs["name"] == "chat_with_tools"
+    gen.end.assert_called_once()
 
 
-def test_langfuse_litellm_metadata_none_when_inactive() -> None:
-    with patch(
-        "src.core.observability.tracing.is_langfuse_tracing_active",
-        return_value=False,
-    ):
-        from src.core.observability.tracing import langfuse_litellm_metadata
+def test_safe_generation_span_noop_without_parent() -> None:
+    from src.core.llm.client import LLMUsage
+    from src.core.observability.tracing import safe_generation_span
 
-        assert langfuse_litellm_metadata(generation_name="chat_completion") is None
+    with patch("src.core.observability.tracing._active_trace", None):
+        safe_generation_span(
+            name="chat_with_tools",
+            model="test-model",
+            usage=LLMUsage(),
+            latency_ms=1.0,
+            retry_count=0,
+        )

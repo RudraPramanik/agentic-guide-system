@@ -17,6 +17,10 @@ from src.config import get_settings
 from src.core.database.session import get_db
 from src.core.security.jwt import TokenPayload
 from src.core.security.permissions import optional_auth
+from src.core.observability.tracing import (
+    end_generation_trace,
+    start_generation_trace,
+)
 from src.destinations.exceptions import DestinationNotReadyError
 from src.destinations.service import DestinationService
 from src.planner.cache import (
@@ -74,7 +78,30 @@ async def generate_plan(
         from_cache = cached_state is not None
 
         if from_cache:
-            task = asyncio.create_task(_replay_cached(cached_state, on_event))
+
+            async def _run_cached() -> dict[str, Any]:
+                start_generation_trace(
+                    name="planner.generate.cache_hit",
+                    session_id=session_id,
+                    user_id=str(user_id) if user_id is not None else None,
+                    metadata={
+                        "destination_id": str(body.destination_id),
+                        "from_cache": True,
+                    },
+                )
+                try:
+                    return await _replay_cached(cached_state, on_event)
+                finally:
+                    end_generation_trace(
+                        outcome="cache_hit",
+                        metadata={
+                            "destination_id": str(body.destination_id),
+                            "session_id": session_id,
+                            "from_cache": True,
+                        },
+                    )
+
+            task = asyncio.create_task(_run_cached())
         else:
             task = asyncio.create_task(
                 PlannerService().generate(
