@@ -12,5 +12,5 @@ require_env_file
 IMAGE="$(resolve_image)"
 
 echo "==> migrate: $IMAGE (env: $ENV_FILE)"
-docker run --rm --env-file "$ENV_FILE" "$IMAGE" alembic upgrade head
+docker run --rm --env-file "$ENV_FILE" "$IMAGE" python -m alembic upgrade head
 echo "==> migrate: done"
