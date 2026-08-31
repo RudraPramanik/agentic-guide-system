@@ -129,7 +129,7 @@ class Settings(BaseSettings):
     SEARCH_GEOCODE_TIMEOUT_SECONDS: float = 8.0
 
     # CORS (credentialed; explicit origins only — never "*" with credentials)
-    CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]
+    CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:3000","https://tripai-stagging.vercel.app",]
 
 
 @lru_cache
