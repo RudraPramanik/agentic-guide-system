@@ -14,6 +14,7 @@ from tenacity import (
 )
 
 from src.config import get_settings
+from src.core.exceptions import ExternalServiceError
 from src.core.observability.logging import get_logger
 from src.geo.schemas import GeocodedPlace
 
@@ -25,6 +26,9 @@ _last_request_at: float = 0.0
 _cache: dict[str, GeocodedPlace | None] = {}
 _cache_lock = asyncio.Lock()
 _cache_hits: int = 0
+
+# Policy / rate-limit responses — surface as 502 upstream, do not cache as miss.
+_NOMINATIM_POLICY_STATUS = frozenset({403, 429})
 
 
 def _normalize(query: str) -> str:
@@ -52,21 +56,38 @@ async def _throttle() -> None:
 async def _fetch_nominatim(query: str) -> list[dict] | None:
     """
     GET {NOMINATIM_BASE_URL}/search.
-    On 4xx: log warning, return None (no retry).
+    On 403/429: raise ExternalServiceError (no retry, no cache).
+    On other 4xx: log warning, return None (no retry).
     On success: parse JSON list.
     """
     settings = get_settings()
+    params: dict[str, str | int] = {
+        "q": query,
+        "format": "json",
+        "limit": 1,
+        "addressdetails": 1,
+    }
+    api_key = (settings.NOMINATIM_API_KEY or "").strip()
+    if api_key:
+        params["key"] = api_key
+
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
         response = await client.get(
             f"{settings.NOMINATIM_BASE_URL.rstrip('/')}/search",
-            params={
-                "q": query,
-                "format": "json",
-                "limit": 1,
-                "addressdetails": 1,
-            },
+            params=params,
             headers={"User-Agent": settings.NOMINATIM_USER_AGENT},
         )
+        if response.status_code in _NOMINATIM_POLICY_STATUS:
+            logger.warning(
+                "nominatim_client_error",
+                status_code=response.status_code,
+                query=query,
+            )
+            raise ExternalServiceError(
+                service="nominatim",
+                message="Geocoding service rejected the request",
+                details={"status_code": response.status_code, "query": query},
+            )
         if 400 <= response.status_code < 500:
             logger.warning(
                 "nominatim_client_error",
@@ -111,7 +132,9 @@ async def geocode(query: str) -> GeocodedPlace | None:
     """
     Public entry point. Manual cache — NOT lru_cache.
 
-    Returns GeocodedPlace on success, None on failure (never raises httpx to callers).
+    Returns GeocodedPlace on success, None on soft miss/failure.
+    Raises ExternalServiceError on Nominatim policy/rate rejection (403/429).
+    Never raises httpx exceptions to callers.
     """
     global _cache_hits
 
@@ -128,6 +151,9 @@ async def geocode(query: str) -> GeocodedPlace | None:
         raw_results = await _fetch_nominatim(normalized)
         if raw_results:
             result = _parse_result(raw_results[0])
+    except ExternalServiceError:
+        # Do not negative-cache policy failures — operator may fix UA/URL next request.
+        raise
     except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPError) as exc:
         logger.warning(
             "nominatim_geocode_failed",

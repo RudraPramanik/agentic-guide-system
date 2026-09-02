@@ -220,3 +220,47 @@ async def test_oauth_callback_success_json_fallback_without_frontend_url(
     assert data["data"]["user"]["email"] == "fallback@wandr.dev"
     assert "wandr_token=" in r.headers.get("set-cookie", "").lower()
 
+
+def test_cookie_samesite_production_vs_dev() -> None:
+    from src.auth.router import _cookie_samesite, _cookie_secure
+
+    prod = get_settings().model_copy(update={"ENVIRONMENT": "production"})
+    with patch("src.auth.router.get_settings", return_value=prod):
+        assert _cookie_samesite() == "none"
+        assert _cookie_secure() is True
+
+    local = get_settings().model_copy(update={"ENVIRONMENT": "development"})
+    with patch("src.auth.router.get_settings", return_value=local):
+        assert _cookie_samesite() == "lax"
+        assert _cookie_secure() is False
+
+
+@pytest.mark.asyncio
+async def test_auth_me_session_cookie_samesite_lax_by_default(client) -> None:
+    r = await client.get("/api/v1/auth/me")
+    set_cookie = r.headers.get("set-cookie", "").lower()
+    assert "wandr_session=" in set_cookie
+    assert "samesite=lax" in set_cookie
+
+
+@pytest.mark.asyncio
+async def test_auth_me_session_cookie_samesite_none_in_production(client) -> None:
+    prod = get_settings().model_copy(update={"ENVIRONMENT": "production"})
+    with patch("src.auth.router.get_settings", return_value=prod):
+        r = await client.get("/api/v1/auth/me")
+    set_cookie = r.headers.get("set-cookie", "").lower()
+    assert "wandr_session=" in set_cookie
+    assert "samesite=none" in set_cookie
+    assert "secure" in set_cookie
+
+
+@pytest.mark.asyncio
+async def test_logout_delete_cookie_matches_production_flags(client) -> None:
+    prod = get_settings().model_copy(update={"ENVIRONMENT": "production"})
+    with patch("src.auth.router.get_settings", return_value=prod):
+        r = await client.post("/api/v1/auth/logout")
+    set_cookie = r.headers.get("set-cookie", "").lower()
+    assert "wandr_token=" in set_cookie
+    assert "samesite=none" in set_cookie
+    assert "secure" in set_cookie
+

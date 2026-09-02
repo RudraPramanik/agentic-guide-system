@@ -12,7 +12,12 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.auth.router import COOKIE_SESSION, SESSION_MAX_AGE_SECONDS, _cookie_secure
+from src.auth.router import (
+    COOKIE_SESSION,
+    SESSION_MAX_AGE_SECONDS,
+    _cookie_samesite,
+    _cookie_secure,
+)
 from src.config import get_settings
 from src.core.database.session import get_db
 from src.core.security.jwt import TokenPayload
@@ -181,7 +186,7 @@ async def generate_plan(
         COOKIE_SESSION,
         session_id,
         httponly=True,
-        samesite="lax",
+        samesite=_cookie_samesite(),
         secure=_cookie_secure(),
         max_age=SESSION_MAX_AGE_SECONDS,
     )

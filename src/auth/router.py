@@ -30,6 +30,11 @@ def _cookie_secure() -> bool:
     return get_settings().ENVIRONMENT == "production"
 
 
+def _cookie_samesite() -> str:
+    """Cross-site SPA (Vercel → API) needs None+Secure; local same-host keeps Lax."""
+    return "none" if get_settings().ENVIRONMENT == "production" else "lax"
+
+
 def _token_max_age() -> int:
     return get_settings().ACCESS_TOKEN_EXPIRE_DAYS * 24 * 3600
 
@@ -53,7 +58,7 @@ def _set_token_cookie(response: Response, token: str) -> None:
         COOKIE_TOKEN,
         token,
         httponly=True,
-        samesite="lax",
+        samesite=_cookie_samesite(),
         secure=_cookie_secure(),
         max_age=_token_max_age(),
     )
@@ -65,7 +70,7 @@ def _ensure_session_id(request: Request, response: Response) -> str:
         COOKIE_SESSION,
         session_id,
         httponly=True,
-        samesite="lax",
+        samesite=_cookie_samesite(),
         secure=_cookie_secure(),
         max_age=SESSION_MAX_AGE_SECONDS,
     )
@@ -190,5 +195,9 @@ async def logout():
     """Clear auth cookie. No auth required."""
     body = ApiResponse(data={"message": "Logged out"})
     response = JSONResponse(content=body.model_dump(mode="json"))
-    response.delete_cookie(COOKIE_TOKEN)
+    response.delete_cookie(
+        COOKIE_TOKEN,
+        samesite=_cookie_samesite(),
+        secure=_cookie_secure(),
+    )
     return response
