@@ -304,3 +304,22 @@ VPS baseline is complete (swap, UFW, amd64). Application deploy SOP: `docs/steps
 **CI/CD:** GitHub Actions `deploy` workflow (`workflow_dispatch`) — set secrets `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, optional `VPS_APP_DIR`. VPS must `docker login ghcr.io` once.
 
 **Do not** `docker build` on the 1GB VPS — pull from GHCR or transfer a prebuilt image.
+
+---
+
+## Geo upstream troubleshooting
+
+Destination search and prepare depend on external geo APIs. Auth/Redis/Qdrant healthy does **not** mean search works.
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| `GET /api/v1/destinations/search?q=London` → **502** `external_service_error` (service=`nominatim`) | Public Nominatim blocked UA or cloud IP | Set real `NOMINATIM_USER_AGENT` (email); if still 403, set `NOMINATIM_BASE_URL` + `NOMINATIM_API_KEY` to a Nominatim-compatible free tier |
+| Search → **404** `not_found` | True miss or geocode timeout | Try a known city; check `SEARCH_GEOCODE_TIMEOUT_SECONDS` |
+| Search 200 but prepare/places empty | Overpass 4xx from VPS | Set free `OPENTRIPMAP_API_KEY` / `GEOAPIFY_API_KEY`; prefer `PLACES_SOURCES=opentripmap,geoapify` |
+
+Probe from the API container (after env change, restart API so process geocode cache clears):
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml exec api \
+  python -c 'import httpx,os; u=os.environ["NOMINATIM_BASE_URL"]+"/search"; r=httpx.get(u,params={"q":"London","format":"json","limit":1},headers={"User-Agent":os.environ["NOMINATIM_USER_AGENT"]},timeout=10); print(r.status_code); print(r.text[:300])'
+```

@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     # Geo
     NOMINATIM_USER_AGENT: str
     NOMINATIM_BASE_URL: str = "https://nominatim.openstreetmap.org"
+    # Optional key for Nominatim-compatible providers (LocationIQ-style query `key`)
+    NOMINATIM_API_KEY: str = ""
     OVERPASS_API_URL: str = "https://overpass-api.de/api/interpreter"
     OSRM_BASE_URL: str = "https://router.project-osrm.org"
     # Bounded parallelism for OsrmRoutingProvider.travel_matrix (public OSRM-safe)

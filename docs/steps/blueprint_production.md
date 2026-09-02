@@ -85,10 +85,14 @@ Create `.env.production` on the VPS from `.env.production.example` (never commit
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | OAuth web client |
 | `GOOGLE_REDIRECT_URI` | `https://<api-host>/api/v1/auth/callback` |
 | `CORS_ALLOWED_ORIGINS` | JSON list of explicit app origins — **never** `*` with cookies |
-| `NOMINATIM_USER_AGENT` | identifiable contact string (OSM policy) |
-| Geo URLs | defaults OK for MVP (`NOMINATIM_BASE_URL`, `OVERPASS_API_URL`, `OSRM_BASE_URL`) |
+| `NOMINATIM_USER_AGENT` | **Real contact email** in the string (OSM policy). Never `contact@example.com` |
+| `NOMINATIM_BASE_URL` / `NOMINATIM_API_KEY` | Default public OSM often **403s from cloud/VPS IPs**. If blocked after a real UA, point `NOMINATIM_BASE_URL` at a Nominatim-compatible free-tier provider and set `NOMINATIM_API_KEY` |
+| `OVERPASS_API_URL` / `PLACES_SOURCES` | Public Overpass may 4xx from datacenters — set a mirror or prefer `opentripmap,geoapify` (free keys) |
+| `OSRM_BASE_URL` | public default OK for MVP |
 
 Also see `.env.production.example` (committed template with correct Settings field names).
+
+**Geo troubleshooting:** `GET /destinations/search` returning **502** `external_service_error` (service=`nominatim`) means the geocoder upstream rejected the request — fix UA or swap provider. **404** `not_found` means a true miss (or geocode timeout). Empty places after search works → check Overpass / `PLACES_SOURCES` + free API keys.
 
 **Dev note:** local MiniLM uses `PLACES_EMBEDDING_BACKEND=local`, dim `384`, model `sentence-transformers/all-MiniLM-L6-v2` against root `docker-compose.yml` (`docker compose up --build` starts PostGIS, Qdrant, Redis, and the API). That compose file is still **not** the VPS data plane.
 

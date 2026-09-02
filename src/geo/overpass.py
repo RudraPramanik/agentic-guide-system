@@ -116,7 +116,10 @@ async def _post_overpass(query: str) -> dict:
         response = await client.post(
             settings.OVERPASS_API_URL,
             data={"data": query},
-            headers={"User-Agent": settings.NOMINATIM_USER_AGENT},
+            headers={
+                "User-Agent": settings.NOMINATIM_USER_AGENT,
+                "Accept": "application/json",
+            },
         )
         if 400 <= response.status_code < 500:
             logger.warning(

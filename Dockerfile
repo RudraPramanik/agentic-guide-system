@@ -9,7 +9,7 @@ COPY requirements-prod.txt .
 RUN pip install --no-cache-dir -r requirements-prod.txt
 
 COPY alembic.ini .
-COPY alembic ./alembic
+COPY migrations ./migrations
 COPY src ./src
 COPY scripts ./scripts
 
