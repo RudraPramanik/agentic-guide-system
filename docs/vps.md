@@ -305,6 +305,8 @@ VPS baseline is complete (swap, UFW, amd64). Application deploy SOP: `docs/steps
 
 **Do not** `docker build` on the 1GB VPS — pull from GHCR or transfer a prebuilt image.
 
+**Staging FE on another origin** (e.g. Vercel → `api.exporaai.xyz`): production cookies must be `SameSite=None; Secure` (see blueprint §6). Env-only restarts are not enough — ship a new API image after that change; clear browser cookies after deploy.
+
 ---
 
 ## Geo upstream troubleshooting

@@ -162,8 +162,9 @@ Repeat per destination (or your batch process). Enrich first if summaries/tags m
 ## 6. Google OAuth + CORS
 
 - OAuth redirect: `https://<api-host>/api/v1/auth/callback` in Google Cloud Console **and** `GOOGLE_REDIRECT_URI`.  
-- Cookies stay `SameSite=Lax` (MVP Option A) — when a frontend exists, put it on the **same registrable domain** as the API.  
-- `CORS_ALLOWED_ORIGINS` must list explicit HTTPS origins (JSON array).
+- **Cookie SameSite:** when `ENVIRONMENT=production`, `wandr_token` / `wandr_session` use `SameSite=None; Secure` so a cross-origin SPA (e.g. Vercel staging → API host) can send credentials on fetch/SSE. Non-production keeps `SameSite=Lax`. After deploy, clear old cookies and re-login.  
+- `CORS_ALLOWED_ORIGINS` must list explicit HTTPS origins (JSON array) including the staging/production FE origin; never `*` with cookies.  
+- `FRONTEND_URL` must be the SPA origin used for OAuth success/error redirects.
 
 ---
 
