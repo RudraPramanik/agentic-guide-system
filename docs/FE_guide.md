@@ -114,7 +114,7 @@ Prefer one style URL over scattering keys. If you build the MapTiler URL in code
 
 | Variable | Purpose |
 |----------|---------|
-| `CORS_ALLOWED_ORIGINS` | Must include FE origin (e.g. `["http://localhost:3000"]` or `["https://app.…"]`) — never `*` with cookies |
+| `CORS_ALLOWED_ORIGINS` | Must include FE origin (e.g. `["http://localhost:3000"]` or `["https://app.…"]`) — never `*` with cookies. Local: do not copy a Vercel-only list from production into laptop `.env`; that blocks `Origin: http://localhost:3000` even when the API is healthy |
 | `GOOGLE_REDIRECT_URI` | API callback URL |
 | `GOOGLE_CLIENT_ID` / `SECRET` | OAuth |
 | Data plane | `DATABASE_URL`, `QDRANT_*`, `REDIS_URL`, `LLM_*`, embeddings |
@@ -141,7 +141,7 @@ FastAPI owns auth. The FE is a **cookie client**.
 5. Logout: `POST {API_URL}/api/v1/auth/logout` with credentials.
 6. After login, keep the same browser session so `wandr_session` still matches for `POST /trips/{id}/claim`.
 
-Local: `localhost:3000` ↔ `localhost:8000` is fine with CORS + Lax.  
+Local: `localhost:3000` ↔ `localhost:8000` is fine with CORS + Lax. If local `.env` lists only the Vercel origin, the browser will hide catalog responses (`GET /places`, destination search) even though curl to `:8000` works.  
 Prod: same registrable domain (`app.` + `api.`).
 
 ---

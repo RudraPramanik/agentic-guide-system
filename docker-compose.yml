@@ -63,7 +63,7 @@ services:
     volumes:
       - ./.env:/app/.env:ro
       - ./src:/app/src
-      - ./alembic:/app/alembic
+      - ./migrations:/app/migrations
       - ./scripts:/app/scripts
       - ./alembic.ini:/app/alembic.ini:ro
       - huggingface_cache:/root/.cache/huggingface

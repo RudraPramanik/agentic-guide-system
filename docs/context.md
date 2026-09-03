@@ -263,7 +263,7 @@ python scripts/test_p4_smoke.py   # offline Fake travel_engine pipeline
 # OPTIONAL_LIVE_OSRM=1 python scripts/test_p4_smoke.py
 python scripts/test_p7_smoke.py   # offline Fake trip reorder + TripEditEvent + GeoJSON
 # OPTIONAL_LIVE_OSRM=1 python scripts/test_p7_smoke.py
-# alembic: local package named `alembic/` shadows CLI — compose `api` runs `alembic upgrade head` on start
+# alembic: script_location=migrations; Compose bind-mounts ./migrations and runs `alembic upgrade head` on start
 python -m pytest tests/ -v
 ```
 
@@ -274,7 +274,7 @@ python -m pytest tests/ -v
 - Empty host `REDIS_URL` keeps in-memory backends for pytest; Compose `api` sets `redis://redis:6379/0` (published **6380**). Optional host uvicorn: `redis://localhost:6380/0`
 - Stop host uvicorn **and any other process on :8000** before `docker compose up` (port clash)
 - `.env` must have a **bare** `DATABASE_URL` value — no comment prefix on the same line
-- `LLM_API_KEY` is optional for catalog/health boot (defaults empty). Generate/enrich need a real key in `guideagent/.env` (bind-mounted at `/app/.env` plus Compose `env_file`) — not in the Next app. `docker compose down` unbinds `:8000` until `up` and `wandr_api` is healthy. If `wandr_api` is `Exited` while Postgres is healthy, host `:8000` `ERR_CONNECTION_REFUSED` means the API never bound the port — `docker logs wandr_api` (other missing required env), not a Next.js URL bug. Tracking: `docs/issue_solve.md`
+- `LLM_API_KEY` is optional for catalog/health boot (defaults empty). Generate/enrich need a real key in `guideagent/.env` (bind-mounted at `/app/.env` plus Compose `env_file`) — not in the Next app. `docker compose down` unbinds `:8000` until `up` and `wandr_api` is healthy. If `wandr_api` is `Exited`/`Restarting` while Postgres is healthy, host `:8000` `ERR_CONNECTION_REFUSED` means the API never bound the port — `docker logs wandr_api` (`Path doesn't exist: migrations` → local `Dockerfile.dev`/Compose volume; other missing required env), not a Next.js URL bug. Tracking: `docs/issue_solve.md`
 - Root `.gitignore` ignores `.env` / `.env.*` (keeps `.env.example`). `.env` is untracked; git history still has old blobs until a separate rewrite
 - Geo: `NOMINATIM_BASE_URL`, `OVERPASS_API_URL`, `NOMINATIM_USER_AGENT`, `PLACES_SOURCES` (`overpass` default; optional `opentripmap`,`geoapify`), `OPENTRIPMAP_*`, `GEOAPIFY_*` via `get_settings()`
 - Routing: `ROUTING_BACKEND=haversine` (default, in-process, Point-only GeoJSON), `hybrid` (haversine times + OSRM polylines for map LineStrings), or `osrm` + `OSRM_BASE_URL` (live pairwise matrix; spike / self-host)
