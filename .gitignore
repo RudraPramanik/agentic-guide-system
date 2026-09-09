@@ -7,6 +7,10 @@
 # VPS deploy stamps (written by ops/deploy.sh)
 .deploy-*
 
+# Local Docker image dumps (never commit — GitHub 100MB limit)
+wandr-api.tar
+*.tar
+
 # Python
 __pycache__/
 *.py[cod]
