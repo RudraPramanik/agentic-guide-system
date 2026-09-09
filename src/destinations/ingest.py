@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.observability.logging import get_logger
 from src.destinations.models import Destination
 from src.destinations.repository import DestinationRepository
+from src.geo.country import countries_match, country_from_tags, normalize_country
 from src.geo.geocoder import geocode
 from src.geo.places import fetch_destination_pois
 from src.geo.schemas import GeocodedPlace, RawPOI
@@ -23,24 +24,66 @@ PROGRESS_EVERY = 10
 log = get_logger(__name__)
 
 
+def poi_allowed_for_destination(poi: RawPOI, destination_country: str) -> bool:
+    """Exclude POIs whose tagged country conflicts with the destination country.
+
+    Missing country tags are allowed (common on OSM) so catalogs stay usable;
+    tagged mismatches (cross-border) are dropped. Accepted POIs are stamped
+    with ``wandr:country`` during upsert.
+    """
+    dest_c = normalize_country(destination_country)
+    if dest_c is None:
+        return True
+    poi_c = country_from_tags(poi.raw_tags)
+    if poi_c is None:
+        return True
+    return countries_match(poi_c, dest_c)
+
+
+def stamp_poi_country(poi: RawPOI, destination_country: str) -> RawPOI:
+    """Copy POI with wandr:country set for later planner filtering."""
+    dest_c = normalize_country(destination_country) or destination_country
+    tags = dict(poi.raw_tags or {})
+    tags["wandr:country"] = dest_c
+    return poi.model_copy(update={"raw_tags": tags})
+
+
 async def seed_places(
     session: AsyncSession,
     destination_id: uuid.UUID,
     pois: list[RawPOI],
+    *,
+    destination_country: str | None = None,
 ) -> int:
-    """Upsert each POI, skipping failures. Returns the success count.
+    """Upsert each POI, skipping failures and cross-border tagged POIs.
 
-    Each upsert runs in its own SAVEPOINT so one bad row cannot abort the
-    surrounding transaction and take the rest of the batch with it.
+    Returns the success count. Each upsert runs in its own SAVEPOINT so one
+    bad row cannot abort the surrounding transaction.
     """
     repo = PlaceRepository(session)
     total = len(pois)
     success = 0
+    skipped_country = 0
 
     for index, poi in enumerate(pois, start=1):
+        if destination_country and not poi_allowed_for_destination(poi, destination_country):
+            skipped_country += 1
+            log.info(
+                "seed.poi_skipped_country",
+                osm_id=poi.osm_id,
+                destination_country=destination_country,
+                poi_country=country_from_tags(poi.raw_tags),
+            )
+            continue
+
+        to_upsert = (
+            stamp_poi_country(poi, destination_country)
+            if destination_country
+            else poi
+        )
         try:
             async with session.begin_nested():
-                await repo.upsert_from_poi(poi, destination_id)
+                await repo.upsert_from_poi(to_upsert, destination_id)
         except Exception as exc:  # noqa: BLE001 — one bad POI must not abort the batch
             log.warning("seed.poi_failed", osm_id=poi.osm_id, error=str(exc))
             continue
@@ -49,6 +92,13 @@ async def seed_places(
         if index % PROGRESS_EVERY == 0:
             print(f"  ... {index}/{total} POIs processed ({success} upserted)")
 
+    if skipped_country:
+        log.info(
+            "seed.country_filtered",
+            destination_id=str(destination_id),
+            skipped=skipped_country,
+            upserted=success,
+        )
     return success
 
 
@@ -60,6 +110,7 @@ async def ingest_destination_pois(
     """Fetch POIs via places facade, upsert, update ``place_count``.
 
     Does not geocode and does not commit. Does not touch enrich/index counters.
+    Radius-only scrape (no country polygon). Cross-border tagged POIs excluded.
     """
     dest_repo = DestinationRepository(session)
     pois = await fetch_destination_pois(dest.lat, dest.lng, radius_km)
@@ -75,7 +126,12 @@ async def ingest_destination_pois(
             f"within {radius_km}km - saving destination with place_count=0"
         )
 
-    success = await seed_places(session, dest.id, pois)
+    success = await seed_places(
+        session,
+        dest.id,
+        pois,
+        destination_country=dest.country,
+    )
     dest = await dest_repo.update(dest.id, {"place_count": success})
     return dest, success, len(pois)
 

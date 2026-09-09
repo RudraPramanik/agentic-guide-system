@@ -226,6 +226,7 @@ trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/
 | GET | `/api/v1/auth/me` | Optional (guest or cookie/Bearer) |
 | POST | `/api/v1/auth/logout` | None |
 | GET | `/api/v1/destinations/search?q=` | None (public catalog; rate limit 20/min/IP; Nominatim shell on miss — no Overpass) |
+| GET | `/api/v1/destinations/resolve?q=` | None (search-first; `kind` destination\|hubs\|ambiguous; 20/min/IP; additive) |
 | GET | `/api/v1/destinations/{id}/readiness` | None (`tier` / score / pcts; Qdrant folded into scoring — no `search_available` on wire) |
 | POST | `/api/v1/destinations/{id}/prepare` | None (200 ready / 202 preparing; Overpass around stored point; 5/min/IP) |
 | GET | `/api/v1/places?destination_id=` | None (paginated; unknown destination → 404) |

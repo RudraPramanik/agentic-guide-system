@@ -164,6 +164,7 @@ Most single-resource JSON endpoints use `ApiResponse[T]`:
 |----------|--------|
 | `GET /places`, `GET /trips` | Bare `PaginatedResponse[T]` — **not** wrapped in `ApiResponse` |
 | `GET /destinations/search` | `ApiResponse<DestinationOut[]>` (array in `data`) |
+| `GET /destinations/resolve` | `ApiResponse<DestinationResolveOut>` (`kind` + destination/hubs/candidates) |
 | `GET /trips/{id}/geojson` | Raw GeoJSON `FeatureCollection` — **not** `ApiResponse` |
 | `POST /planner/generate` | SSE frames — **not** `ApiResponse` |
 | `DELETE /trips/{id}` | HTTP **204** empty body |
@@ -254,8 +255,9 @@ Auth vocabulary: **None** | **Optional** | **Required** (+ ownership notes).
 | Method | Path | Auth | Notes |
 |--------|------|------|-------|
 | GET | `/api/v1/destinations/search?q=` | None | `q` min length 2; rate limit **20/min/IP**; `ApiResponse<DestinationOut[]>`. **Does not scrape Overpass** — a new place may return `place_count=0` |
+| GET | `/api/v1/destinations/resolve?q=` | None | Search-first resolve; `ApiResponse<DestinationResolveOut>`; `kind`: `destination` \| `hubs` \| `ambiguous`. Country/region → hub HITL (do not plan on centroid). Rate limit **20/min/IP**. Additive — search unchanged |
 | GET | `/api/v1/destinations/{id}/readiness` | None | `DestinationReadinessOut` — use `tier` / score / pcts (not a `search_available` field) |
-| POST | `/api/v1/destinations/{id}/prepare` | None | Overpass seed kickoff; `ApiResponse<DestinationPrepareOut>`; HTTP **200** `status=ready` if already at planner floor; HTTP **202** `status=preparing` if scrape started/in-flight. Optional body `{ radius_km?: number }` (default 30, max 50). Rate limit **5/min/IP**. Country/region polygons are out of scope (point + radius only) |
+| POST | `/api/v1/destinations/{id}/prepare` | None | Overpass seed kickoff; `ApiResponse<DestinationPrepareOut>`; HTTP **200** `status=ready` if already at planner floor; HTTP **202** `status=preparing` if scrape started/in-flight. Optional body `{ radius_km?: number }` (default 30, max 50). Rate limit **5/min/IP**. Country/region polygons are out of scope (point + radius only). Same-country POI filter applies (tagged cross-border POIs dropped) |
 
 ### `places`
 
@@ -487,6 +489,15 @@ type DestinationPrepareOut = {
   place_count: number;
 };
 
+type DestinationResolveOut = {
+  kind: "destination" | "hubs" | "ambiguous";
+  destination: DestinationOut | null;
+  hubs: DestinationOut[];
+  candidates: DestinationOut[];
+  query: string;
+  message: string | null;
+};
+
 // Places — src/places/schemas.py
 type PlaceOut = {
   id: string;
@@ -620,6 +631,7 @@ Also handle non-JSON failures (network, CORS, proxy buffering on SSE).
 | Route | Limit (default) |
 |-------|-----------------|
 | `GET /destinations/search` | **20/min/IP** |
+| `GET /destinations/resolve` | **20/min/IP** |
 | `POST /destinations/{id}/prepare` | **5/min/IP** (IP-keyed; not the search path table) |
 | `POST /planner/generate` | **10/min** |
 | Trip day-edit routes | **20/min** (trip-edit limiter) |
