@@ -52,6 +52,30 @@ async def test_search_not_found_404(client, mocker) -> None:
 
 
 @pytest.mark.asyncio
+async def test_search_nominatim_policy_block_returns_502(client, mocker) -> None:
+    from src.core.exceptions import ExternalServiceError
+
+    mocker.patch(
+        "src.destinations.service.geocode",
+        new=AsyncMock(
+            side_effect=ExternalServiceError(
+                service="nominatim",
+                message="Geocoding service rejected the request",
+                details={"status_code": 403, "query": "london"},
+            )
+        ),
+    )
+
+    response = await client.get("/api/v1/destinations/search?q=London")
+
+    assert response.status_code == 502
+    body = response.json()
+    assert body["success"] is False
+    assert body["code"] == "external_service_error"
+    assert body["details"]["service"] == "nominatim"
+
+
+@pytest.mark.asyncio
 async def test_search_geocode_timeout_returns_404(client, mocker) -> None:
     async def hang(_query: str):
         await asyncio.sleep(30)

@@ -94,3 +94,74 @@ async def test_geocode_caches_none_result_too(mocker) -> None:
 
     assert first is None and second is None
     assert mock_fetch.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_geocode_403_raises_external_service_error(mocker) -> None:
+    from src.core.exceptions import ExternalServiceError
+
+    mock_response = mocker.Mock()
+    mock_response.status_code = 403
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mocker.patch.object(geocoder.httpx, "AsyncClient", return_value=mock_client)
+
+    with pytest.raises(ExternalServiceError) as exc_info:
+        await geocoder.geocode("London")
+
+    assert exc_info.value.details["service"] == "nominatim"
+    assert exc_info.value.status_code == 502
+    assert geocoder.cache_stats()["size"] == 0
+
+
+@pytest.mark.asyncio
+async def test_geocode_429_raises_and_is_not_cached(mocker) -> None:
+    from src.core.exceptions import ExternalServiceError
+
+    mock_response = mocker.Mock()
+    mock_response.status_code = 429
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mocker.patch.object(geocoder.httpx, "AsyncClient", return_value=mock_client)
+
+    with pytest.raises(ExternalServiceError):
+        await geocoder.geocode("Paris")
+
+    # Second call still hits the network (not negative-cached)
+    with pytest.raises(ExternalServiceError):
+        await geocoder.geocode("Paris")
+
+    assert mock_client.get.await_count == 2
+    assert geocoder.cache_stats()["size"] == 0
+
+
+@pytest.mark.asyncio
+async def test_fetch_nominatim_attaches_api_key(mocker) -> None:
+    mock_response = mocker.Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = []
+    mock_response.raise_for_status = mocker.Mock()
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mocker.patch.object(geocoder.httpx, "AsyncClient", return_value=mock_client)
+    mocker.patch.object(
+        geocoder,
+        "get_settings",
+        return_value=mocker.Mock(
+            NOMINATIM_BASE_URL="https://nominatim.example",
+            NOMINATIM_USER_AGENT="wandr-test",
+            NOMINATIM_API_KEY="secret-key",
+        ),
+    )
+
+    await geocoder._fetch_nominatim("london")
+
+    params = mock_client.get.await_args.kwargs["params"]
+    assert params["key"] == "secret-key"
+    assert params["q"] == "london"

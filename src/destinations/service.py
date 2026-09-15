@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import get_settings
 from src.core.cache.backends import get_cache_backend
 from src.core.database.session import AsyncSessionLocal
+from src.core.exceptions import ExternalServiceError
 from src.core.observability.logging import get_logger
 from src.destinations.exceptions import DestinationNotFoundError
 from src.destinations.ingest import ingest_destination_pois
@@ -67,6 +68,9 @@ class DestinationService:
             )
         except TimeoutError:
             geocoded = None
+        except ExternalServiceError:
+            # Nominatim policy/rate block → 502; do not map to not_found.
+            raise
         if geocoded is None:
             raise DestinationNotFoundError(query=query)
 

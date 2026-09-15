@@ -135,3 +135,30 @@ async def test_fetch_pois_failure_returns_empty(mocker) -> None:
     pois = await overpass.fetch_pois(27.041, 88.263, 30)
 
     assert pois == []
+
+
+@pytest.mark.asyncio
+async def test_post_overpass_sends_accept_and_user_agent(mocker) -> None:
+    mock_response = mocker.Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"elements": []}
+    mock_response.raise_for_status = mocker.Mock()
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mocker.patch.object(overpass.httpx, "AsyncClient", return_value=mock_client)
+    mocker.patch.object(
+        overpass,
+        "get_settings",
+        return_value=mocker.Mock(
+            OVERPASS_API_URL="https://overpass.example/api/interpreter",
+            NOMINATIM_USER_AGENT="wandr-test-ua",
+        ),
+    )
+
+    await overpass._post_overpass("[out:json];out;")
+
+    headers = mock_client.post.await_args.kwargs["headers"]
+    assert headers["User-Agent"] == "wandr-test-ua"
+    assert headers["Accept"] == "application/json"
