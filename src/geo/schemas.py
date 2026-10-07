@@ -12,6 +12,14 @@ class GeocodedPlace(BaseModel):
     osm_place_id: str  # Nominatim osm_type/osm_id composite, e.g. "relation/123"
     country: str  # country_code uppercased, or country name if code missing
     display_name: str
+    # Optional Nominatim scale signals (ignored by older upsert callers)
+    osm_class: str | None = None
+    osm_type_tag: str | None = None  # Nominatim "type" field (city, administrative, …)
+    addresstype: str | None = None
+    bbox_south: float | None = None
+    bbox_north: float | None = None
+    bbox_west: float | None = None
+    bbox_east: float | None = None
 
 
 class RawPOI(BaseModel):

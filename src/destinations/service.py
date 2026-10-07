@@ -17,15 +17,35 @@ from src.destinations.ingest import ingest_destination_pois
 from src.destinations.models import Destination
 from src.destinations.readiness import compute_readiness
 from src.destinations.repository import DestinationRepository
-from src.destinations.schemas import DestinationPrepareOut, DestinationReadinessOut
-from src.geo.geocoder import geocode
+from src.destinations.schemas import (
+    DestinationOut,
+    DestinationPrepareOut,
+    DestinationReadinessOut,
+    DestinationResolveOut,
+)
+from src.geo.country import countries_match, normalize_country
+from src.geo.geocoder import (
+    geocode,
+    geocode_search,
+    is_city_scale,
+    is_oversized,
+    viewbox_from_place,
+)
+from src.geo.schemas import GeocodedPlace
 from src.search.client import is_qdrant_available
 
 log = get_logger(__name__)
 
+_HUB_LIMIT = 5
+_AMBIGUOUS_LIMIT = 5
+
 
 def _prepare_lock_key(destination_id: uuid.UUID) -> str:
     return f"dest-prepare:{destination_id}"
+
+
+def _out(dest: Destination) -> DestinationOut:
+    return DestinationOut.model_validate(dest)
 
 
 async def _run_prepare_ingest(destination_id: uuid.UUID, radius_km: float) -> None:
@@ -78,6 +98,130 @@ class DestinationService:
         await self.session.commit()
         await self.session.refresh(dest)
         return [dest]
+
+    async def _upsert_geocoded(self, geocoded: GeocodedPlace) -> Destination:
+        dest = await self.repo.upsert_from_geocoded(geocoded)
+        await self.session.commit()
+        await self.session.refresh(dest)
+        return dest
+
+    async def _suggest_hubs(self, region: GeocodedPlace) -> list[Destination]:
+        """City-scale hubs inside an oversized region (Nominatim only for v1)."""
+        viewbox = viewbox_from_place(region)
+        hits = await geocode_search(
+            region.name,
+            limit=_HUB_LIMIT * 2,
+            featuretype="city",
+            viewbox=viewbox,
+            bounded=bool(viewbox),
+        )
+        if not hits:
+            hits = await geocode_search(
+                f"city {region.name}",
+                limit=_HUB_LIMIT * 2,
+                featuretype="city",
+            )
+
+        region_country = normalize_country(region.country)
+        hubs: list[Destination] = []
+        seen: set[str] = set()
+        for hit in hits:
+            if hit.osm_place_id in seen:
+                continue
+            if is_oversized(hit) and not is_city_scale(hit):
+                continue
+            if region_country and not countries_match(hit.country, region_country):
+                continue
+            if not is_city_scale(hit) and (hit.addresstype or "").lower() not in {
+                "city",
+                "town",
+                "municipality",
+            }:
+                # Still allow named places that look local by bbox
+                if not is_city_scale(hit):
+                    continue
+            seen.add(hit.osm_place_id)
+            hubs.append(await self._upsert_geocoded(hit))
+            if len(hubs) >= _HUB_LIMIT:
+                break
+        return hubs
+
+    async def resolve(self, query: str) -> DestinationResolveOut:
+        """Search-first resolve: city destination, hub HITL, or ambiguous list."""
+        timeout = get_settings().SEARCH_GEOCODE_TIMEOUT_SECONDS
+        db_hits = await self.repo.search_by_name(query)
+
+        try:
+            geo_hits = await asyncio.wait_for(
+                geocode_search(query, limit=_AMBIGUOUS_LIMIT),
+                timeout=timeout,
+            )
+        except TimeoutError:
+            geo_hits = []
+        except ExternalServiceError:
+            raise
+
+        primary = geo_hits[0] if geo_hits else None
+
+        # Oversized primary → hub picker (do not plan on country centroid).
+        if primary is not None and is_oversized(primary):
+            try:
+                hubs = await asyncio.wait_for(
+                    self._suggest_hubs(primary),
+                    timeout=timeout * 2,
+                )
+            except TimeoutError:
+                hubs = []
+            if hubs:
+                return DestinationResolveOut(
+                    kind="hubs",
+                    hubs=[_out(h) for h in hubs],
+                    query=query,
+                    message="Pick a city hub to plan this trip",
+                )
+            # Fall through: treat as not found rather than centroid plan
+            raise DestinationNotFoundError(query=query)
+
+        # Multiple distinct DB city shells → ambiguous HITL
+        if len(db_hits) >= 2:
+            return DestinationResolveOut(
+                kind="ambiguous",
+                candidates=[_out(d) for d in db_hits[:_AMBIGUOUS_LIMIT]],
+                query=query,
+                message="Multiple places matched — pick one",
+            )
+
+        if len(db_hits) == 1:
+            return DestinationResolveOut(
+                kind="destination",
+                destination=_out(db_hits[0]),
+                query=query,
+            )
+
+        # No DB hit — use geocode results
+        city_hits = [g for g in geo_hits if is_city_scale(g) or not is_oversized(g)]
+        if len(city_hits) >= 2:
+            destinations: list[Destination] = []
+            for g in city_hits[:_AMBIGUOUS_LIMIT]:
+                destinations.append(await self._upsert_geocoded(g))
+            return DestinationResolveOut(
+                kind="ambiguous",
+                candidates=[_out(d) for d in destinations],
+                query=query,
+                message="Multiple places matched — pick one",
+            )
+
+        if len(city_hits) == 1 or (primary is not None and not is_oversized(primary)):
+            chosen = city_hits[0] if city_hits else primary
+            assert chosen is not None
+            dest = await self._upsert_geocoded(chosen)
+            return DestinationResolveOut(
+                kind="destination",
+                destination=_out(dest),
+                query=query,
+            )
+
+        raise DestinationNotFoundError(query=query)
 
     async def get_by_id(self, destination_id: uuid.UUID) -> Destination:
         dest = await self.repo.get_by_id(destination_id)
@@ -149,3 +293,4 @@ class DestinationService:
             status="preparing",
             place_count=dest.place_count,
         )
+

@@ -1,8 +1,22 @@
 ## Purpose
 
-Public destinations HTTP layer — `GET /api/v1/destinations/search`, `GET /api/v1/destinations/{id}/readiness`, and `POST /api/v1/destinations/{id}/prepare`. Router → `DestinationService` only; no geocode or DB access in the router. Readiness scoring is formula-backed via `compute_readiness` (P2: `search_available=False`).
+Public destinations HTTP layer — `GET /api/v1/destinations/search`, `GET /api/v1/destinations/resolve`, `GET /api/v1/destinations/{id}/readiness`, and `POST /api/v1/destinations/{id}/prepare`. Router → `DestinationService` only; no geocode or DB access in the router. Readiness scoring is formula-backed via `compute_readiness` (P2: `search_available=False`).
 
 ## Requirements
+
+### Requirement: Public destinations resolve HTTP endpoint
+
+The system SHALL expose additive `GET /api/v1/destinations/resolve` (no auth) with query param `q` (min_length=2, max_length=200) that returns `ApiResponse[DestinationResolveOut]` with discriminated `kind` of `destination`, `hubs`, or `ambiguous`. Oversized country/region queries MUST return `kind=hubs` (HITL) and MUST NOT treat the country centroid alone as the plannable destination. City-scale queries MUST return `kind=destination`. Multiple city-scale matches MUST return `kind=ambiguous`. Existing `GET /search` and prepare/generate contracts MUST remain unchanged. Resolve MUST share the same rate-limit class as search (default 20/min/IP on the resolve path).
+
+#### Scenario: City resolve returns destination
+
+- **WHEN** a client requests `/api/v1/destinations/resolve?q=Darjeeling` for a city-scale place
+- **THEN** the response is 200 with `kind` `"destination"` and a populated `destination` object
+
+#### Scenario: Country resolve returns hubs
+
+- **WHEN** a client requests `/api/v1/destinations/resolve?q=Japan` (or equivalent oversized admin)
+- **THEN** the response is 200 with `kind` `"hubs"` and a non-empty `hubs` list of city-scale destinations
 
 ### Requirement: Public destinations search HTTP endpoint
 

@@ -1,4 +1,4 @@
-﻿"""Destinations HTTP router — public catalog search, readiness, and prepare."""
+﻿"""Destinations HTTP router — public catalog search, resolve, readiness, and prepare."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from src.destinations.schemas import (
     DestinationOut,
     DestinationPrepareOut,
     DestinationReadinessOut,
+    DestinationResolveOut,
     PrepareIn,
 )
 from src.destinations.service import DestinationService
@@ -29,6 +30,16 @@ async def search_destinations(
     """DB-first search with Nominatim cache-aside fallback."""
     results = await DestinationService(db).search(q)
     return ApiResponse(data=[DestinationOut.model_validate(d) for d in results])
+
+
+@router.get("/resolve")
+async def resolve_destination(
+    q: str = Query(min_length=2, max_length=200),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[DestinationResolveOut]:
+    """Search-first resolve: single destination, hub HITL, or ambiguous candidates."""
+    result = await DestinationService(db).resolve(q)
+    return ApiResponse(data=result)
 
 
 @router.get("/{destination_id}/readiness")

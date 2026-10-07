@@ -8,6 +8,8 @@ from uuid import UUID
 from sqlalchemy import select
 
 from src.core.database.session import AsyncSessionLocal
+from src.destinations.models import Destination
+from src.geo.country import countries_match, country_from_tags, normalize_country
 from src.places.models import Place
 from src.places.repository import PlaceRepository
 from src.planner.tools._helpers import (
@@ -48,6 +50,26 @@ async def _load_places_by_ids(session: Any, ids: list[UUID]) -> list[Place]:
     return [by_id[i] for i in ids if i in by_id]
 
 
+async def _destination_country(session: Any, dest_id: UUID) -> str | None:
+    dest = await session.get(Destination, dest_id)
+    if dest is None:
+        return None
+    return normalize_country(dest.country)
+
+
+def _filter_same_country(places: list[Place], destination_country: str | None) -> list[Place]:
+    """Drop places tagged with a conflicting country; keep untagged legacy rows."""
+    dest_c = normalize_country(destination_country)
+    if dest_c is None:
+        return places
+    kept: list[Place] = []
+    for p in places:
+        poi_c = country_from_tags(p.tags if isinstance(p.tags, dict) else None)
+        if poi_c is None or countries_match(poi_c, dest_c):
+            kept.append(p)
+    return kept
+
+
 async def run(
     inp: SearchPlacesIn,
     ctx: Any = None,
@@ -78,6 +100,7 @@ async def run(
     fusion_diagnostics: dict | None = None
 
     try:
+        dest_country = await _destination_country(session, dest_id)
         outcome = await places_index.search_places_with_diagnostics(
             query, dest_id, top_k=top_k
         )
@@ -119,6 +142,8 @@ async def run(
             )
             # Prefer destination-scoped results when available
             places = [p for p in places if p.destination_id == dest_id] or places
+
+        places = _filter_same_country(places, dest_country)
 
         candidates = [candidate_to_dict(place_to_candidate(p)) for p in places]
         code = None

@@ -114,6 +114,49 @@ Generate still requires a real `LLM_API_KEY` in **`guideagent/.env`** (API env, 
 3. Confirm `guideagent/.env` exists (Compose mounts it at `/app/.env`). Copy from `.env.example` if needed.
 4. Confirm FE uses `NEXT_PUBLIC_API_URL=http://localhost:8000`.
 5. For **generate** only: nonempty `LLM_API_KEY` in `guideagent/.env`, then recreate `api`.
+6. If logs show `FAILED: Path doesn't exist: migrations`, see **local Alembic scripts path** below (dev image / Compose volume, not VPS).
+
+---
+
+# Issue: local API restart loop — missing Alembic `migrations/` path
+
+**Status:** Permanent local-compose fix via OpenSpec `fix-local-compose-migrations-path`  
+**Last updated:** 2026-09-04  
+**Scope:** `guideagent` **local** `Dockerfile.dev` + root `docker-compose.yml` only. Production `Dockerfile` already copies `migrations/` — do not change the VPS image for this.
+
+---
+
+## Symptom
+
+Sibling FE catalog calls fail with `net::ERR_CONNECTION_REFUSED` on `http://localhost:8000/api/v1/places` or `/api/v1/destinations/search`. Vercel + VPS still work. `docker compose ps` shows `wandr_api` **Restarting**; Postgres/Qdrant/Redis stay healthy.
+
+Logs repeat:
+
+```text
+FAILED: Path doesn't exist: migrations.
+```
+
+That is `alembic upgrade head` (Compose command, before uvicorn). Host `:8000` never binds.
+
+## Root cause
+
+`alembic.ini` has `script_location = migrations`. Host scripts live in `migrations/`. Production `Dockerfile` already `COPY migrations ./migrations`. Local `Dockerfile.dev` still copied `alembic/` and Compose bind-mounted `./alembic`, so the container had no `/app/migrations`.
+
+## Permanent solution
+
+| Layer | Behavior |
+|-------|----------|
+| `Dockerfile.dev` | `COPY migrations ./migrations` (same layout as production) |
+| Compose `api` volumes | `./migrations:/app/migrations` (keep `alembic.ini` mount) |
+| Production `Dockerfile` | Unchanged |
+
+Rebuild: `docker compose up --build -d` from `guideagent/`. Do not revert `script_location` to `alembic`.
+
+### After `:8000` is healthy — CORS
+
+If health returns 200 but the browser still blocks places/search, check local `CORS_ALLOWED_ORIGINS`. A Vercel-only list (copied from production env) does **not** allow `Origin: http://localhost:3000`. Laptop `.env` must include the origin you actually open (`.env.example` uses `["http://localhost:3000"]`). Never `*` with credentials. Do not commit `.env`. Do not change `.env.production` for this.
+
+Empty `items` after a 200 is a local catalog miss (search + prepare on **this** PostGIS). Do not reuse VPS destination UUIDs.
 
 ---
 

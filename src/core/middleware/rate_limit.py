@@ -136,6 +136,11 @@ def _route_limit_table() -> list[tuple[str, int, int]]:
             settings.RATE_LIMIT_DESTINATIONS_SEARCH_REQUESTS,
             settings.RATE_LIMIT_DESTINATIONS_SEARCH_WINDOW_SECONDS,
         ),
+        (
+            settings.RATE_LIMIT_DESTINATIONS_RESOLVE_PATH,
+            settings.RATE_LIMIT_DESTINATIONS_RESOLVE_REQUESTS,
+            settings.RATE_LIMIT_DESTINATIONS_RESOLVE_WINDOW_SECONDS,
+        ),
     ]
 
 

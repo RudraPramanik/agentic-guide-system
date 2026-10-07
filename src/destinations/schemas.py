@@ -44,3 +44,14 @@ class DestinationPrepareOut(BaseModel):
     destination_id: uuid.UUID
     status: Literal["ready", "preparing"]
     place_count: int
+
+
+class DestinationResolveOut(BaseModel):
+    """Discriminated resolve result for search-first / hub HITL intake."""
+
+    kind: Literal["destination", "hubs", "ambiguous"]
+    destination: DestinationOut | None = None
+    hubs: list[DestinationOut] = Field(default_factory=list)
+    candidates: list[DestinationOut] = Field(default_factory=list)
+    query: str
+    message: str | None = None
