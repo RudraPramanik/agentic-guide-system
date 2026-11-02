@@ -1,18 +1,18 @@
 # Wandr Backend — System Context
 
-> Production-grade AI travel planner. Modular monolith. Phase-gated tool-loop agent.
-> For coding guardrails see [`AGENT.md`](../../AGENT.md). For build steps see [`docs/blueprint_final.md`](../blueprint_final.md).
+> Architecture deep reference for the Wandr FastAPI backend (modular monolith, phase-gated tool-loop agent).
+> Guardrails: `[AGENT.md](../../AGENT.md)`. Step progress / stubs / live routes: `[docs/context.md](../context.md)`. Build contracts: `[docs/blueprint_final.md](../blueprint_final.md)` (P0–P7), `[docs/v2_blueprint.md](../v2_blueprint.md)` (v7). Patterns: `[docs/app/lld.md](lld.md)`. API contract for FE: `[docs/FE_guide.md](../FE_guide.md)`. Package versions: `requirements.txt`.
 
 ## What Wandr Does
 
 Wandr generates structured multi-day travel itineraries. Users describe preferences in natural language; the backend:
 
-1. Resolves destinations and checks data readiness
-2. Searches and ranks places (vector + geo fallback)
+1. Resolves destinations and checks data readiness (catalog search / prepare / readiness)
+2. Searches and ranks places (hybrid dense + sparse RRF, with dense-only kill-switch)
 3. Builds routes and day schedules via deterministic `travel_engine` logic
-4. Uses a bounded LangGraph agent with typed tools for orchestration
+4. Orchestrates via a bounded LangGraph agent with typed, phase-gated tools
 5. Writes narrative copy via LLM (outside the tool loop)
-6. Persists trips and records every generation/edit for evaluation
+6. Persists trips (including day edit/replan) and records every generation/edit for evaluation
 
 **Core principle:** structure from code, narrative from LLM. Place IDs, coordinates, stop order, and times never come from free-form LLM output.
 
@@ -22,228 +22,152 @@ Wandr generates structured multi-day travel itineraries. Users describe preferen
 Client (HTTP/SSE)
     │
     ▼
-FastAPI Routers          ← ApiResponse[T] envelope, no raw dicts
+FastAPI Routers          ← ApiResponse[T] / PaginatedResponse[T]; CORS; request-ID + rate limits
     │
     ▼
 Domain Services          ← business logic, orchestration
     │
     ├──► Repositories    ← SQLAlchemy async, PostGIS
-    ├──► travel_engine/  ← pure Python, no I/O (routing injected)
-    ├──► planner/tools/  ← typed tool registry + execute_tool()
-    ├──► geo/            ← Nominatim, Overpass, OSRM gateways
-    ├──► search/         ← Qdrant + embeddings
+    ├──► travel_engine/  ← pure Python, no I/O (RoutingProvider injected)
+    ├──► planner/tools/  ← TOOL_REGISTRY + execute_tool(); apply_tool_result sole state writer
+    ├──► geo/            ← Nominatim, Overpass (+ optional POI sources), OSRM gateways
+    ├──► search/         ← Qdrant (places_v2 named vectors) + embeddings (+ sparse/RRF)
     ├──► core/llm/       ← LiteLLM gateway (only LLM entry point)
-    └──► evaluation/     ← every generation and edit recorded
+    ├──► core/cache/     ← CacheBackend (Redis or in-memory)
+    └──► evaluation/     ← generation persist + mark_trip_edited (HTTP still stub)
 ```
 
 ## Repository Layout
 
-| Path | Role |
-|------|------|
-| `src/config.py` | Single source of truth for env vars (`get_settings()`) |
-| `src/core/` | Cross-cutting infra: DB, security, middleware, cache backends, observability, LLM |
-| `src/auth/` | JWT auth, user management |
-| `src/destinations/` | Destination catalog + readiness scoring |
-| `src/places/` | POI storage and enrichment |
-| `src/trips/` | Trip models + HTTP CRUD / GeoJSON / claim (P6) + day edit/replan HTTP (P7) |
-| `src/planner/` | Tools + graph + `PlannerService` + SSE `/generate` + MVP cache (real through P6) |
-| `src/travel_engine/` | Pure routing/scheduling/validation algorithms (real, P4) |
-| `src/geo/` | External geo service gateways |
-| `src/search/` | Vector search and embeddings (real, P3) |
-| `src/evaluation/` | Models + generation repo/service (planner bookend); HTTP later |
-| `scripts/` | Seeding, indexing, local test harnesses |
-| `tests/` | Pytest suites per domain |
+
+| Path                 | Role                                                                        |
+| -------------------- | --------------------------------------------------------------------------- |
+| `src/config.py`      | Env SSOT via `get_settings()`                                               |
+| `src/core/`          | DB, security/JWT, middleware, cache, observability, LLM gateway, envelopes  |
+| `src/auth/`          | Google OAuth + JWT cookie/Bearer; user upsert                               |
+| `src/destinations/`  | Catalog search/resolve, readiness, public prepare (ingest)                  |
+| `src/places/`        | POI storage, enrich (`enriched_tags`), HTTP list/get                        |
+| `src/trips/`         | Persist from planner state; CRUD / GeoJSON / claim; day edit/replan HTTP    |
+| `src/planner/`       | Tools + LangGraph + `PlannerService.generate` + SSE `/generate` + MVP cache |
+| `src/travel_engine/` | Pure select / allocate / optimize / schedule / validate                     |
+| `src/geo/`           | Geocoder, Overpass (+ multi-source facade), OSRM                            |
+| `src/search/`        | Embeddings, sparse encode, Qdrant client, hybrid `search_places`            |
+| `src/evaluation/`    | Models + repo/service for generation/edit flags — **no evaluation HTTP**    |
+| `scripts/`           | Seed / enrich / index / smokes / `run_evals.py`                             |
+| `tests/`             | Pytest per domain (`wandr_test`)                                            |
+| `.github/workflows/` | CI (pytest + image build); deploy is `workflow_dispatch`                    |
+
+
+## Request Path
+
+1. Middleware: CORS → request logging (`X-Request-ID`) → rate limits (path + IP; Redis or in-memory).
+2. Router validates input, applies auth deps (`require_auth` / `optional_auth`), returns `ApiResponse[T]` or `PaginatedResponse[T]` only.
+3. Service owns business rules and UoW commits; repository is flush-only CRUD (soft-delete aware where applicable).
+4. External I/O only via gateways (`geo/`, `core/llm/`, Qdrant client) with timeouts, tenacity retry, and named fallbacks.
+5. Global handlers map `WandrError` → `ErrorResponse`; unhandled → generic 500 (traceback logged).
+
+## Planner (tool-loop agent)
+
+- **Phases + tools:** `AgentPhase` / `PHASE_TOOLS`; 12-tool `TOOL_REGISTRY`; phase-gated `execute_tool`. Tools return `ToolResult` only; `apply_tool_result` is the sole TravelState writer from tools.
+- **Graph:** `parse_preferences` → agent ↔ tool_executor loop → `write_narrative` / `record_evaluation` bookends. Agent sets `pending_tool_calls` only; `tool_executor_node` is the sole `execute_tool` caller. Stuck-detector and tool-call ceiling bound the loop.
+- **HTTP:** `POST /api/v1/planner/generate` SSE — readiness floor (409), absolute timeout ceiling, terminal buffer → `TripService.save_from_state` + `trip_id`. Optional auth + `wandr_session` cookie. Clients use `fetch()` + manual SSE (not `EventSource`); proxies must not buffer this path.
+- **Cache:** MVP planner cache via `CacheBackend`; cache hit still persists a new trip.
+
+## Search and place knowledge
+
+- Enrich places (`PLACE_TAG_VOCAB`) → index into Qdrant.
+- Active collection via `places_collection()` — typically `places_v2` with named `dense` + `bm25` vectors and hybrid RRF (`SEARCH_SPARSE_ENABLED` kill-switch → dense-only).
+- Optional fusion diagnostics into `tool_trace` (`SEARCH_FUSION_DIAGNOSTICS`).
+- Embeddings: local MiniLM or hosted via LiteLLM (`PLACES_EMBEDDING_BACKEND`).
+
+## Routing backends
+
+`get_routing_provider()` selects on `ROUTING_BACKEND`:
+
+
+| Value                 | Matrix / times                | Polylines / GeoJSON                        |
+| --------------------- | ----------------------------- | ------------------------------------------ |
+| `haversine` (default) | In-process haversine × factor | Point-only GeoJSON                         |
+| `hybrid`              | Haversine times               | OSRM fail-soft polylines → map LineStrings |
+| `osrm`                | Live pairwise OSRM matrix     | Live polylines (spike / self-host)         |
+
+
+`travel_engine` stays pure; times and polylines are injected. Shared `populate_leg_polylines` used by optimize and day reoptimize.
+
+## Trips
+
+- **Generate path:** `save_from_state` UoW from planner terminal state (ownership / guest session).
+- **HTTP:** list/get/delete, public GeoJSON, claim, plus four day-edit routes (reorder / remove / add / reoptimize) with owner auth + user-keyed `rate_limit_trip_edit`.
+- **Edits:** TripService day surgery + preserve-order schedule; `TripEditEvent` + `EvaluationService.mark_trip_edited` in the same UoW. Concurrent edits are last-write-wins (MVP).
+
+## Observability and evals
+
+- **Logging:** structlog (`configure_logging` / `get_logger`); request-id contextvars.
+- **Tracing:** `get_tracer()` → Langfuse when keys set, else `NoOpTracer`. Parent generate trace + tool spans around `PlannerService.generate` (fail-soft).
+- **Usage:** `LLMUsage` / `TravelState.token_usage` through the LLM gateway.
+- **Golden harness:** `evals/` + `scripts/run_evals.py` + `src/evaluation/scorers.py` (generate-mode baseline).
 
 ## Local Development Infrastructure
 
-`docker-compose.yml` provides **local dev only** (never production):
+`docker-compose.yml` is **dev-only** (never production):
 
-| Service | Image | Port | Purpose |
-|---------|-------|------|---------|
-| `wandr_postgres` | `postgis/postgis:16-3.4` | 5433 | PostgreSQL + PostGIS (host port 5433 avoids conflict with local Postgres on 5432) |
-| `wandr_qdrant` | `qdrant/qdrant:latest` | 6335/6336 | Vector search (host port 6335 avoids conflict with other Qdrant on 6333) |
 
-Redis is feature-flagged off in dev (`REDIS_URL` empty → in-memory fallback).
+| Service          | Typical host port | Purpose                                                                 |
+| ---------------- | ----------------- | ----------------------------------------------------------------------- |
+| `wandr_postgres` | 5433              | PostGIS                                                                 |
+| `wandr_qdrant`   | 6335 / 6336       | Vector search                                                           |
+| Redis            | 6380              | Rate limit + planner cache (Compose API injects `redis://redis:6379/0`) |
+| `wandr_api`      | 8000              | Uvicorn reload (`--reload-dir` src)                                     |
 
-Production uses hosted services injected via environment variables.
 
-## Configuration
+Empty host `REDIS_URL` keeps rate limit + planner cache **in-memory** (fine for pytest / single-process host uvicorn; not shared across workers). Compose API sets Redis; optional host uvicorn: `redis://localhost:6380/0`.
 
-All environment variables are defined in `src/config.py` (`Settings` class) and loaded once via `@lru_cache` `get_settings()`.
-
-**Never** call `os.environ.get()` outside `config.py`.
-
-Key groups: Core, Database, Vector search, Cache, LLM, Planner agent bounds, Observability, Geo.
-
-See `.env.example` for the full key list with placeholder values.
-
-## Observability (implemented)
-
-### Structured logging — step 0.4
-
-Module: `src/core/observability/logging.py`
-
-- `configure_logging()` — called once in app lifespan; idempotent
-- `get_logger()` — convenience alias for `structlog.get_logger()`
-- **Development:** colored `ConsoleRenderer` to stdout
-- **Production:** `JSONRenderer` for log aggregation (Datadog, CloudWatch, etc.)
-- **Context propagation:** middleware calls `bind_contextvars(request_id=...)`; every log line in that request inherits it automatically
-
-Processing chain: `merge_contextvars` → `add_log_level` → `TimeStamper(iso)` → renderer.
-
-### Tracing — step 0.5
-
-Module: `src/core/observability/tracing.py`
-
-- `get_tracer()` → `Langfuse` when both `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are set; otherwise `NoOpTracer`
-- `flush_tracer()` — called on app shutdown lifespan
-- **Null Object Pattern:** callers never branch on `if tracer:` — `NoOpTracer` implements the same interface (`trace`, `span`, `generation`, `update`, `end`, `flush`)
-- Init and flush errors are caught, logged as warnings via structlog, never propagated to requests
-- Result cached in a module-level variable (first call only)
-
-Package: `langfuse==2.60.10` (latest v2 line; v3+ removed the `trace()` client API this step depends on).
-
-### LLM gateway — step 0.6
-
-Module: `src/core/llm/client.py`
-
-- **Only** module that imports `litellm` — all LLM calls go through here
-- `chat_completion(messages, model?, response_format?)` → plain string
-- `chat_with_tools(messages, tools, tool_choice?, model?)` → `LLMToolResponse` with `tool_calls` or `content`
-- Provider swappable via `LLM_MODEL`, `LLM_API_KEY`, `LLM_API_BASE` in `config.py`
-- Tenacity retry: `LLM_MAX_RETRIES` attempts, exponential wait 2–30s, on timeout/rate-limit only
-- Exhausted retries → `WandrLLMError` (503) — caught by planner nodes, never a raw 500
-
-Packages: `litellm==1.89.1`, `tenacity==9.1.4`
-
-### Pagination — step 0.7
-
-Module: `src/core/pagination.py`
-
-- `PageParams` — `Depends()` query params: `page=1`, `size=20` (max 100), `offset` property
-- `PaginatedResponse[T]` — list envelope with auto-computed `pages`, `has_next`, `has_prev`
-- `paginate(items, total, params)` — builds response from repo results + params
-- No DB logic — routers/services pass `offset`/`size` to repos, wrap with `paginate()`
-
-### Response envelopes — step 0.8
-
-Module: `src/core/responses.py`
-
-- `ApiResponse[T]` — success wrapper: `success=True`, `data`, optional `message`
-- `ErrorResponse` — error wrapper: `success=False`, `code`, `message`, optional `details`
-- Every single-resource endpoint returns `ApiResponse[T]`; global handler returns `ErrorResponse` (wired in step 0.10)
-
-### Exception hierarchy — step 0.9
-
-Module: `src/core/exceptions.py`
-
-- `WandrError` base with `code`, `message`, `status_code`, `details`
-- Domain subclasses: `NotFoundError` (404), `UnauthorizedError` (401), `ForbiddenError` (403), `ExternalServiceError` (502), `WandrLLMError` (503)
-- `ExternalServiceError` auto-injects `service` into `details`
-- `WandrLLMError` raised only by LLM gateway; caught in planner nodes with fallbacks
-- Tests: `tests/core/test_exceptions.py`
-
-### FastAPI app — step 0.10
-
-Module: `src/main.py`
-
-- **App Factory:** `create_app() → FastAPI`; module-level `app = create_app()` for `uvicorn src.main:app`
-- **Lifespan startup:** `configure_logging()` → `wandr.startup` log → DB `SELECT 1` ping (fail-fast `SystemExit(1)`) → Qdrant `/healthz` ping (warning only if down)
-- **Lifespan shutdown:** `flush_tracer()` → `wandr.shutdown` log → `dispose_engine()`
-- **Global exception handlers:** `WandrError` → `ErrorResponse` with exception status; `RequestValidationError` → 422; unhandled `Exception` → 500 with generic message (full traceback logged server-side via `exc_info=True`)
-- **`GET /api/v1/health`:** no auth; returns `ApiResponse` with `status`, `env`, `version`; 503 if DB unreachable at request time
-- No domain routers registered yet; no `X-Request-ID` header (step 1.8)
-
-Packages: `fastapi==0.137.1`, `uvicorn[standard]==0.49.0`, `sqlalchemy[asyncio]==2.0.51`, `asyncpg==0.31.0`
-
-### Database foundation — steps 1.1–1.2
-
-#### Declarative base + mixins — step 1.1
-
-Module: `src/core/database/base.py`
-
-- `Base` — SQLAlchemy 2.0 `DeclarativeBase` (no `__abstract__` on Base itself)
-- `UUIDMixin` — `id: Mapped[uuid.UUID]`, `UUID(as_uuid=True)`, `primary_key=True`, Python `default=uuid.uuid4` (not `server_default` — ID known before INSERT for same-transaction FKs)
-- `TimestampMixin` — `created_at` / `updated_at`, `server_default=func.now()`, `onupdate=func.now()` on `updated_at`; DB-side timestamps, never Python `utcnow()`
-- `SoftDeleteMixin` — `deleted_at: Mapped[datetime | None]`, column only; repos filter `deleted_at IS NULL` (User, Place use it; Trip, Destination, etc. do not)
-- SQLAlchemy 2.0 `Mapped[]` + `mapped_column()` throughout — no legacy `Column()` API, no `relationship()` in this file
-
-#### Async session + pool — step 1.2
-
-Module: `src/core/database/session.py`
-
-- **Lazy singleton engine:** `get_engine()` creates on first use; `pool_size=10`, `max_overflow=20`, `pool_pre_ping=True`, `pool_recycle=3600`, `echo=settings.DEBUG`
-- **Lazy session factory:** `get_session_factory()` → `async_sessionmaker` with `expire_on_commit=False`, `autocommit=False`, `autoflush=False`
-- **FastAPI dependency:** `get_db()` yields one `AsyncSession` per request; rolls back on exception before re-raise; closes in `finally`
-- **Back-compat alias:** `AsyncSessionLocal()` — callable returning a new session context manager (scripts/smoke tests)
-- **Lifecycle:** `ping_db()` — `SELECT 1` via `get_engine().connect()`; `dispose_engine()` — disposes pool and resets `_engine` + `_session_factory` to `None`
-- **Connection test script:** `scripts/test_db_conn.py` — standalone (not pytest); prints Postgres version, database name, active connections
-
-```bash
-docker compose up -d
-python scripts/test_db_conn.py
-# Expected: Connected: PostgreSQL 16.x ..., Database: wandr, Pool OK — connection test passed
-```
-
-## Build Progress
-
-| Step | Status | Deliverable |
-|------|--------|-------------|
-| 0.1 | Done | Directory skeleton, `AGENT.md` |
-| 0.2 | Done | `src/config.py`, `.env.example` |
-| 0.3 | Done | `docker-compose.yml` (PostGIS + Qdrant) |
-| 0.4 | Done | `structlog` logging |
-| 0.5 | Done | Langfuse tracing + `NoOpTracer` |
-| 0.6 | Done | LiteLLM gateway (`chat_completion`, `chat_with_tools`) |
-| 0.7 | Done | Pagination (`PageParams`, `PaginatedResponse[T]`, `paginate`) |
-| 0.8 | Done | Response envelopes (`ApiResponse[T]`, `ErrorResponse`) |
-| 0.9 | Done | Exception hierarchy (`WandrError` tree) |
-| 0.10 | Done | FastAPI app factory, lifespan, `/api/v1/health`, global exception handlers |
-| 1.1 | Done | `Base`, `UUIDMixin`, `TimestampMixin`, `SoftDeleteMixin` |
-| 1.2 | Done | Async engine pool, `get_db()`, `scripts/test_db_conn.py` |
-| 1.3+ | Done | Alembic, models, auth, geo, search, travel_engine, planner graph/SSE, trips HTTP, Redis/in-memory cache (through P6.5) — see `docs/context.md` |
-
-## P0 Complete — Verification
-
-Run before starting P1. On Windows, use PowerShell equivalents where noted.
-
-| # | Check | Command | Expected |
-|---|-------|---------|----------|
-| 1 | Directory tree | `find src/ -type d \| sort` | All domain packages present |
-| 2 | Guardrails | `head AGENT.md` | Readable at repo root |
-| 3 | Settings | `python -c "from src.config import get_settings; print(get_settings().PLANNER_MAX_TOOL_CALLS)"` | `12` |
-| 4 | Logging | `configure_logging(); get_logger().info('check', step='p0')` | Structured log line |
-| 5 | Tracing | `get_tracer().trace('p0_check')` | `NoOpTracer` or `Langfuse`, no crash |
-| 6 | LLM gateway | `from src.core.llm.client import chat_completion, chat_with_tools` | Imports cleanly |
-| 7 | litellm isolation | `grep -r "import litellm" src/ \| grep -v client.py` | Zero results |
-| 8 | Pagination | `from src.core.pagination import PaginatedResponse, paginate` | OK |
-| 9 | Responses | `from src.core.responses import ApiResponse, ErrorResponse` | OK |
-| 10 | Exceptions | `from src.core.exceptions import WandrError, NotFoundError, WandrLLMError` | OK |
-| 11 | Health | `GET /api/v1/health` | `{"success": true, "data": {"status": "ok", ...}}` |
-| 12 | Docker | `docker compose ps` | `wandr_postgres` healthy, `wandr_qdrant` running, `wandr_redis` healthy, `wandr_api` up |
-
-**Run the app** (requires `.env` with `SECRET_KEY`, `DATABASE_URL`, `NOMINATIM_USER_AGENT`; `LLM_API_KEY` optional for catalog, required for generate/enrich):
+Production uses hosted services + `docker-compose.prod.yml` / `ops/*.sh` — see `[docs/steps/blueprint_production.md](../steps/blueprint_production.md)`.
 
 ```bash
 docker compose up --build
-# Health: curl -s http://localhost:8000/api/v1/health | python -m json.tool
-# optional host uvicorn: stop compose `api`, then uvicorn src.main:app --reload
+# Health: http://localhost:8000/api/v1/health
+# OpenAPI: http://localhost:8000/docs
 ```
 
-If `wandr_postgres` is healthy but `wandr_api` is `Exited`, host `:8000` (and sibling FE destinations search) fail with `ERR_CONNECTION_REFUSED`. Check `docker logs wandr_api` for other missing required env — empty `LLM_API_KEY` no longer blocks catalog boot. Compose bind-mounts host `.env` at `/app/.env:ro` so Settings survive `docker compose down` / `up` (wait until `wandr_api` is healthy). Search `ERR_EMPTY_RESPONSE` (API up, connection dropped) is a separate issue: Nominatim bound by `SEARCH_GEOCODE_TIMEOUT_SECONDS` and uvicorn `--reload-dir /app/src`. See `docs/issue_solve.md`.
+Host URLs: Postgres `…@localhost:5433/wandr`, Qdrant `http://localhost:6335`. `LLM_API_KEY` optional for catalog/health; required for generate/enrich.
 
-Local dev notes:
-- Postgres: `DATABASE_URL=postgresql+asyncpg://wandr:wandr@localhost:5433/wandr` (port 5433, not 5432)
-- Qdrant: `QDRANT_URL=http://localhost:6335` (port 6335 if 6333 is taken by another service)
-- No `X-Request-ID` header yet (step 1.8)
+## Configuration
+
+All env access through `get_settings()` — never `os.environ.get()` in feature code. Key groups: Core, Database, Vector search / hybrid flags, Cache (`REDIS_URL`), LLM, Planner bounds / timeout, Observability (`LANGFUSE_*`), Geo (`PLACES_SOURCES`, Nominatim/Overpass/OSRM), CORS, routing (`ROUTING_BACKEND`). See `.env.example`.
+
+## HTTP surface (summary)
+
+Registered under `/api/v1`: health, auth (Google OAuth + me/logout), destinations (search / resolve / readiness / prepare), places (list/get), planner `POST /generate` (SSE), trips (CRUD / GeoJSON / claim / day edits).
+
+Full auth matrix and DTOs: `[docs/FE_guide.md](../FE_guide.md)`. Exact table: `[docs/context.md](../context.md)` → Live endpoints.
+
+## Stubs and deferred
+
+
+| Item                                         | Status                                                                                 |
+| -------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Evaluation HTTP                              | Stub — generation persist + `mark_trip_edited` are real                                |
+| `src/auth/dependencies.py`                   | Still step 0.1 placeholders (real auth deps live under `core/security`)                |
+| V6.2 / V6.3 (embedding bump / cross-encoder) | Deferred — not retrieval-dominant                                                      |
+| Clarification path graph `record_evaluation` | Clarification ends without that graph node; service still records after invoke/timeout |
+
+
+Do not invent public APIs for stub rows.
+
+## Build status (rollup)
+
+**P0–P7 + v7 V0–V6.1 ✅.** V6.2/V6.3 deferred. **Next:** first VPS deploy (`ops/migrate.sh` → `deploy.sh` → `health.sh`), then FE → staging API URL.
+
+Step-level Progress and Implemented modules live only in `[docs/context.md](../context.md)` — do not treat this file as a changelog.
 
 ## Key Constraints for AI Agents
 
-When implementing any step, always:
+1. Read `AGENT.md` first; then `docs/context.md` for what is real vs stub
+2. All env via `get_settings()`
+3. Router → Service → Repository only
+4. External calls behind gateways with timeout, retry, and named fallback
+5. Record evaluation on every planner generation (and edits via trip edit UoW)
+6. New packages → `requirements.txt` with a why-comment
+7. Prefer this doc for architecture shape; prefer `context.md` for “is it built?”
 
-1. Read `AGENT.md` first
-2. Route all env access through `get_settings()`
-3. Keep Router → Service → Repository layering
-4. Put external calls behind gateway modules with timeouts, retry, and fallback
-5. Record evaluation data on every planner generation
-6. Append new packages to `requirements.txt` with a comment
