@@ -285,9 +285,9 @@ ufw is already the newest version (0.36.2-6).
 
 ---
 
-## Application hosting (next steps)
+## Application hosting
 
-VPS baseline is complete (swap, UFW, amd64). Application deploy SOP: `docs/steps/blueprint_production.md`.
+VPS baseline is complete (swap, UFW, amd64). Public hosts are in DNS: site `https://explorai.online` and `https://www.explorai.online`; API `https://api.explorai.online`. The table below is the repeatable hosting SOP: `docs/steps/blueprint_production.md` and `ops/`.
 
 | Step | Command / action |
 |------|------------------|
@@ -295,7 +295,7 @@ VPS baseline is complete (swap, UFW, amd64). Application deploy SOP: `docs/steps
 | Install Docker | `sudo apt install -y docker.io docker-compose-v2` |
 | Clone repo | `git clone … ~/guideagent && cd ~/guideagent` |
 | Env | `cp .env.production.example .env.production` → fill hosted URLs/keys |
-| DNS | Point `WANDR_API_HOST` → VPS public IP |
+| DNS | `WANDR_API_HOST=api.explorai.online` → VPS public IP |
 | Migrate | `./ops/migrate.sh` |
 | Reindex | If 384→768 cutover: `docker run --rm --env-file .env.production $IMAGE python scripts/index_places.py …` |
 | Deploy | `./ops/deploy.sh` or `./ops/deploy.sh <git-sha>` after GHCR push |
@@ -305,7 +305,7 @@ VPS baseline is complete (swap, UFW, amd64). Application deploy SOP: `docs/steps
 
 **Do not** `docker build` on the 1GB VPS — pull from GHCR or transfer a prebuilt image.
 
-**Staging FE on another origin** (e.g. Vercel → `api.exporaai.xyz`): production cookies must be `SameSite=None; Secure` (see blueprint §6). Env-only restarts are not enough — ship a new API image after that change; clear browser cookies after deploy.
+**Live origins** share the registrable domain `explorai.online` (site `https://explorai.online` / `https://www.explorai.online`, API `https://api.explorai.online`), so auth cookies stay Option A (`SameSite=Lax`). **Frontend on a different site:** production cookies must be `SameSite=None; Secure` (see blueprint §6). Env-only restarts are not enough for that cookie change — ship a new API image, then clear browser cookies.
 
 ---
 

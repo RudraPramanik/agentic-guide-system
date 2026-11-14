@@ -157,7 +157,7 @@ Do not invent public APIs for stub rows.
 
 ## Build status (rollup)
 
-**P0–P7 + v7 V0–V6.1 ✅.** V6.2/V6.3 deferred. **Next:** first VPS deploy (`ops/migrate.sh` → `deploy.sh` → `health.sh`), then FE → staging API URL.
+**P0–P7 + v7 V0–V6.1 ✅.** V6.2/V6.3 deferred. **Public hosts:** site `https://explorai.online` and `https://www.explorai.online`; API `https://api.explorai.online`. Liveness: `ops/health.sh`.
 
 Step-level Progress and Implemented modules live only in `[docs/context.md](../context.md)` — do not treat this file as a changelog.
 
