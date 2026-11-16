@@ -1,0 +1,10 @@
+{
+  "events": [
+    {
+      "event": "clarification_needed",
+      "data": {
+        "question": "Which city?"
+      }
+    }
+  ]
+}

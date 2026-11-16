@@ -1,0 +1,8 @@
+{
+  "success": false,
+  "code": "destination_not_ready",
+  "message": "Destination does not have enough places for planning",
+  "details": {
+    "place_count": 0
+  }
+}

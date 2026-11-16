@@ -1,0 +1,6 @@
+{
+  "success": false,
+  "code": "unauthorized",
+  "message": "Authentication required",
+  "details": null
+}

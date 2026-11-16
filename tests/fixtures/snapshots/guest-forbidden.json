@@ -1,0 +1,6 @@
+{
+  "success": false,
+  "code": "forbidden",
+  "message": "Access to this trip is forbidden",
+  "details": null
+}

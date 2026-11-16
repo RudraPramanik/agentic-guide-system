@@ -1,0 +1,54 @@
+{
+  "success": true,
+  "data": {
+    "id": "<uuid>",
+    "user_id": "<uuid>",
+    "session_id": "<session>",
+    "destination_id": "<uuid>",
+    "days": 1,
+    "preferences": {
+      "budget": "moderate",
+      "base_lat": 27.0,
+      "base_lng": 88.25,
+      "interests": [
+        "nature"
+      ],
+      "include_offbeat": false,
+      "include_trekking": false
+    },
+    "status": "complete",
+    "created_at": "<datetime>",
+    "updated_at": "<datetime>",
+    "places": [
+      {
+        "id": "<uuid>",
+        "place_id": "<uuid>",
+        "day_number": 1,
+        "order_in_day": 1,
+        "travel_time_min": 10,
+        "visit_duration_min": 60,
+        "suggested_start_time": "09:00",
+        "arrival_note": null,
+        "polyline": null,
+        "name": "Stop 0",
+        "lat": 27.0,
+        "lng": 88.25
+      },
+      {
+        "id": "<uuid>",
+        "place_id": "<uuid>",
+        "day_number": 1,
+        "order_in_day": 2,
+        "travel_time_min": 10,
+        "visit_duration_min": 60,
+        "suggested_start_time": "10:00",
+        "arrival_note": null,
+        "polyline": null,
+        "name": "Stop 1",
+        "lat": 27.0,
+        "lng": 88.26
+      }
+    ]
+  },
+  "message": null
+}

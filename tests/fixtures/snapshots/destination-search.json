@@ -1,0 +1,16 @@
+{
+  "success": true,
+  "data": [
+    {
+      "id": "<uuid>",
+      "name": "Snapshot Harbor",
+      "country": "IN",
+      "display_name": "Snapshot Harbor",
+      "lat": 27.0,
+      "lng": 88.25,
+      "place_count": 4,
+      "created_at": "<datetime>"
+    }
+  ],
+  "message": null
+}

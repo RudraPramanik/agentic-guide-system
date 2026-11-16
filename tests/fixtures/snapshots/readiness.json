@@ -1,0 +1,13 @@
+{
+  "success": true,
+  "data": {
+    "destination_id": "<uuid>",
+    "score": 0.75,
+    "tier": "ready",
+    "place_count": 100,
+    "enriched_pct": 1.0,
+    "indexed_pct": 0.0,
+    "message": null
+  },
+  "message": null
+}

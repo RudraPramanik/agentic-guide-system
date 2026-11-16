@@ -1,0 +1,68 @@
+{
+  "success": true,
+  "data": {
+    "id": "<uuid>",
+    "user_id": "<uuid>",
+    "session_id": "<session>",
+    "destination_id": "<uuid>",
+    "days": 1,
+    "preferences": {
+      "budget": "moderate",
+      "base_lat": 27.0,
+      "base_lng": 88.25,
+      "interests": [
+        "nature"
+      ],
+      "include_offbeat": false,
+      "include_trekking": false
+    },
+    "status": "complete",
+    "created_at": "<datetime>",
+    "updated_at": "<datetime>",
+    "places": [
+      {
+        "id": "<uuid>",
+        "place_id": "<uuid>",
+        "day_number": 1,
+        "order_in_day": 1,
+        "travel_time_min": 30,
+        "visit_duration_min": 40,
+        "suggested_start_time": "08:30",
+        "arrival_note": null,
+        "polyline": "poly_2pts",
+        "name": "Stop 0",
+        "lat": 27.0,
+        "lng": 88.25
+      },
+      {
+        "id": "<uuid>",
+        "place_id": "<uuid>",
+        "day_number": 1,
+        "order_in_day": 2,
+        "travel_time_min": 30,
+        "visit_duration_min": 40,
+        "suggested_start_time": "09:40",
+        "arrival_note": null,
+        "polyline": "poly_2pts",
+        "name": "Stop 1",
+        "lat": 27.0,
+        "lng": 88.26
+      },
+      {
+        "id": "<uuid>",
+        "place_id": "<uuid>",
+        "day_number": 1,
+        "order_in_day": 3,
+        "travel_time_min": 30,
+        "visit_duration_min": 40,
+        "suggested_start_time": "10:50",
+        "arrival_note": null,
+        "polyline": "poly_2pts",
+        "name": "Stop Extra",
+        "lat": 27.0,
+        "lng": 88.28
+      }
+    ]
+  },
+  "message": null
+}

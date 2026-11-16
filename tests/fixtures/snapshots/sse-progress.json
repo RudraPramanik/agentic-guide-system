@@ -1,0 +1,41 @@
+{
+  "events": [
+    {
+      "event": "preferences_done",
+      "data": {
+        "interests": [
+          "nature"
+        ],
+        "budget": "moderate",
+        "days": 2,
+        "include_offbeat": false,
+        "include_trekking": false
+      }
+    },
+    {
+      "event": "phase_changed",
+      "data": {
+        "phase": "discover"
+      }
+    },
+    {
+      "event": "tool_done",
+      "data": {
+        "name": "search_places",
+        "ok": true,
+        "code": null,
+        "ms": 1
+      }
+    },
+    {
+      "event": "tool_batch_done",
+      "data": {}
+    },
+    {
+      "event": "itinerary_done",
+      "data": {
+        "days": []
+      }
+    }
+  ]
+}
