@@ -1,6 +1,6 @@
-# Wandr — Blueprint v8.2 (Final: Deterministic-First, Eval-Gated, Agent-Executable)
+# Wandr — Blueprint v8.3 (Amendment of v8.2: Deterministic-First, Eval-Gated, Agent-Executable)
 
-> **Status:** Final target plan. Supersedes the v8 blueprint, the v8 addendum and v8.1.
+> **Status:** v8.3 amends v8.2. v8.2 remains the target plan for Slices 0–8. v8.3 adds Slice 9 (post-save guidebook enrich: suggested stays and credited photos). Supersedes the v8 blueprint, the v8 addendum and v8.1.
 > **Does not supersede** `docs/blueprint_final.md` (v6.1, shipped P0–P7) or `docs/v2_blueprint.md` (v7, shipped V0–V5). Those remain SSOT for what already exists.
 > **Strategy:** Make the existing system correct, measurable and recoverable first. Add LLM reasoning only where the harness proves it helps.
 > **Core rule:** *LLMs propose. Deterministic services verify and execute. The eval harness decides whether a change ships.*
@@ -46,6 +46,8 @@ Multi-agent orchestration is **not** on that list. It is an optional, flag-gated
 | No duplicate trips on retry; run status; reconnect | S1 |
 | Regression gate that blocks quality loss, reproducible in CI | S2 |
 | Evidence on whether agents/judge are worth their cost | S7 |
+| Suggested stays near the trip base, with unknown price and availability, that are not route stops | S9 |
+| Each stop shows a credited free photo, or the existing non-photo fallback when none exists | S9 |
 
 ---
 
@@ -59,7 +61,7 @@ Multi-agent orchestration is **not** on that list. It is an optional, flag-gated
 | `docs/blueprint_final.md` | v6.1 P0–P7 decisions |
 | `docs/v2_blueprint.md` | v7 retrieval + observability decisions |
 | `docs/FE_guide.md` | Frontend HTTP/SSE contract |
-| **This document** | v8.2 target architecture and sequence |
+| **This document** | v8.3 target architecture and sequence (v8.2 plus Slice 9) |
 
 **Conflict rule (hard):** if this document conflicts with code or a locked contract, the coding agent **halts that subslice**, writes an ADR proposal describing the conflict, and waits for approval. It does not pick a side and continue.
 
@@ -94,6 +96,16 @@ Multi-agent orchestration is **not** on that list. It is an optional, flag-gated
 | N8 | **Evals are reproducible in CI** via recorded LLM fixtures; live-model runs are a separate scheduled job. |
 | N9 | **An uncalibrated LLM judge never gates or triggers repairs in the request path.** |
 | N10 | **No silent provider/model switching.** The actual provider, model and fallback reason are recorded per execution. |
+
+### 3.3 New in v8.3
+
+| # | Invariant |
+|---|---|
+| N11 | **Media and lodging HTTP never run inside** `POST /planner/generate`. |
+| N12 | **A stay suggestion is not a stop.** It does not enter the route unless the user adds it through the existing add-stop path. |
+| N13 | **Slice 9 price and availability stay `unknown`.** Nothing in Slice 9 verifies them. |
+| N14 | **A photo with no attribution is not shown.** |
+| N15 | **A stop with no photo keeps the non-photo fallback.** Stock is not a photo of that place. |
 
 ---
 
@@ -142,8 +154,13 @@ Existing planner graph (phase-gated tool loop)  ◄── always the fallback pa
   ├─ Narrative (existing write_narrative; cannot change structure)
   ▼
 Canonical trip persistence (idempotent) + evaluation record
-  ▼
-SSE / Trip API / GeoJSON / existing map + guide agent
+  │
+  ├─▶ SSE / Trip API / GeoJSON / existing map + guide agent
+  │     (generate ends here; still ≤ 45 s)
+  │
+  └─▶ after the trip exists, outside the planner graph and outside generate
+        ├─ [S9, LODGING_V1_ENABLED] lodging search inside SearchArea → suggested stays
+        └─ [S9, MEDIA_ENRICH_ENABLED] media resolve per stop → credited photo or empty list
 ```
 
 ### 5.2 What is a service vs an agent
@@ -156,8 +173,10 @@ SSE / Trip API / GeoJSON / existing map + guide agent
 | Interpreting qualitative preferences | LLM role (optional) | Language reasoning |
 | Qualitative itinerary critique | LLM role (optional, advisory) | Semantic judgment |
 | Narrative | LLM (existing) | Language |
+| Lodging retrieval and stay suggestions (S9) | Deterministic service | Mapped places inside the search area; no booking facts |
+| Place media resolution (S9) | Deterministic service | Provider lookup after save; attribution or nothing |
 
-At most **two** new LLM roles ever (reasoner, critic). Everything else stays code.
+At most **two** new LLM roles ever (reasoner, critic). Slice 9 adds none. Everything else stays code.
 
 ### 5.3 Module layout (additive; reuse existing modules wherever they satisfy the contract)
 
@@ -176,6 +195,8 @@ src/
      schedule_builder, trip_validator, protocols, travel_rules)
   evaluation/                    # EXTENDED (S2)
     scorers.py (existing)  metrics/  fixtures/  judge/ (offline)
+  geo/
+    media/                       # NEW (S9) photo facade only; lodging stays on geo + places
 evals/
   golden/  baselines/  runs/  replay/   # replay/ = recorded LLM fixtures (N8)
 tests/
@@ -301,6 +322,29 @@ class RunStatus(str, Enum):
 
 Terminal: `COMPLETED, PARTIAL, DEGRADED, FAILED, CANCELLED, TIMED_OUT`. Transitions are code-owned; an LLM can never change status.
 
+### 6.8 Guidebook enrich (S9, proposed — verify in S0; do not treat as present)
+
+```python
+class LodgingSuggestion(BaseModel):
+    place_id: UUID
+    name: str
+    lat: float
+    lng: float
+    category: Literal["lodging"]
+    distance_to_base_km: float
+    price_status: Literal["unknown"] = "unknown"
+    availability_status: Literal["unknown"] = "unknown"
+    # no price, booking URL, or rating
+
+class PlaceMedia(BaseModel):
+    url: str
+    source: Literal["osm", "wikimedia", "opentripmap"]
+    attribution: str          # required; missing attribution ⇒ do not show
+    fetched_at: datetime
+```
+
+A `LodgingSuggestion` is a place already stored with `category=lodging`. It is not a second place model and not a stop.
+
 ---
 
 ## 7. Feature flags and configuration
@@ -320,6 +364,8 @@ All via `src/config.py` / `get_settings()`. **Audit existing `Settings` and `.en
 | `REASONING_LAYER_ENABLED` | `false` | S7 | Existing planner only |
 | `REASONING_SHADOW_SAMPLE_RATE` | `0.0` | S7 | No shadow runs (cost cap) |
 | `EVALUATION_JUDGE_ENABLED` | `false` | S2/S7 | No judge calls |
+| `LODGING_V1_ENABLED` | `false` | S9 | Stay block keeps today's static copy |
+| `MEDIA_ENRICH_ENABLED` | `false` | S9 | No media HTTP and no media reads on the request path |
 
 **Valid combinations:** shadow runs require `REASONING_LAYER_ENABLED=false` and `REASONING_SHADOW_SAMPLE_RATE>0`; a shadow run **never** persists a trip, never alters the response, and is budget-capped. `REASONING_LAYER_ENABLED=true` is only legal after the S7 gate passes (§11.9).
 
@@ -346,9 +392,13 @@ AGENT_CRITIC_MODEL=             # empty ⇒ LLM_MODEL
 
 # Eval (S2)
 EVALUATION_JUDGE_TIMEOUT_SECONDS=15
+
+# Guidebook enrich (S9) — proposed; add only when that subslice uses them
+# MEDIA_SOURCES=osm,wikimedia,opentripmap
+# WIKIMEDIA_USER_AGENT=
 ```
 
-Existing values (`LLM_*`, `PLANNER_*`, `ROUTING_BACKEND`, `SEARCH_*`, `QDRANT_*`, CORS, etc.) are **not** overwritten. No new mandatory API key. Never raise `PLANNER_GENERATION_TIMEOUT_SECONDS` to fit a feature.
+Existing values (`LLM_*`, `PLANNER_*`, `ROUTING_BACKEND`, `SEARCH_*`, `QDRANT_*`, CORS, etc.) are **not** overwritten. No new mandatory API key. Reuse an existing OpenTripMap key if that source is already configured. Never raise `PLANNER_GENERATION_TIMEOUT_SECONDS` to fit a feature. Slice 9 does not add a lodging-count or photo-coverage gate to §4.
 
 ---
 
@@ -366,6 +416,8 @@ Add only what a slice proves necessary:
 | Stop status (`confirmed`/`suggested`) on existing stop entity | S6 | Guide-agent unification |
 | `trips.version` (int) | S6, only if audit shows no versioning | Optimistic concurrency (explicit task) |
 | Feedback table | S2/S6, only if not present | User signals |
+| `places.media` (JSONB list of `PlaceMedia`) | S9 | Cached credited photos; additive column only |
+| Lodging rows on existing `places` (`category=lodging`) | S9 | Suggested stays; no lodging table |
 
 Every migration: forward + rollback tested on empty DB and a production-like snapshot; no destructive change; compatible with the previous app version (expand/contract).
 
@@ -396,7 +448,7 @@ The engine uses **naive destination-local wall-clock** (v6.1 lock). **Decision f
 
 ### 8.5 Cost semantics
 
-Place/activity cost uses labels: `free`, `estimated`, `source_verified`, `unknown`. Never invent prices. LLM token/cost tracking is separate from trip expense data.
+Place/activity cost uses labels: `free`, `estimated`, `source_verified`, `unknown`. Never invent prices. LLM token/cost tracking is separate from trip expense data. Slice 9 lodging uses `unknown` for both price and availability.
 
 ---
 
@@ -414,15 +466,18 @@ S3 Location intelligence
 S4 Travel engine V2 + validator V2
 S5 Readiness V2 + opening hours + ingestion quality
 S6 Canonical trip / map / guide unification
-S7 Experimental reasoning (optional, evidence-gated)
+S7 Experimental reasoning (optional, evidence-gated)  ─┐ after S6; S7 may stay off
+S9 Guidebook enrich (stays + credited photos)         ─┘ after S6.2; not gated on S7
 S8 Rollout + hardening
 ```
+
+S9 runs after Slice 6 and may run beside Slice 7. It does not wait for the Slice 7 ship gate. Entry requires 6.2 (canonical `place_id`, suggested versus routed).
 
 ### Slice 0 — Audit, baseline, guardrails
 
 | ID | Goal | Allowed paths | Required tests | Verify | Rollback | Stop if |
 |---|---|---|---|---|---|---|
-| 0.1 | Repository truth audit → `docs/v8.2/repository_audit.md`: status matrix (implemented-tested / implemented-untested / partial / stub / deferred) with file/symbol/test links; settings inventory; FE map/guide integration map; SSE lifecycle | `docs/v8.2/**` only | n/a | Every row links to a path/symbol/test | delete docs | Blueprint claim contradicts code (record, continue audit) |
+| 0.1 | Repository truth audit → `docs/v8.2/repository_audit.md`: status matrix (implemented-tested / implemented-untested / partial / stub / deferred) with file/symbol/test links; settings inventory; FE map/guide integration map; SSE lifecycle. Also record today's display-only `accommodation_label`, gradient stop cards, and the trip-page copy "Stays are unavailable" so Slice 9 does not treat them as real lodging or photos | `docs/v8.2/**` only | n/a | Every row links to a path/symbol/test | delete docs | Blueprint claim contradicts code (record, continue audit) |
 | 0.2 | Frozen snapshots: request/response fixtures for destination search, readiness, planner SSE event sequence, trip CRUD, GeoJSON, day edits, guest vs authed | `tests/snapshots/**`, `tests/fixtures/**` | Snapshot tests green on clean checkout, no live network | `pytest tests/snapshots -v` | delete tests | Existing suite already red (halt, report) |
 | 0.3 | Baseline metrics → `docs/v8.2/baseline_metrics.md` + `evals/baselines/`: pass rate, invalid-trip rate, duplicate rate, coherence, schedule feasibility, p50/p95 latency, LLM calls/tokens/cost per trip, OSRM/geo fallback rates, persistence failures | `docs/v8.2/**`, `evals/baselines/**`, `scripts/` (read-only use) | Baseline reproducible twice within tolerance | `python scripts/run_evals.py` ×2 | delete files | Baseline not reproducible (fix nondeterminism first) |
 | 0.4 | Fill every `[SET IN S0]` in §4 from baseline; record ADR-001…ADR-004 (modular monolith, API v1 compat, bounded execution, deterministic-vs-judge) | `docs/v8.2/**` | n/a | Targets table has no placeholders | revert docs | Latency baseline already > 45s p95 (halt; product decision) |
@@ -516,7 +571,22 @@ Entry criteria: S0–S6 shipped; S2 gate stable ≥ 2 weeks; judge promotion cri
 | 7.3 | Shadow mode: sampled (`REASONING_SHADOW_SAMPLE_RATE`), no persistence, no response change, budget-capped; compare old vs new on quality, latency, cost | `src/planner/service.py`, `src/planner/reasoning/**` | Shadow cannot persist/alter response; cost cap enforced | integration test | sample rate 0 | Shadow doubles cost beyond cap |
 | 7.4 | Decision: compare on golden + human-review set; ship only if §11.9 passes | docs | — | decision ADR | stay off | Does not meet gate ⇒ **do not ship** (a valid outcome) |
 
-Budgets: ≤ `ORCHESTRATION_MAX_AGENT_INVOCATIONS` extra LLM calls, per-call deadline inside the 45 s ceiling, retry ceiling, cancellation, no-progress detection. No in-path repair loops. No additional roles without a new ADR.
+Budgets: ≤ `ORCHESTRATION_MAX_AGENT_INVOCATIONS` extra LLM calls, per-call deadline inside the 45 s ceiling, retry ceiling, cancellation, no-progress detection. No in-path repair loops. No additional roles without a new ADR. Slice 7 does not grow a hotel agent or a photo agent.
+
+### Slice 9 — Guidebook enrich (`LODGING_V1_ENABLED`, `MEDIA_ENRICH_ENABLED`)
+
+Entry: 6.2 shipped (canonical `place_id`, suggested versus routed). May run in parallel with Slice 7. Does not wait for §11.9. Both flags default off. Lodging HTTP and media HTTP run only after the trip is saved. Each external call uses an explicit timeout, tenacity retry, and a named fallback (empty suggestion list, or empty media list). A provider miss never fails generate and never becomes a 500. Provider notes and the guidebook layout live in the parent vault `docs/context/free-media-map-guidebook.md` (tripplanner root). Do not paste that catalog here.
+
+| ID | Goal | Allowed paths | Required tests | Verify | Rollback | Stop if |
+|---|---|---|---|---|---|---|
+| 9.1 | Lodging ingest: Overpass `tourism=hotel\|guest_house\|hostel` inside the Slice 3 search area, through the existing place upsert, `category=lodging` | `src/geo/**` (query only), `src/places/**` | Hotel/guest_house/hostel map to lodging; attractions unchanged; empty Overpass ⇒ empty list | `pytest tests/geo tests/places -k lodging` | `LODGING_V1_ENABLED=false` | A new lodging table or a second place model |
+| 9.2 | Stay suggestions on the saved trip. Rank by distance to the trip base, then to that day's cluster. Status `suggested`. Not route geometry | `src/trips/**`, `src/places/**` | Suggestion has `place_id` and `price_status=unknown`; suggestion is not a stop; outside search area ⇒ absent or disclosed fallback | `pytest tests/trips -k lodging` | flag off | Runs inside `POST /planner/generate` |
+| 9.3 | Optional: user confirms one suggestion as the trip base; existing optimizer rebuilds the route. No auto-promote | `src/trips/**` | Confirm updates trip base and reoptimizes; declining leaves the route unchanged | `pytest tests/trips -k trip-base` | flag off | Confirmation runs inside generate |
+| 9.4 | `src/geo/media/` facade. Order: OSM `image` tag, then Wikimedia, then OpenTripMap. Cache on `places.media` | `src/geo/media/**`, `src/places/**`, additive migration | Provider miss ⇒ empty list; missing attribution ⇒ not stored as showable; flag off ⇒ no HTTP | `pytest tests/geo -k media` | `MEDIA_ENRICH_ENABLED=false` | Import from `travel_engine/` or `planner/service.py`, or HTTP on generate |
+| 9.5 | Proposed additive reads `GET /api/v1/places/{id}/media` and `GET /api/v1/trips/{id}/media`, each `ApiResponse`. Empty list when nothing resolved. Not folded into `PlaceOut` | `src/places/**` or media router, `docs/FE_guide.md` | Envelope; ownership; empty list; legacy place list unchanged | `pytest tests/places -k media` | flag off | Changes `PlaceOut`, SSE event names, or an existing path |
+| 9.6 | Frontend contract: Stay block renders suggestions (unknown price and availability, no booking link). Stop shows media URL plus a visible credit, or the existing gradient when the list is empty | FE repo | FE CI | — | revert FE | No FE owner (halt 9.6 release; backend may stay dark) |
+
+**Exit gate:** flag-off generate replay is byte-identical to baseline; suggestions are not stops; every shown photo has attribution; generate p95 stays ≤ 45 s.
 
 ### Slice 8 — Rollout and hardening
 
@@ -551,6 +621,7 @@ All run on every PR (`tests/architecture/` + CI jobs). A failing guardrail block
 | G13 | Every flag-off run is byte-identical to baseline output on the snapshot suite | Differential test |
 | G14 | Every `ValidationFinding.code` is in the stable registry; codes never removed | Registry test |
 | G15 | Run status transitions only via the run service | AST test |
+| G16 | `src/planner/service.py` and `src/travel_engine/**` do not import a lodging client or `src/geo/media/` | AST/grep test |
 
 ---
 
@@ -679,6 +750,17 @@ Ship (`REASONING_LAYER_ENABLED=true`) only if, on golden + human-review sets vs 
 
 Otherwise the layer stays off. That outcome is acceptable and recorded in an ADR.
 
+### 11.11 Guidebook honesty (S9, inform — does not gate itinerary quality)
+
+| Check | Rule |
+|---|---|
+| Invented price or availability | 0. Slice 9 stays `unknown` |
+| Suggestion without `place_id` | 0 |
+| Suggestion outside the search area | Absent, or the fallback is disclosed |
+| URL without attribution | 0 shown |
+| Photo coverage | Not a gate. Low coverage is a pass |
+| Flag-off generate replay | Byte-identical to baseline |
+
 ### 11.10 Persisted evaluation data
 
 Extend, don't replace, `TripEvaluation` / `TripEditEvent`. Per generation record: run_id, flags in effect, workflow version, model/provider/fallback reason, prompt + rubric versions, tool trace (incl. ranking explanations), validator findings (code/severity/ids), search-area strategy + fallback flag, routing mode + fallback, tokens, retries, latency, terminal status. Evaluation HTTP endpoints stay out of scope until persistence + authorization contracts exist (current status: stub).
@@ -702,8 +784,10 @@ Because the current model is a small free-tier model, structured-output validity
 
 - Existing `/api/v1` paths, DTOs, SSE event names unchanged (guard G8). New fields are additive and optional.
 - Candidate additive endpoints (only after S0 confirms the gap and FE agrees): `GET /planner/runs/{run_id}`, `POST /planner/runs/{run_id}/cancel`, `POST /locations/search|resolve|search-area`, `GET /trips/{id}/evaluation`, `POST /trips/{id}/feedback`.
+- Proposed Slice 9 reads, same rule (not present until that slice ships): `GET /api/v1/places/{id}/media`, `GET /api/v1/trips/{id}/media`.
+- **FE contract (S9):** the Stay block lists `LodgingSuggestion`s with unknown price and availability and no booking link. A stop photo shows the media URL and a visible credit. An empty media list keeps the non-photo fallback.
 - SSE is delivery, not truth: add `run_id` in an additive event field, heartbeats, an explicit terminal event, and polling via run status for reconnect. A client disconnect cancels spend as today; a completed trip remains retrievable by `run_id`.
-- **FE dependency (explicit):** S3 (location picker, type labels, radius control, area preview, anchor vs base) and S6 (marker↔card sync, suggested vs confirmed, degraded/partial states, geometry provenance label) need a named FE owner and contract tests before those slices release to users. Backend may ship dark behind flags without them.
+- **FE dependency (explicit):** S3 (location picker, type labels, radius control, area preview, anchor vs base), S6 (marker↔card sync, suggested vs confirmed, degraded/partial states, geometry provenance label), and S9.6 (Stay block, credited stop photos) need a named FE owner and contract tests before those slices release to users. Backend may ship dark behind flags without them.
 
 ---
 
@@ -715,7 +799,8 @@ Reuse structlog + Langfuse/NoOpTracer (keys empty ⇒ NoOp; errors swallowed). A
 
 ## 15. Security
 
-- Retrieved text, provider descriptions, OSM tags, reviews are **untrusted data**, never instructions; delimit and sanitize before any LLM prompt.
+- Retrieved text, provider descriptions, OSM tags, reviews, and image URLs are **untrusted data**, never instructions; delimit and sanitize before any LLM prompt.
+- Wikimedia calls send `WIKIMEDIA_USER_AGENT` when that setting exists. A media proxy, if a later slice adds one, uses the same SSRF rules as other provider URLs.
 - Tool allowlists (registry), Pydantic validation on every call, ownership enforcement (guest cookie must equal `Trip.session_id`), no cross-user leakage in run-status endpoints.
 - Validate untrusted geometry (polygon/boundary) and clamp radii server-side; request/response size limits; SSRF protection on any provider URL handling; provider rate limits.
 - No agent gets DB, shell, SQL or arbitrary-code access. No arbitrary-code sandbox is needed for this architecture; revisit only if such capabilities are introduced.
@@ -725,7 +810,7 @@ Reuse structlog + Langfuse/NoOpTracer (keys empty ⇒ NoOp; errors swallowed). A
 
 ## 16. Explicitly deferred (revisit only on evidence)
 
-Six-plus specialized agents; supervisor swarm; full durable checkpoint/resume, leases, workers; per-role mandatory model routing; automatic provider redundancy; in-path judge repairs; accommodation and image providers (data model, licensing, attribution); timezone-aware/seasonal/daylight scheduling (needs ADR §8.4); large trip-versioning redesign; microservices; cross-encoder rerank.
+Six-plus specialized agents; supervisor swarm; full durable checkpoint/resume, leases, workers; per-role mandatory model routing; automatic provider redundancy; in-path judge repairs; booking inventory, affiliate or referral links, live price, availability, image HTTP inside `POST /planner/generate`, unlabeled stock photos on a stop, Google Places; timezone-aware/seasonal/daylight scheduling (needs ADR §8.4); large trip-versioning redesign; microservices; cross-encoder rerank. Map satellite and outdoor styles stay in the parent media plan, not in this sequence.
 
 Re-entry requires: measured demand or metric, an ADR, and a golden-suite extension covering the feature.
 
@@ -814,9 +899,9 @@ Flag(s) and default:
 
 ---
 
-## 20. Definition of done for v8.2
+## 20. Definition of done for v8.3
 
-v8.2 is complete when:
+v8.3 is complete when every v8.2 line below is true, and the two Slice 9 lines at the end are true:
 
 - Location resolution is explicit and correct; search area, anchor and trip base are separate and traceable; no hidden universal radius.
 - Published trips have zero critical deterministic findings, zero duplicate stops, valid coordinates, chronological, feasible schedules.
@@ -829,6 +914,8 @@ v8.2 is complete when:
 - Latency (p95 ≤ 45 s), token and cost targets are met against the S0 baseline.
 - The reasoning layer is either shipped on evidence (§11.9) or documented as not worth shipping.
 - Architecture guardrails (§10) are green in CI and the legacy API/SSE contract is unchanged.
+- A generated trip can show suggested stays near the trip base with unknown price and availability, and those stays are not route stops.
+- Each stop shows a credited free photo, or an honest empty state that keeps the non-photo fallback. Generate p95 remains ≤ 45 s.
 
 ---
 
@@ -850,9 +937,11 @@ v8.2 is complete when:
 | 012 | Trip versioning / optimistic concurrency (only if needed) |
 | 013 | Reasoning-layer ship decision |
 | 014 | Model/provider fallback policy |
+| 015 | Lodging source and the unknown-price rule (S9) |
+| 016 | Media facade, `places.media` cache, and attribution (S9) |
 
 Each ADR: context, decision, alternatives, consequences, migration and rollback implications, status.
 
 ---
 
-**One-line summary:** build the measurable, location-correct, deterministic core first; let the eval harness — not the architecture diagram — decide whether any agent layer earns its latency and cost.
+**One-line summary:** build the measurable, location-correct, deterministic core first; let the eval harness — not the architecture diagram — decide whether any agent layer earns its latency and cost. After that trip is saved, Slice 9 may attach suggested stays and credited photos. It is not an agent layer.

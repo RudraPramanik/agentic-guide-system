@@ -1,0 +1,3 @@
+schema: spec-driven
+created: 2026-11-17
+skip_specs: true  # docs-only audit; no runtime behavior until later subslices
