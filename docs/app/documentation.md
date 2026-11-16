@@ -20,7 +20,7 @@ It does **not** replace:
 | [`AGENT.md`](../../AGENT.md) | Non-negotiable coding rules |
 | [`docs/app/system.md`](system.md) | Architecture essays |
 | [`docs/app/lld.md`](lld.md) | Pattern catalog |
-| [`docs/steps/`](../steps/) | Build prompts + validation |
+| [`docs/steps/`](../steps/) | Historical build prompts (not the next task; see `docs/context.md`) |
 | [`docs/spec.md`](../spec.md) | OpenSpec workflow playbook |
 | [`docs/v2_blueprint.md`](../v2_blueprint.md) | Post-P7 / v7 build SSOT (V0–V6) |
 

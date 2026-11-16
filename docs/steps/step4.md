@@ -1,3 +1,7 @@
+> **Historical.** This file is a finished build prompt, not the current build step.
+> Do not implement from it as the next task.
+> Checkpoint: `docs/context.md`.
+
 # Wandr — P4 Cursor Prompts: Travel Engine (Intelligence Layer)
 > Blueprint SoT: [`docs/blueprint_final.md`](../blueprint_final.md) **v6.1** — Phase P4 (5 days · 9 blueprint steps, expanded here to **4.0–4.10**)
 > Built-so-far context: [`docs/context.md`](../context.md) · Guardrails: [`AGENT.md`](../../AGENT.md)

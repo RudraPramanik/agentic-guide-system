@@ -1,3 +1,7 @@
+> **Historical.** This file is a finished build prompt, not the current build step.
+> Do not implement from it as the next task.
+> Checkpoint: `docs/context.md`.
+
 # Wandr — P6 Cursor Prompts: Planner API + Persistence (v2 — hardened)
 > Blueprint SoT: [`docs/blueprint_final.md`](../blueprint_final.md) **v6.1** — Phase P6 (3 days · 5 blueprint steps, expanded here to **6.0–6.5**)
 > Built-so-far context: [`docs/context.md`](../context.md) · Guardrails: [`AGENT.md`](../../AGENT.md)

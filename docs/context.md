@@ -1,6 +1,6 @@
 # Wandr — AI Agent Context
 
-> **Read this first every session.** Then `AGENT.md` (rules), then the current step in `docs/steps/step*.md` (or blueprint).
+> **Read this first every session.** Then `AGENT.md` (rules), then `docs/app/system.md` (architecture). Build contracts: `docs/blueprint_final.md` (P0–P7) and `docs/v2_blueprint.md` (post-P7).
 > **Planner single source of truth (P0–P7):** `docs/blueprint_final.md` **v6.1** (pre-flight addendum merged; `docs/blueprint.md` is a pointer only).
 > **Post-P7 / v7 build SSOT (V0–V6):** `docs/v2_blueprint.md` — CI → observability → harness → hybrid RRF; notes in `docs/next_version.md`.
 > **Deployment (MVP):** frontend + API under the same registrable domain; auth cookies stay `SameSite=Lax` (Option A).
@@ -9,7 +9,15 @@
 > P2 study guide (engineering + interview Q&A): `docs/app/p2guide.md` · books: `docs/books/p2-references.md`
 > Developer playbook (OpenSpec workflow + example prompts): `docs/spec.md`
 
-**Last updated:** 2026-11-14 · **Phase:** post-P7 / v7 · **Next step:** public hosts are in DNS — site `https://explorai.online` and `https://www.explorai.online`, API `https://api.explorai.online`. Confirm liveness with `ops/health.sh` (that check does not cover Redis).
+**Living vs history**
+
+| Trust now | History (not the next task) |
+|-----------|-----------------------------|
+| `docs/context.md`, `AGENT.md`, `docs/app/system.md`, `docs/app/lld.md` | `docs/steps/step0.md`–`step7.md`, `docs/steps/step5_critic.md` |
+| `docs/blueprint_final.md` (P0–P7), `docs/v2_blueprint.md` (post-P7) | Finished build prompts. Each file says so at the top. |
+| `docs/FE_guide.md`, `docs/blueprint_frontend.md`, `docs/steps/blueprint_production.md` | |
+
+**Last updated:** 2026-11-16 · **Phase:** post-P7 / v7 · **Next step:** public hosts are in DNS — site `https://explorai.online` and `https://www.explorai.online`, API `https://api.explorai.online`. Confirm liveness with `ops/health.sh` (that check does not cover Redis).
 
 ---
 
@@ -247,9 +255,9 @@ trips HTTP CRUD + GeoJSON/claim **real** (P6.3); planner **HTTP SSE** `/planner/
 ## Local dev quick ref
 
 ```bash
-docker compose up --build     # PostGIS :5433, Qdrant :6335, Redis :6380, API :8000 (uvicorn --reload --reload-dir /app/src)
-# browser: http://localhost:8000/docs  and  /api/v1/destinations/search?q=Darjeeling
-# optional host uvicorn (stop compose `api` first): uvicorn src.main:app --reload --port 8000
+docker compose up --build     # PostGIS :5433, Qdrant :6335, Redis :6380, API host :8001 → container :8000 (uvicorn --reload --reload-dir /app/src)
+# browser: http://localhost:8001/docs  and  /api/v1/destinations/search?q=Darjeeling
+# optional host uvicorn (only while Compose `api` is stopped): uvicorn src.main:app --reload --port 8000
 python scripts/test_db_conn.py
 python scripts/test_p1_smoke.py
 python scripts/test_geocoder.py "Darjeeling"   # needs PYTHONPATH=project root if imports fail
@@ -273,9 +281,9 @@ python -m pytest tests/ -v
 - Places collection cutover: `QDRANT_PLACES_COLLECTION=places_v2` (active via `places_collection()`); `SEARCH_SPARSE_ENABLED=false` → dense-only; `SEARCH_FUSION_DIAGNOSTICS=false` → skip diagnostic subqueries; rollback also `QDRANT_PLACES_COLLECTION=places` (keep legacy until soak)
 - Live golden harness: `python scripts/run_evals.py --destination darjeeling` (needs `LLM_MODEL` with LiteLLM provider prefix, e.g. `nvidia_nim/...` — bare `deepseek-ai/...` → BadRequestError); baseline is generate-mode (`evals/baselines/darjeeling.json`)
 - Empty host `REDIS_URL` keeps in-memory backends for pytest; Compose `api` sets `redis://redis:6379/0` (published **6380**). Optional host uvicorn: `redis://localhost:6380/0`
-- Stop host uvicorn **and any other process on :8000** before `docker compose up` (port clash)
+- Stop any other process on **:8001** before `docker compose up` (port clash on the published API port)
 - `.env` must have a **bare** `DATABASE_URL` value — no comment prefix on the same line
-- `LLM_API_KEY` is optional for catalog/health boot (defaults empty). Generate/enrich need a real key in `guideagent/.env` (bind-mounted at `/app/.env` plus Compose `env_file`) — not in the Next app. `docker compose down` unbinds `:8000` until `up` and `wandr_api` is healthy. If `wandr_api` is `Exited`/`Restarting` while Postgres is healthy, host `:8000` `ERR_CONNECTION_REFUSED` means the API never bound the port — `docker logs wandr_api` (`Path doesn't exist: migrations` → local `Dockerfile.dev`/Compose volume; other missing required env), not a Next.js URL bug. Tracking: `docs/issue_solve.md`
+- `LLM_API_KEY` is optional for catalog/health boot (defaults empty). Generate/enrich need a real key in `guideagent/.env` (bind-mounted at `/app/.env` plus Compose `env_file`) — not in the Next app. `docker compose down` unbinds `:8001` until `up` and `wandr_api` is healthy. If `wandr_api` is `Exited`/`Restarting` while Postgres is healthy, host `:8001` `ERR_CONNECTION_REFUSED` means the API never bound the published port — `docker logs wandr_api` (`Path doesn't exist: migrations` → local `Dockerfile.dev`/Compose volume; other missing required env), not a Next.js URL bug. Tracking: `docs/issue_solve.md`
 - Root `.gitignore` ignores `.env` / `.env.*` (keeps `.env.example`). `.env` is untracked; git history still has old blobs until a separate rewrite
 - Geo: `NOMINATIM_BASE_URL`, `OVERPASS_API_URL`, `NOMINATIM_USER_AGENT`, `PLACES_SOURCES` (`overpass` default; optional `opentripmap`,`geoapify`), `OPENTRIPMAP_*`, `GEOAPIFY_*` via `get_settings()`
 - Routing: `ROUTING_BACKEND=haversine` (default, in-process, Point-only GeoJSON), `hybrid` (haversine times + OSRM polylines for map LineStrings), or `osrm` + `OSRM_BASE_URL` (live pairwise matrix; spike / self-host)

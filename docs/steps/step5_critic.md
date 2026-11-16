@@ -1,3 +1,7 @@
+> **Historical.** This file is a finished build prompt, not the current build step.
+> Do not implement from it as the next task.
+> Checkpoint: `docs/context.md`.
+
 # Wandr — P5 Patch Addendum
 > **Status: APPLIED into `docs/steps/step5.md`** (and aligned in `docs/blueprint_final.md` + `AGENT.md`) via OpenSpec change `patch-step5-critic-runtime-fixes`. Do **not** re-apply these rewrites — treat this file as rationale / history only.
 >

@@ -117,7 +117,7 @@ Domain Services          ← business logic, orchestration
 | `wandr_postgres` | 5433              | PostGIS                                                                 |
 | `wandr_qdrant`   | 6335 / 6336       | Vector search                                                           |
 | Redis            | 6380              | Rate limit + planner cache (Compose API injects `redis://redis:6379/0`) |
-| `wandr_api`      | 8000              | Uvicorn reload (`--reload-dir` src)                                     |
+| `wandr_api`      | 8001              | Host publish of container port 8000; uvicorn reload (`--reload-dir` src) |
 
 
 Empty host `REDIS_URL` keeps rate limit + planner cache **in-memory** (fine for pytest / single-process host uvicorn; not shared across workers). Compose API sets Redis; optional host uvicorn: `redis://localhost:6380/0`.
@@ -126,8 +126,8 @@ Production uses hosted services + `docker-compose.prod.yml` / `ops/*.sh` — see
 
 ```bash
 docker compose up --build
-# Health: http://localhost:8000/api/v1/health
-# OpenAPI: http://localhost:8000/docs
+# Health: http://localhost:8001/api/v1/health
+# OpenAPI: http://localhost:8001/docs
 ```
 
 Host URLs: Postgres `…@localhost:5433/wandr`, Qdrant `http://localhost:6335`. `LLM_API_KEY` optional for catalog/health; required for generate/enrich.

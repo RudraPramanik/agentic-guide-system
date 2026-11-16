@@ -1574,3 +1574,5 @@ All endpoints: `require_auth` + ownership check → 403 on mismatch. Return `Api
 | Write day titles and narrative (`write_narrative` node) | Change `suggested_start_time` or route geometry |
 
 **Structure from code. Orchestration from agent. Narrative from LLM.**
+
+Post-P7 / v7 build steps (V0-V6) live only in `docs/v2_blueprint.md`. This file stays the P0-P7 master.

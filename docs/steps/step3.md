@@ -1,3 +1,7 @@
+> **Historical.** This file is a finished build prompt, not the current build step.
+> Do not implement from it as the next task.
+> Checkpoint: `docs/context.md`.
+
 # Wandr — P3 Cursor Prompts: Place Knowledge Layer (v2 — hardened)
 > Blueprint: [`docs/blueprint_final.md`](../blueprint_final.md) — Phase P3 (3 days · 5 steps, expanded to 7 + testing/checklist)
 > Built-so-far context: [`docs/context.md`](../context.md) · Guardrails: [`AGENT.md`](../../AGENT.md)

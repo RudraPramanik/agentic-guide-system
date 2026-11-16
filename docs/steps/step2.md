@@ -1,3 +1,7 @@
+> **Historical.** This file is a finished build prompt, not the current build step.
+> Do not implement from it as the next task.
+> Checkpoint: `docs/context.md`.
+
 # Wandr — P2 Cursor Prompts: Geo Foundation (v2 — hardened)
 > Blueprint: [`docs/blueprint_final.md`](../blueprint_final.md) — Phase P2 (4 days · 8 blueprint steps)
 > Built-so-far context: [`docs/context.md`](../context.md) · Guardrails: [`AGENT.md`](../../AGENT.md)

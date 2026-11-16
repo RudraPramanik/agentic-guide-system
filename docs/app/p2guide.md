@@ -1,10 +1,10 @@
 # Wandr P2 Guide — Geo Foundation
 
 > **Audience:** engineers implementing or explaining P2, and anyone covering Wandr’s backend in interviews.  
-> **Phase:** P2 — **complete** (geo foundation after P1’s DB/auth). Later phases P3–P4 complete; P5.1–5.11 (planner graph/tools) complete in context; next build step: **P5.12** (PlannerService SSE bridge) — see `context.md`.  
-> **Build prompts:** [`docs/steps/step2.md`](../steps/step2.md) (v2 hardened) · **Checkpoint:** [`docs/context.md`](../context.md) · **Guardrails:** [`AGENT.md`](../../AGENT.md)
+> **Phase:** P2 — **complete** (geo foundation after P1’s DB/auth). Later phases are recorded in [`docs/context.md`](../context.md). That file is what to do next.
+> **Build prompts:** [`docs/steps/step2.md`](../steps/step2.md) is historical. **Checkpoint:** [`docs/context.md`](../context.md) · **Guardrails:** [`AGENT.md`](../../AGENT.md)
 
-This guide is **knowledge**, not a Cursor paste prompt. For historical build order, see `step2.md`; for “what’s next,” see `context.md`.
+This guide is **knowledge**, not a Cursor paste prompt. For historical build order, see `step2.md`; for what’s next, see `docs/context.md`.
 
 ---
 
@@ -17,8 +17,8 @@ This guide is **knowledge**, not a Cursor paste prompt. For historical build ord
 | **P2** | **Geo gateways, seed POIs, destinations/places APIs, readiness, pytest + smoke** | **Complete** |
 | P3 | Enrich + Qdrant index | **Complete** (needs seeded places) |
 | P4 | travel_engine + CORS + tools envelope | **Complete** |
-| P5 | Phase-gated LangGraph planner / tool bodies | **In progress** — 5.1–5.11 ✅; next **P5.12** — see `context.md` |
-| P6–P7 | Planner SSE HTTP, trips, edits | Needs 5.12–5.14 closeout + P6 router |
+| P5 | Phase-gated LangGraph planner / tool bodies | Shipped. Current next step is in [`docs/context.md`](../context.md), not this guide. |
+| P6–P7 | Planner SSE HTTP, trips, edits | Shipped status is in [`docs/context.md`](../context.md). |
 
 **P2 product outcome (shipped):** you can geocode a city, scrape POIs, store them in PostGIS, list them via HTTP, and report how “ready” a destination is for planning — still without LLM trip generation.
 

@@ -1,3 +1,7 @@
+> **Historical.** This file is a finished build prompt, not the current build step.
+> Do not implement from it as the next task.
+> Checkpoint: `docs/context.md`.
+
 # Wandr — P0 Cursor Prompts
 > One prompt per sub-step. Paste each prompt into Cursor Chat (Agent mode) **in order**.
 > Do not start the next prompt until the current step's ✅ validation passes.

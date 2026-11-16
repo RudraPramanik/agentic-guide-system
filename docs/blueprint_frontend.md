@@ -6,7 +6,7 @@
 > **Wire contract (stack, endpoints, DTOs, SSE, GeoJSON):** `docs/FE_guide.md` — **unchanged, still canonical**. Backend itself is not being touched until FE is built and integrated; this version only tightens what the FE does with the contract as it stands today.
 > **Backend / planner SSOT:** `docs/blueprint_final.md` (unchanged by this doc).
 
-**Supersedes:** v1.0. This is a patch pass, not a redesign — v1.0's phase order, stack, and principles are retained. Changes are additive/clarifying, flagged inline with `🆕 v1.1`. Do not use any parallel draft (e.g. retired `front_blueprint_2.md`).
+**Supersedes:** v1.0. This is a patch pass, not a redesign — v1.0's phase order, stack, and principles are retained. Changes are additive/clarifying, flagged inline with `🆕 v1.1`. Do not use any parallel draft. This file is the only FE phased-build contract.
 
 **Non-goals of this document:** implementing the Next.js app inside `guideagent`; changing FastAPI routes (backend stays frozen for this pass — see `docs/FE_guide.md` §11 OAuth gap); FE hosting/VPS SOP (`docs/steps/blueprint_production.md` is API-only).
 

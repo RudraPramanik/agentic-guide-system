@@ -7,7 +7,7 @@ context: |
   Session start (required read order for agents):
   1. docs/context.md — what is done, next step, stubs only
   2. AGENT.md — hard coding guardrails (never violate)
-  3. Current step: docs/steps/step*.md (or docs/blueprint_final.md)
+  3. docs/app/system.md, docs/blueprint_final.md (P0–P7), docs/v2_blueprint.md (post-P7). Do not treat docs/steps/step*.md as the current task.
 
   Stack: Python, FastAPI, SQLAlchemy 2.0 async (Mapped[]), Alembic, PostGIS,
   asyncpg, Qdrant, litellm via core gateway, LangGraph (planner later).
@@ -28,7 +28,7 @@ context: |
   Deep refs (do not duplicate into OpenSpec wholesale):
   docs/app/system.md, docs/app/lld.md, docs/blueprint_final.md
 
-  Current phase: P1 (DB/auth). Specs grow delta-first from real changes —
+  Current phase: post-P7 / v7. Read docs/context.md for done vs stub. Specs grow delta-first from real changes —
   do not backfill the whole blueprint into openspec/specs/.
 
   After completing a validated build step: update docs/context.md

@@ -15,7 +15,7 @@ This guide explains how we build features end-to-end: **think → plan → archi
 | **Guardrails** | `AGENT.md` | Non-negotiable coding rules | Team |
 | **North star** | `docs/blueprint_final.md` | Full product + phase plan | Team (rare changes) |
 | **Architecture** | `docs/app/system.md`, `docs/app/lld.md` | System context + patterns | Team |
-| **Build prompts** | `docs/steps/step*.md` | Detailed step instructions + validation | Team (per phase) |
+| **Build prompts** | `docs/steps/step*.md` | Historical build prompts (not the next task; checkpoint is `docs/context.md`) | Team (per phase) |
 | **Active change** | `openspec/changes/<id>/` | This slice: proposal, spec, design, tasks | OpenSpec + you |
 | **Permanent specs** | `openspec/specs/` | Behavior deltas after archive | Grows automatically per shipped change |
 | **AI injection** | `openspec/config.yaml` | Project context for OpenSpec artifacts | Team |

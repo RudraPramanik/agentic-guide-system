@@ -641,4 +641,4 @@ Exact numbers are config-driven (`RATE_LIMIT_*` in settings); treat the table as
 
 ---
 
-*Source decisions: OpenSpec changes `frontend-stack-guide`, `fe-api-contract-guide`, `fe-guide-map-tiles` (API repo history). Input draft lived in that repo's `docs/fe_suggestins.md` — not a file here.*
+*Source decisions: OpenSpec changes `frontend-stack-guide`, `fe-api-contract-guide`, `fe-guide-map-tiles` (API repo history). The earlier brainstorm draft is not a file in this repo.*

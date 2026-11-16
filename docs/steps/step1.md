@@ -1,3 +1,7 @@
+> **Historical.** This file is a finished build prompt, not the current build step.
+> Do not implement from it as the next task.
+> Checkpoint: `docs/context.md`.
+
 
 # Wandr — P1 Cursor Prompts: Database Foundation + Auth
 > Blueprint: [`docs/blueprint_final.md`](../blueprint_final.md) — Phase P1 (3 days · 9 blueprint steps)
