@@ -52,3 +52,7 @@ Do not implement from memory. Do not assume stub files contain logic.
 ## Code rules
 
 Follow `AGENT.md` completely. When instructions conflict with the blueprint, ask the user; if unclear, prefer blueprint + efficiency.
+
+## Graphify
+
+A local code graph of this repo lives at `graphify-out/` (gitignored). Query it for who calls what inside the backend. It does not include the frontend. Usage and the parent graph: `../docs/context/graphify-and-openspec.md` when the parent workspace is present. Cursor rule: `.cursor/rules/graphify.mdc`.

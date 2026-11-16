@@ -1,0 +1,21 @@
+---
+description: Use the local Graphify graph when tracing how backend code connects. This repo is the product brain. Do not use for copy edits, OpenSpec wording, or docs-only work.
+alwaysApply: false
+---
+
+This repo has its own code graph at `graphify-out/` (generated, not committed). It contains `guideagent` source only. The parent `tripplanner/graphify-out/` is a different graph and includes the frontend.
+
+When a question is about structure (who calls this, what breaks if this changes):
+
+1. Run one of these from the `guideagent/` root:
+   - `graphify query "<symbols>"` — scoped subgraph
+   - `graphify path "<A>" "<B>"` — shortest path (add `--undirected` if no directed path)
+   - `graphify explain "<symbol>"` — one node and its neighbors
+   - `graphify affected "<symbol>"` — what a change reaches
+2. Trust `EXTRACTED` edges after you open the cited file and line. Check `INFERRED` edges in source before they enter a design. `AMBIGUOUS` means the resolver had several targets.
+3. Wire shapes still come from OpenAPI and `docs/FE_guide.md`. Do not invent endpoints, DTO fields, or env vars from the graph.
+4. This graph cannot see `guideagent-frontend/`. A cross-boundary bug (cookies, SSE, GeoJSON, 403, 409) needs the parent workspace and `docs/context/symptoms.md` there.
+
+Use Read and Grep directly for a known file, a small edit, or anything the graph is not built to answer.
+
+After you change code here, run `graphify update .` from the `guideagent/` root. If the parent graph is also in use that day, update `tripplanner/` too.

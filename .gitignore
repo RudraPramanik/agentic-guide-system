@@ -34,3 +34,7 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local code graph for this repo. Rebuild with:
+# graphify extract . --code-only && graphify cluster-only . --no-label
+graphify-out/

@@ -1,0 +1,4 @@
+# Code graph only. Docs and OpenSpec are read as documents, not embedded here.
+
+openspec/
+docs/
