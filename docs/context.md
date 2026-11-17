@@ -17,13 +17,13 @@
 | `docs/blueprint_final.md` (P0–P7), `docs/v2_blueprint.md` (post-P7) | Finished build prompts. Each file says so at the top. |
 | `docs/FE_guide.md`, `docs/blueprint_frontend.md`, `docs/steps/blueprint_production.md` | |
 
-**Last updated:** 2026-11-16 · **Phase:** post-P7 / v7 · **Next step:** public hosts are in DNS — site `https://explorai.online` and `https://www.explorai.online`, API `https://api.explorai.online`. Confirm liveness with `ops/health.sh` (that check does not cover Redis).
+**Last updated:** 2026-11-17 · **Phase:** post-P7 / v7 · **Next step:** public hosts are in DNS — site `https://explorai.online` and `https://www.explorai.online`, API `https://api.explorai.online`. Confirm liveness with `ops/health.sh` (that check does not cover Redis). Next blueprint slice is Slice 2.
 
 ---
 
 ## Current state (one line)
 
-P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode baseline; Tiger Hill indexed); V6.2/V6.3 deferred — misses were enrich/index coverage + agent flakiness, not embedding-model; generate default routing haversine; POI ingest multi-source (`PLACES_SOURCES`).
+P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode baseline; Tiger Hill indexed); V6.2/V6.3 deferred — misses were enrich/index coverage + agent flakiness, not embedding-model; generate default routing haversine; POI ingest multi-source (`PLACES_SOURCES`). v8.3 Slice 1 run tracking is implemented behind `RUN_TRACKING_ENABLED` (default false), with `GET /api/v1/planner/runs/{run_id}`.
 
 ---
 
@@ -122,7 +122,7 @@ P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode 
 
 | Module | Exports / notes |
 |--------|-----------------|
-| `src/config.py` | `get_settings()` — Qdrant/embeddings (`QDRANT_PLACES_COLLECTION`, `_V2`, `SEARCH_SPARSE_ENABLED`, `SEARCH_RRF_K`, `SEARCH_FUSION_DIAGNOSTICS`), OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo (`PLACES_SOURCES`, OpenTripMap/Geoapify keys), CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL`, `ROUTING_BACKEND` (`haversine` default \| `hybrid` \| `osrm`) |
+| `src/config.py` | `get_settings()` — Qdrant/embeddings (`QDRANT_PLACES_COLLECTION`, `_V2`, `SEARCH_SPARSE_ENABLED`, `SEARCH_RRF_K`, `SEARCH_FUSION_DIAGNOSTICS`), OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo (`PLACES_SOURCES`, OpenTripMap/Geoapify keys), CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `RUN_TRACKING_ENABLED` (default false), `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL`, `ROUTING_BACKEND` (`haversine` default \| `hybrid` \| `osrm`) |
 | `src/core/llm/client.py` | `chat_completion` / `chat_with_tools` / `embed_texts` — **only** litellm import; `LLMUsage` + retry counts |
 | `src/core/observability/tracing.py` | `get_tracer()` / `flush_tracer()` / `start_generation_trace` + `end_generation_trace` + tool spans around generate (fail-soft) |
 | `src/evaluation/scorers.py` | Pure golden-case scorers |
@@ -134,9 +134,10 @@ P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode 
 | `scripts/run_evals.py` | Golden harness runner + baseline diff; live path ensures Qdrant/embeddings |
 | `src/core/cache/backends.py` | `CacheBackend` Protocol (`get`/`set`/`delete`); `InMemoryCacheBackend` / `RedisCacheBackend`; `get_cache_backend()` |
 | `src/core/middleware/rate_limit.py` | `InMemoryRateLimiter` / `RedisRateLimiter`; `get_rate_limiter()` selects on `REDIS_URL`; fail-open |
-| `src/planner/schemas.py` | `PlanRequest` (destination_id, raw_input, optional days/base/accommodation_label) |
+| `src/planner/schemas.py` | `PlanRequest` (destination_id, raw_input, optional days/base/accommodation_label); `PlannerRunOut` |
 | `src/planner/cache.py` | MVP key + `maybe_get_cached_state` / `maybe_set_cached_state` / `_replay_cached` (skip tool loop; still feeds `save_from_state`) |
-| `src/planner/router.py` | `POST /generate` SSE — floor check, queue+task, terminal buffer → `save_from_state` + `trip_id`, cache set on fresh success, proxy headers |
+| `src/planner/router.py` | `POST /generate` SSE — floor check, queue+task, terminal buffer → `save_from_state` + `trip_id`, cache set on fresh success, proxy headers. Flag on: idempotency + additive `run_id`. `GET /runs/{run_id}` |
+| `src/planner/runs/` | `PlannerRun` + flush-only repository; `PlannerRunService` owns status; idempotency key and outcome map. Writes only when `RUN_TRACKING_ENABLED` |
 | `src/destinations/exceptions.py` | + `DestinationNotReadyError` (409 `destination_not_ready`) |
 | `src/travel_engine/protocols.py` | `RouteLeg`, `RoutingProvider` (`travel_matrix` + `route_polyline`), `legs_to_lookup` — pure, no I/O |
 | `src/travel_engine/travel_rules.py` | Caps, structural durations, interest weights, `visit_duration_min` |

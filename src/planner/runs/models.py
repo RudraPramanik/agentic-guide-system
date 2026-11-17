@@ -30,6 +30,18 @@ def _run_status_values(enum_cls: type[RunStatus]) -> list[str]:
     return [member.value for member in enum_cls]
 
 
+TERMINAL_RUN_STATUSES = frozenset(
+    {
+        RunStatus.COMPLETED,
+        RunStatus.PARTIAL,
+        RunStatus.DEGRADED,
+        RunStatus.FAILED,
+        RunStatus.CANCELLED,
+        RunStatus.TIMED_OUT,
+    }
+)
+
+
 class PlannerRun(Base, UUIDMixin, TimestampMixin):
     """One generate attempt. ``id`` is the run id. Not soft-deleted."""
 

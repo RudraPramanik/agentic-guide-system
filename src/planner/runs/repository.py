@@ -32,3 +32,7 @@ class PlannerRunRepository(BaseRepository[PlannerRun, uuid.UUID]):
             PlannerRun.idempotency_key == idempotency_key,
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def lock_by_id(self, run_id: uuid.UUID) -> PlannerRun | None:
+        stmt = select(PlannerRun).where(PlannerRun.id == run_id).with_for_update()
+        return (await self.session.execute(stmt)).scalar_one_or_none()

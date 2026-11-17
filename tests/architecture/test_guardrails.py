@@ -19,7 +19,9 @@ from tests.architecture._helpers import (
     scan_g2_travel_engine_io,
     scan_g3_os_environ,
     scan_g4_node_tool_impl_imports,
+    file_assigns_run_status,
     scan_g5_router_repository_imports,
+    scan_g15_run_status_assigns,
     scan_g6_module_global_tool_context,
     scan_g7_state_forbidden_fields,
     scan_g16_lodging_media_imports,
@@ -146,7 +148,21 @@ def test_g16_no_lodging_or_media_imports(allowlist: dict[str, set[str]]) -> None
     )
 
 
+def test_g15_run_status_assign_only_in_lifecycle_service(tmp_path: Path) -> None:
+    assert scan_g15_run_status_assigns() == set()
+    sample = tmp_path / "bad_run_status.py"
+    sample.write_text(
+        "from src.planner.runs.models import RunStatus\n"
+        "def poke(run):\n"
+        "    run.status = RunStatus.FAILED\n",
+        encoding="utf-8",
+    )
+    assert file_assigns_run_status(sample) is True
+
+
 def test_deferred_rules_documented() -> None:
     text = VIOLATIONS_PATH.read_text(encoding="utf-8")
-    for rule in ("G8", "G9", "G10", "G12", "G13", "G14", "G15"):
+    for rule in ("G8", "G9", "G10", "G12", "G13", "G14"):
         assert rule in text, f"{rule} deferral missing from VIOLATIONS.md"
+    deferred = text.split("## Deferred", 1)[1]
+    assert "G15" not in deferred

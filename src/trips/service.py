@@ -713,11 +713,27 @@ class TripService:
         state: dict[str, Any],
         user_id: UUID | None,
         session_id: str,
+        run_id: UUID | None = None,
     ) -> Trip | None:
         """
         Persist Trip + TripPlace rows in one transaction (UoW).
         Returns None when there is nothing usable to save (empty / clarification-only).
+
+        When ``run_id`` is set and that run already has a trip, return it.
+        A new trip stores ``trip_id`` on the run before commit.
         """
+        run = None
+        if run_id is not None:
+            from src.planner.runs.exceptions import RunNotFoundError
+            from src.planner.runs.service import PlannerRunService
+
+            run_svc = PlannerRunService(self.session)
+            run = await run_svc.lock(run_id)
+            if run is None:
+                raise RunNotFoundError(str(run_id))
+            if run.trip_id is not None:
+                return await self.repo.get_by_id(run.trip_id)
+
         schedule = state.get("schedule") or []
         if not _schedule_usable(schedule):
             return None
@@ -767,6 +783,17 @@ class TripService:
             for row in place_rows:
                 row["trip_id"] = trip.id
             await self.repo.create_trip_places(place_rows)
+            if run is not None:
+                from src.planner.runs.service import PlannerRunService
+
+                degraded = bool(
+                    state.get("used_geo_fallback") or state.get("used_osrm_fallback")
+                )
+                await PlannerRunService(self.session).bind_new_trip(
+                    run,
+                    trip.id,
+                    degraded=degraded,
+                )
             await self.session.commit()
             await self.session.refresh(trip)
             return trip

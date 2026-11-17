@@ -219,10 +219,18 @@ data: <json>
 | `tool_done` | `{ name: string, ok: boolean, code?: string \| null, ms: number }` |
 | `tool_batch_done` | `{}` (may accompany state internally; FE can show “batch done”) |
 | `itinerary_done` | `{ itinerary?, days?, from_cache?, trip_id?, accommodation_label? }` — `trip_id` added after save |
-| `error` | `{ code: "generation_timeout" \| "graph_recursion_limit" \| string }` |
+| `error` | `{ code: "generation_timeout" \| "graph_recursion_limit" \| "run_in_progress" \| string }` |
 | `clarification_needed` | question / clarification payload (terminal; no trip save) |
 
 Ignore unknown event names (log in dev). Spec catalog may include `tool_started` / `validation_done` even when a given run omits them.
+
+### Run id and idempotency
+
+Optional header `Idempotency-Key` (1–128 characters). When the server flag `RUN_TRACKING_ENABLED` is on, a repeat of the same key for the same owner returns the original run: `itinerary_done` with the saved `trip_id`, or one `error` frame. An in-progress duplicate is `error` / `run_in_progress` and does not start a second generate. There is no cancel route. Disconnect of the stream is what stops an in-flight generate.
+
+While the flag is on, every SSE `data` object includes `run_id`. Event names stay the same. While the flag is off, `run_id` is absent and a second submit can save a second trip.
+
+Poll `GET /api/v1/planner/runs/{run_id}` (`ApiResponse`). Guest cookie `wandr_session` must match the run; a signed-in caller must own it (or match the session when the run is still anonymous). Unknown id is **404**. Wrong owner is **403**. The body is `run_id`, `status`, `failure_code`, `trip_id`, `created_at`, `updated_at`. It omits the idempotency key, input hash, and session id. GET works after the flag is turned off for rows that already exist.
 
 Proxy note (prod): reverse proxy must not buffer this path (see API repo (`guideagent`) `docs/context.md` / production blueprint).
 
@@ -270,7 +278,8 @@ Auth vocabulary: **None** | **Optional** | **Required** (+ ownership notes).
 
 | Method | Path | Auth | Notes |
 |--------|------|------|-------|
-| POST | `/api/v1/planner/generate` | Optional | SSE; floor 409 `destination_not_ready`; sets `wandr_session`; planner rate limit **10/min** |
+| POST | `/api/v1/planner/generate` | Optional | SSE; floor 409 `destination_not_ready`; sets `wandr_session`; planner rate limit **10/min**. Optional `Idempotency-Key`. `run_id` on frames only when run tracking is on |
+| GET | `/api/v1/planner/runs/{run_id}` | Optional + ownership | `ApiResponse`; 404 unknown, 403 wrong owner. No rate limit. No cancel route |
 
 ### `trips`
 

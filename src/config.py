@@ -70,6 +70,8 @@ class Settings(BaseSettings):
     PLANNER_ABSOLUTE_MIN_PLACES: int = 10
     # Planner result cache TTL — used from P6.4; declared now
     PLANNER_CACHE_TTL_SECONDS: int = 3600
+    # Slice 1 run rows and idempotency. Off keeps today's generate path.
+    RUN_TRACKING_ENABLED: bool = False
 
     # Observability — empty keys → NoOpTracer; LANGFUSE_BASE_URL accepted as alias
     LANGFUSE_PUBLIC_KEY: str = ""

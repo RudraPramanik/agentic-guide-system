@@ -18,4 +18,3 @@ Paths listed under **Allowlist** are known breaches. Architecture tests fail onl
 | G12 | Golden replay owned by eval harness (`run_evals`). |
 | G13 | Flag-off differential snapshot work is later. |
 | G14 | No `ValidationFinding` type or stable finding-code registry in the checkout yet; suite only guards if that type appears later. |
-| G15 | No run-status service / `planner/runs/` yet — do not invent it. |

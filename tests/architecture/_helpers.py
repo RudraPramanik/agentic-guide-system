@@ -160,6 +160,51 @@ def scan_g4_node_tool_impl_imports() -> set[str]:
     return hits
 
 
+def _references_run_status(tree: ast.AST) -> bool:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id in {"PlannerRun", "RunStatus"}:
+            return True
+        if isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name in {"PlannerRun", "RunStatus"}:
+                    return True
+                if alias.asname in {"PlannerRun", "RunStatus"}:
+                    return True
+    return False
+
+
+def _assigns_status_attr(tree: ast.AST) -> bool:
+    for node in ast.walk(tree):
+        targets: list[ast.AST] = []
+        if isinstance(node, ast.Assign):
+            targets = list(node.targets)
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+            targets = [node.target]
+        for target in targets:
+            if isinstance(target, ast.Attribute) and target.attr == "status":
+                return True
+    return False
+
+
+def file_assigns_run_status(path: Path) -> bool:
+    """True when the file both names the run model and stores ``.status``."""
+    tree = parse_tree(path)
+    if tree is None:
+        return False
+    return _references_run_status(tree) and _assigns_status_attr(tree)
+
+
+def scan_g15_run_status_assigns() -> set[str]:
+    allowed = rel(SRC_ROOT / "planner" / "runs" / "service.py")
+    hits: set[str] = set()
+    for path in iter_src_py():
+        if rel(path) == allowed:
+            continue
+        if file_assigns_run_status(path):
+            hits.add(rel(path))
+    return hits
+
+
 def scan_g5_router_repository_imports() -> set[str]:
     hits: set[str] = set()
     for path in iter_src_py():
