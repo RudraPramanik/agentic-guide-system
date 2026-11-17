@@ -85,6 +85,13 @@ class Settings(BaseSettings):
     PLANNER_CACHE_TTL_SECONDS: int = 3600
     # Slice 1 run rows and idempotency. Off keeps today's generate path.
     RUN_TRACKING_ENABLED: bool = False
+    # Slice 3 location library. Off until row 3.4 branches generate.
+    LOCATION_V2_ENABLED: bool = False
+    LOCATION_AUTO_RESOLVE_CONFIDENCE: float = 0.90
+    LOCATION_POI_RADIUS_KM: float = 10.0
+    LOCATION_NEIGHBORHOOD_RADIUS_KM: float = 5.0
+    LOCATION_CITY_FALLBACK_RADIUS_KM: float = 15.0
+    LOCATION_MAX_RADIUS_KM: float = 50.0
 
     # Observability — empty keys → NoOpTracer; LANGFUSE_BASE_URL accepted as alias
     LANGFUSE_PUBLIC_KEY: str = ""

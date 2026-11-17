@@ -173,7 +173,7 @@ None of these are fields on `Settings`.
 | Name | Where | Default | Slice |
 |---|---|---|---|
 | `RUN_TRACKING_ENABLED` | blueprint-only | absent | S1 |
-| `LOCATION_V2_ENABLED` | blueprint-only | absent | S3 |
+| `LOCATION_V2_ENABLED` | `src/config.py` `Settings` | `false` (unread by planner until 3.4) | S3 |
 | `TRAVEL_ENGINE_V2_ENABLED` | blueprint-only | absent | S4 |
 | `VALIDATOR_V2_ENFORCE` | blueprint-only | absent | S4 |
 | `READINESS_V2_ENABLED` | blueprint-only | absent | S5 |
@@ -183,11 +183,11 @@ None of these are fields on `Settings`.
 | `EVALUATION_JUDGE_ENABLED` | blueprint-only | absent | S2 |
 | `LODGING_V1_ENABLED` | blueprint-only | absent | S9 |
 | `MEDIA_ENRICH_ENABLED` | blueprint-only | absent | S9 |
-| `LOCATION_AUTO_RESOLVE_CONFIDENCE` | blueprint-only | absent | S3 |
-| `LOCATION_POI_RADIUS_KM` | blueprint-only | absent | S3 |
-| `LOCATION_NEIGHBORHOOD_RADIUS_KM` | blueprint-only | absent | S3 |
-| `LOCATION_CITY_FALLBACK_RADIUS_KM` | blueprint-only | absent | S3 |
-| `LOCATION_MAX_RADIUS_KM` | blueprint-only | absent | S3 |
+| `LOCATION_AUTO_RESOLVE_CONFIDENCE` | `src/config.py` `Settings` | `0.90` | S3 |
+| `LOCATION_POI_RADIUS_KM` | `src/config.py` `Settings` | `10` | S3 |
+| `LOCATION_NEIGHBORHOOD_RADIUS_KM` | `src/config.py` `Settings` | `5` | S3 |
+| `LOCATION_CITY_FALLBACK_RADIUS_KM` | `src/config.py` `Settings` | `15` | S3 |
+| `LOCATION_MAX_RADIUS_KM` | `src/config.py` `Settings` | `50` | S3 |
 | `READINESS_MIN_USABLE_PLACES_PER_DAY` | blueprint-only | absent | S5 |
 | `READINESS_MIN_CATEGORIES` | blueprint-only | absent | S5 |
 | `READINESS_MIN_CLUSTERS_MULTI_DAY` | blueprint-only | absent | S5 |
@@ -259,7 +259,7 @@ Absent means the checkout has no symbol. Path is the file that was inspected. St
 
 | Proposal | Status | Path | Symbol | Test |
 |---|---|---|---|---|
-| `location_intelligence/` | deferred | `src/` (no such package) | absent | no test |
+| `location_intelligence/` | implemented-tested | `src/location_intelligence/service.py` | `LocationIntelligenceService.search` | `tests/location_intelligence/` |
 | `planner/runs/` | deferred | `src/planner/` (no `runs/` package) | absent | no test |
 | `src/geo/media/` | deferred | `src/geo/` (no `media/` package) | absent | no test |
 | `planner_runs` table | deferred | `src/trips/models.py` | absent | no test |
