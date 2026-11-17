@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\"days\": [{\"day\": 1, \"title\": \"Darjeeling Day Exploration\", \"narrative\": \"The day combined scenic viewpoints, museum visits, street food stops, and park time to showcase Darjeeling's key attractions.\"}]}",
+  "usage": {
+    "prompt_tokens": 1254,
+    "completion_tokens": 2282,
+    "total_tokens": 3536
+  },
+  "retry_count": 0
+}

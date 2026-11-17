@@ -4,6 +4,7 @@ Usage:
   python scripts/run_evals.py --destination darjeeling
   python scripts/run_evals.py --destination darjeeling --update-baseline
   python scripts/run_evals.py --destination darjeeling --fixtures-only
+  python scripts/run_evals.py --destination darjeeling --replay
 
 Loads cases from evals/golden/<destination>/*.json, scores via
 src.evaluation.scorers.score_case, writes evals/runs/<ts>-<sha>.json,
@@ -29,6 +30,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.evaluation.golden import GoldenCaseError, load_golden_cases  # noqa: E402
+from src.evaluation.judge.judge import DEFAULT_SAMPLE_SIZE, judge_case  # noqa: E402
+from src.evaluation.metrics import duplicate_stop_count  # noqa: E402
 from src.evaluation.scorers import score_case  # noqa: E402
 
 
@@ -57,21 +61,10 @@ def _load_cases(dest: str) -> list[dict[str, Any]]:
     folder = ROOT / "evals" / "golden" / dest
     if not folder.is_dir():
         raise SystemExit(f"missing golden folder: {folder}")
-    cases: list[dict[str, Any]] = []
-    for path in sorted(folder.glob("*.json")):
-        try:
-            data = json.loads(path.read_text(encoding="utf-8-sig"))
-        except json.JSONDecodeError as e:
-            raise SystemExit(f"invalid JSON in {path.name}: {e}") from e
-        if not isinstance(data, dict):
-            raise SystemExit(f"case must be object: {path.name}")
-        for key in ("id", "destination", "raw_input"):
-            if key not in data:
-                raise SystemExit(f"{path.name}: missing required field '{key}'")
-        assertions = data.get("assertions")
-        if not isinstance(assertions, dict) or not assertions:
-            raise SystemExit(f"{path.name}: assertions must be a non-empty object")
-        cases.append(data)
+    try:
+        cases = load_golden_cases(folder)
+    except GoldenCaseError as exc:
+        raise SystemExit(str(exc)) from exc
     if not cases:
         raise SystemExit(f"no cases in {folder}")
     return cases
@@ -88,6 +81,7 @@ async def _generate_or_fixture(
     case: dict[str, Any],
     *,
     fixtures_only: bool,
+    replay: bool = False,
 ) -> tuple[dict[str, Any], str]:
     if fixtures_only:
         fix = _load_fixture(case["id"])
@@ -98,7 +92,7 @@ async def _generate_or_fixture(
     from src.config import get_settings
 
     settings = get_settings()
-    if not (settings.LLM_API_KEY or "").strip():
+    if not replay and not (settings.LLM_API_KEY or "").strip():
         fix = _load_fixture(case["id"])
         if fix is None:
             raise SystemExit(
@@ -119,15 +113,62 @@ async def _generate_or_fixture(
     if not dest_id:
         raise SystemExit(f"{case['id']}: destination_id required for live generate")
     svc = PlannerService()
-    result = await svc.generate(
-        destination_id=dest_id,
-        raw_input=str(case["raw_input"]),
-        base_lat=float(case.get("base_lat") or 27.037),
-        base_lng=float(case.get("base_lng") or 88.263),
-        session_id=f"eval-{case['id']}-{uuid4().hex[:8]}",
-        routing=FakeRoutingProvider(),
-    )
+    try:
+        result = await svc.generate(
+            destination_id=dest_id,
+            raw_input=str(case["raw_input"]),
+            base_lat=float(case.get("base_lat") or 27.037),
+            base_lng=float(case.get("base_lng") or 88.263),
+            session_id=f"eval-{case['id']}-{uuid4().hex[:8]}",
+            routing=FakeRoutingProvider(),
+        )
+    except Exception as exc:
+        from src.core.exceptions import WandrLLMError
+
+        if replay and isinstance(exc, WandrLLMError) and exc.code == "replay_miss":
+            raise SystemExit(exc.message) from exc
+        raise
+    if replay:
+        from src.core.llm.client import replay_misses
+
+        missed = replay_misses()
+        if missed:
+            raise SystemExit(f"replay_miss: {missed[0]}")
     return result, "generate"
+
+
+def _is_quarantined(case: dict[str, Any]) -> bool:
+    return case.get("quarantined") is True
+
+
+def gate_pass_rate(results: list[dict[str, Any]]) -> float:
+    gate = [row for row in results if not _is_quarantined(row)]
+    if not gate:
+        return 1.0
+    return sum(1 for row in gate if row.get("passed")) / len(gate)
+
+
+def _stop_place_ids(state: dict[str, Any]) -> list[str]:
+    itinerary = state.get("itinerary") or {}
+    days = itinerary.get("days") if isinstance(itinerary, dict) else None
+    if not isinstance(days, list):
+        return []
+    ids: list[str] = []
+    for day in days:
+        if not isinstance(day, dict):
+            continue
+        for stop in day.get("stops") or []:
+            if isinstance(stop, dict) and stop.get("place_id"):
+                ids.append(str(stop["place_id"]))
+    return ids
+
+
+def _load_tolerances() -> dict[str, Any]:
+    path = ROOT / "evals" / "baselines" / "tolerances.json"
+    if not path.is_file():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data if isinstance(data, dict) else {}
 
 
 def _diff_baseline(
@@ -137,6 +178,8 @@ def _diff_baseline(
     diffs: list[str] = []
     base_cases = {c["id"]: c for c in baseline.get("cases") or []}
     for case in run.get("cases") or []:
+        if _is_quarantined(case):
+            continue
         cid = case["id"]
         prev = base_cases.get(cid)
         if prev is None:
@@ -148,24 +191,132 @@ def _diff_baseline(
     return diffs
 
 
+def _tolerance_failures(
+    metrics: dict[str, Any],
+    tolerances: dict[str, Any],
+) -> list[str]:
+    """Hard-fail only metrics listed with a numeric baseline.
+
+    A metric is worse than ``baseline - tolerance`` when a higher value is
+    worse and the run exceeds that floor, or when a lower value is worse and
+    the run falls below that floor. Unlisted metrics never change the exit.
+    """
+    lines: list[str] = []
+    for name, band in tolerances.items():
+        if name.startswith("_") or not isinstance(band, dict):
+            continue
+        if "baseline" not in band or band.get("baseline") is None:
+            continue
+        if name not in metrics or metrics[name] is None:
+            continue
+        baseline = float(band["baseline"])
+        tolerance = float(band.get("tolerance") or 0)
+        floor = baseline - tolerance
+        value = float(metrics[name])
+        higher_is_worse = bool(band.get("higher_is_worse", True))
+        worse = value > floor if higher_is_worse else value < floor
+        if worse:
+            lines.append(
+                f"TOLERANCE {name}: value={value} baseline={baseline} "
+                f"tolerance={tolerance}"
+            )
+    return lines
+
+
+def finish_run(
+    report: dict[str, Any],
+    *,
+    baseline_path: Path,
+    tolerances: dict[str, Any],
+    update_baseline: bool,
+    allow_new_fails: bool,
+) -> tuple[int, list[str]]:
+    """Compare a report to the baseline. Writes the baseline only when asked."""
+    messages: list[str] = []
+    if update_baseline:
+        baseline_path.parent.mkdir(parents=True, exist_ok=True)
+        baseline_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        messages.append(f"updated baseline {baseline_path}")
+        return 0, messages
+
+    before = baseline_path.read_bytes() if baseline_path.is_file() else None
+    results = list(report.get("cases") or [])
+    gate = [row for row in results if not _is_quarantined(row)]
+
+    if not baseline_path.is_file():
+        messages.append(
+            f"warning: no baseline at {baseline_path}; "
+            "run with --update-baseline to freeze"
+        )
+        code = 0 if all(row["passed"] for row in gate) else 1
+        return code, messages
+
+    baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+    if before is not None and baseline_path.read_bytes() != before:
+        raise RuntimeError("baseline changed before the gate decision")
+    if baseline.get("case_set_hash") != report.get("case_set_hash"):
+        messages.append(
+            "warning: stale baseline case-set hash "
+            f"(baseline={baseline.get('case_set_hash')} "
+            f"run={report.get('case_set_hash')})"
+        )
+    diffs = _diff_baseline(report, baseline)
+    diffs.extend(_tolerance_failures(report.get("metrics") or {}, tolerances))
+    if diffs:
+        return 1, diffs
+    failed = [row for row in gate if not row.get("passed")]
+    if failed and not allow_new_fails:
+        return 1, [f"FAIL {row['id']}: {row.get('reasons')}" for row in failed]
+    messages.append(f"ok pass_rate={report['pass_rate']:.2f}")
+    if before is not None and baseline_path.read_bytes() != before:
+        raise RuntimeError("baseline bytes changed without --update-baseline")
+    return 0, messages
+
+
 async def _amain(args: argparse.Namespace) -> int:
+    if args.replay:
+        from src.core.llm.client import use_llm_replay
+
+        with use_llm_replay("replay"):
+            return await _run_suite(args)
+    return await _run_suite(args)
+
+
+async def _run_suite(args: argparse.Namespace) -> int:
     dest = args.destination
     cases = _load_cases(dest)
     results: list[dict[str, Any]] = []
-    for case in cases:
+    judgments: list[dict[str, Any]] = []
+    for index, case in enumerate(cases):
         state, mode = await _generate_or_fixture(
-            case, fixtures_only=args.fixtures_only
+            case,
+            fixtures_only=args.fixtures_only,
+            replay=args.replay,
         )
         verdict = score_case(state, case)
+        if index < DEFAULT_SAMPLE_SIZE:
+            itinerary = state.get("itinerary") if isinstance(state, dict) else {}
+            judgment = await judge_case(
+                case,
+                itinerary if isinstance(itinerary, dict) else {},
+                sample_index=index,
+                sample_size=DEFAULT_SAMPLE_SIZE,
+            )
+            judgments.append({"id": case["id"], **judgment})
+        quarantined = _is_quarantined(case)
         results.append(
             {
                 "id": case["id"],
                 "passed": verdict.passed,
                 "reasons": list(verdict.reasons),
                 "mode": mode,
+                "quarantined": quarantined,
+                "duplicate_stop_count": duplicate_stop_count(_stop_place_ids(state)),
             }
         )
 
+    gate = [row for row in results if not row["quarantined"]]
+    quarantined_rows = [row for row in results if row["quarantined"]]
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     sha = _git_sha()
     report = {
@@ -173,10 +324,13 @@ async def _amain(args: argparse.Namespace) -> int:
         "timestamp": ts,
         "git_sha": sha,
         "case_set_hash": _case_set_hash(cases),
-        "pass_rate": (
-            sum(1 for r in results if r["passed"]) / len(results) if results else 0.0
-        ),
+        "pass_rate": gate_pass_rate(results),
         "cases": results,
+        "quarantined_cases": quarantined_rows,
+        "judge": judgments,
+        "metrics": {
+            "duplicate_stop_count": sum(row["duplicate_stop_count"] for row in gate),
+        },
     }
     runs_dir = ROOT / "evals" / "runs"
     runs_dir.mkdir(parents=True, exist_ok=True)
@@ -184,40 +338,17 @@ async def _amain(args: argparse.Namespace) -> int:
     run_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(f"wrote {run_path}")
 
-    baseline_path = ROOT / "evals" / "baselines" / f"{dest}.json"
-    if args.update_baseline:
-        baseline_path.parent.mkdir(parents=True, exist_ok=True)
-        baseline_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-        print(f"updated baseline {baseline_path}")
-        return 0
-
-    if not baseline_path.is_file():
-        print(
-            f"warning: no baseline at {baseline_path}; "
-            "run with --update-baseline to freeze",
-            file=sys.stderr,
-        )
-        return 0 if all(r["passed"] for r in results) else 1
-
-    baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-    if baseline.get("case_set_hash") != report["case_set_hash"]:
-        print(
-            "warning: stale baseline case-set hash "
-            f"(baseline={baseline.get('case_set_hash')} run={report['case_set_hash']})",
-            file=sys.stderr,
-        )
-    diffs = _diff_baseline(report, baseline)
-    if diffs:
-        for d in diffs:
-            print(d, file=sys.stderr)
-        return 1
-    failed = [r for r in results if not r["passed"]]
-    if failed and not args.allow_new_fails:
-        for r in failed:
-            print(f"FAIL {r['id']}: {r['reasons']}", file=sys.stderr)
-        return 1
-    print(f"ok pass_rate={report['pass_rate']:.2f}")
-    return 0
+    code, messages = finish_run(
+        report,
+        baseline_path=ROOT / "evals" / "baselines" / f"{dest}.json",
+        tolerances=_load_tolerances(),
+        update_baseline=args.update_baseline,
+        allow_new_fails=args.allow_new_fails,
+    )
+    stream = sys.stdout if code == 0 else sys.stderr
+    for line in messages:
+        print(line, file=stream)
+    return code
 
 
 def main() -> None:
@@ -233,6 +364,11 @@ def main() -> None:
         "--allow-new-fails",
         action="store_true",
         help="Only exit non-zero on baseline regressions (not fresh fails)",
+    )
+    parser.add_argument(
+        "--replay",
+        action="store_true",
+        help="Serve LLM calls from evals/replay. Does not call the provider.",
     )
     args = parser.parse_args()
     import asyncio

@@ -1,0 +1,17 @@
+{
+  "operation": "chat_with_tools",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": null,
+  "tool_calls": [
+    {
+      "name": "build_schedule",
+      "arguments_json": "{\"days\":\"3\",\"interests\":\"[\\\"photography\\\", \\\"landscape\\\", \\\"street\\\"]\",\"ranked_pois\":\"[{\\\"id\\\": \\\"poi1\\\", \\\"rank\\\": 1}, {\\\"id\\\": \\\"poi2\\\", \\\"rank\\\": 2}, {\\\"id\\\": \\\"poi3\\\", \\\"rank\\\": 3}, {\\\"id\\\": \\\"poi4\\\", \\\"rank\\\": 4}, {\\\"id\\\": \\\"poi5\\\", \\\"rank\\\": 5}, {\\\"id\\\": \\\"poi6\\\", \\\"rank\\\": 6}, {\\\"id\\\": \\\"poi7\\\", \\\"rank\\\": 7}, {\\\"id\\\": \\\"poi8\\\", \\\"rank\\\": 8}, {\\\"id\\\": \\\"poi9\\\", \\\"rank\\\": 9}, {\\\"id\\\": \\\"poi10\\\", \\\"rank\\\": 10}, {\\\"id\\\": \\\"poi11\\\", \\\"rank\\\": 11}, {\\\"id\\\": \\\"poi12\\\", \\\"rank\\\": 12}, {\\\"id\\\": \\\"poi13\\\", \\\"rank\\\": 13}, {\\\"id\\\": \\\"poi14\\\", \\\"rank\\\": 14}, {\\\"id\\\": \\\"poi15\\\", \\\"rank\\\": 15}, {\\\"id\\\": \\\"poi16\\\", \\\"rank\\\": 16}, {\\\"id\\\": \\\"poi17\\\", \\\"rank\\\": 17}, {\\\"id\\\": \\\"poi18\\\", \\\"rank\\\": 18}, {\\\"id\\\": \\\"poi19\\\", \\\"rank\\\": 19}, {\\\"id\\\": \\\"poi20\\\", \\\"rank\\\": 20}]\"}"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 552,
+    "completion_tokens": 617,
+    "total_tokens": 1169
+  },
+  "retry_count": 0
+}

@@ -1,0 +1,29 @@
+## 1. Confirm scope
+
+- [x] 1.1 Re-read `AGENT.md`, `docs/context.md`, `docs/steps/wandr_blueprint_version8.md` §9 rows 2.5 and 2.6 and §11.1–§11.8, plus this change's `proposal.md`, `design.md`, and the seven delta specs. There is no `docs/steps/step*.md` for these rows. Do not start 2.6 until section 2 is green.
+- [x] 1.2 Confirm replay fixtures under `evals/replay/`, metrics under `src/evaluation/metrics/`, and the existing baseline at `evals/baselines/darjeeling.json`. Do not call the evaluation HTTP stub. Do not add a package or a migration.
+
+## 2. Slice 2.5 — regression gate and CI
+
+- [x] 2.1 In `scripts/run_evals.py`, compute gate membership from `quarantined is false`. Keep scoring quarantined cases and put them in a separate report bucket. Set report `pass_rate` from gate cases only. Diff regressions only among gate cases. Print `REGRESSION` plus case id. Do not write baselines unless `--update-baseline` is set.
+- [x] 2.2 Add `evals/baselines/tolerances.json` (empty object or only measured entries). Load it in the runner. Unlisted metrics are report-only and must not change the exit code. If a measured band is present and the run is worse than baseline minus tolerance, print `TOLERANCE <metric>` and exit non-zero. Do not invent S0 latency/coherence variances.
+- [x] 2.3 Optionally attach cheap aggregates from existing pure metrics (for example duplicate count or feasibility from the scored itinerary) to the run report without changing `score_case` or assertion keys.
+- [x] 2.4 Add `tests/evaluation/test_regression_gate.py` that seeds a baseline pass and a run fail for a non-quarantined case and asserts non-zero exit plus `REGRESSION` and the case id; asserts a quarantined-only fail exits zero; asserts a normal run does not modify baseline bytes; asserts `--update-baseline` writes the baseline.
+- [x] 2.5 Write `docs/v8.2/adr/007-evaluation-gates.md` per the `s0-decision-records` delta (measured-only bands, replay on PR, nightly live non-blocking, judge inform-only, §11.2 case expansion still a Slice 2 exit checklist item).
+- [x] 2.6 Add a CI `eval-gate` job on push/PR to `main` that runs `python scripts/run_evals.py --destination darjeeling --replay` with empty `LLM_API_KEY` and the services generate-under-replay needs (PostGIS + Qdrant). Do not pass `--update-baseline`. Keep existing pytest and docker-build jobs. Do not deploy from this job.
+- [x] 2.7 Add a scheduled nightly workflow/job for live eval without `--replay`. Skip clearly when the live LLM secret is absent. Ensure nightly failure does not block PR checks.
+- [x] 2.8 Run `pytest tests/evaluation -k regression -v` and confirm exit 0. Run `python scripts/run_evals.py --destination darjeeling --replay` twice and confirm matching gate verdicts and exit 0 against the current baseline (re-freeze with `--update-baseline` only if the report shape change requires it, in a conscious step). If the eval-gate job cannot start green without inventing data or weakening to fixtures-only, stop and report. Confirmed 2026-11-17: regression tests passed; two `--replay` runs both exited 0 with `pass_rate=1.00` and identical case verdicts. Baseline was not rewritten.
+
+## 3. Slice 2.6 — offline judge and human review
+
+- [x] 3.1 Do not start this section until task 2.8 has passed. Add `EVALUATION_JUDGE_ENABLED: bool = False` and `EVALUATION_JUDGE_TIMEOUT_SECONDS: int = 15` on `Settings`, plus matching `.env.example` lines. Do not edit `tests/architecture/_helpers.py` (G11 already lists the flag).
+- [x] 3.2 Add `src/evaluation/judge/` with a shared closed dimension list (`relevance`, `diversity`, `narrative`), versioned prompt and rubric artifacts, judgment schema validation, and an offline `judge_case` (or equivalent) that calls only the existing LLM gateway. Import no `litellm`/`groq`/`openai` here. Default sample size stays small.
+- [x] 3.3 When the flag is false, make no gateway call. On timeout, invalid schema, or gateway error, record `judge_unavailable` and leave deterministic verdicts and gate exit code unchanged. Do not import the judge from planner, tools, routers, or travel_engine.
+- [x] 3.4 Add `evals/human_review/` sheet format (rubric version, same dimensions, free-text, reviewer id, case/trip id) plus validation that needs no LLM. Add a short README for the §11.7 protocol; do not invent a 60-trip filled dataset.
+- [x] 3.5 Add `tests/evaluation/` judge tests covering: schema accept/reject; flag off makes no call; judge failure leaves a seeded deterministic gate exit unchanged; timeout setting default 15. Add an architecture or import check that request-path packages do not import `src.evaluation.judge`.
+- [x] 3.6 Run `pytest tests/evaluation -k judge -v` and confirm exit 0. Confirm `pytest tests/architecture -k g1` still keeps provider SDKs only in the gateway. Confirmed 2026-11-17: `pytest tests/evaluation -k "regression or judge"` 14 passed, and `pytest tests/architecture -k g1` passed in the judge/architecture selection. Replay reports record `judge.status=skipped` for the one-case sample and still exit 0.
+
+## 4. Cross-check
+
+- [x] 4.1 Path audit. Gate, CI, ADR-007, and the judge stay in the paths named above. The replay failures also required planner and travel-engine edits (interest grounding, unanchored-day omission, catalog-tag anchor when no preference matches, `finish_plan` records validation, stuck plan forces one `build_schedule`). Those edits are the product fix recorded in the blueprint gate correction. No `requirements.txt` change, no `score_case` assertion-key change, no request-path judge wiring. The runner calls the judge only after `score_case`, flag default false.
+- [x] 4.2 Update `docs/context.md` Next step / progress for Slice 2 completion of 2.5–2.6 (verified facts only). Put the blueprint §19 completion report in the PR description. Context updated. No PR was requested, so the §19 report is not in a PR body.

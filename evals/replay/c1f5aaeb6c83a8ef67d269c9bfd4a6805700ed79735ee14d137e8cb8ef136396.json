@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\"days\": [{\"day\": 1, \"title\": \"Day 1: Darjeeling Natural & Cultural Highlights\", \"narrative\": \"The journey begins at Yuksom, winding through scenic trails to the tranquil Khecheopalri Lake Viewpoint. A cultural interlude at the Sculpture Shed precedes a visit to the majestic Kunchenjunga Waterfall, each stop revealing the region's natural and artistic essence.\"}]}",
+  "usage": {
+    "prompt_tokens": 2053,
+    "completion_tokens": 5916,
+    "total_tokens": 7969
+  },
+  "retry_count": 0
+}

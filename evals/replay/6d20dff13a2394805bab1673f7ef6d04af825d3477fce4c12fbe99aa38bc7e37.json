@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\"days\": [{\"day\": 1, \"title\": \"Hill Country Arrival\", \"narrative\": \"Arriving in Darjeeling, the mountain air is cool and fragrant with tea and pine. The town’s colonial silhouette stretches across steep slopes, offering immediate views of misty peaks and a sense of timeless tranquility.\"}, {\"day\": 2, \"title\": \"Tea and Reflection\", \"narrative\": \"Days unfold among rolling tea gardens, where leaves are hand-plucked against a backdrop of Himalayan vistas. Quiet moments on a verandah overlook valleys draped in cloud, while the scent of fresh brew lingers through the evening.\"}]}",
+  "usage": {
+    "prompt_tokens": 102,
+    "completion_tokens": 1816,
+    "total_tokens": 1918
+  },
+  "retry_count": 0
+}

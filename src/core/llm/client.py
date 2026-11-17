@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import hashlib
+import json
+import re
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import litellm
@@ -26,6 +31,134 @@ log = get_logger()
 _retry_bumps: contextvars.ContextVar[int] = contextvars.ContextVar(
     "llm_retry_bumps", default=0
 )
+
+_REPLAY_MODES = frozenset({"off", "replay", "record"})
+# None means "use Settings.LLM_REPLAY_MODE". A context value wins for this task.
+_replay_mode: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "llm_replay_mode", default=None
+)
+_replay_root: contextvars.ContextVar[Path | None] = contextvars.ContextVar(
+    "llm_replay_root", default=None
+)
+# Planner nodes catch WandrLLMError. The runner still has to see a miss.
+_replay_misses: contextvars.ContextVar[list[str] | None] = contextvars.ContextVar(
+    "llm_replay_misses", default=None
+)
+
+
+def _effective_replay_mode() -> str:
+    override = _replay_mode.get()
+    if override is not None:
+        return override
+    # Stubs of get_settings() that predate this setting stay on the live path.
+    mode = getattr(get_settings(), "LLM_REPLAY_MODE", "off")
+    if mode not in _REPLAY_MODES:
+        return "off"
+    return mode
+
+
+def _replay_dir() -> Path:
+    override = _replay_root.get()
+    if override is not None:
+        return override
+    return Path(__file__).resolve().parents[3] / "evals" / "replay"
+
+
+@contextmanager
+def use_llm_replay(mode: str, *, root: Path | None = None):
+    """Process-local replay mode. Does not read or write environment variables."""
+    if mode not in _REPLAY_MODES:
+        raise ValueError("LLM replay mode must be off, replay, or record")
+    mode_token = _replay_mode.set(mode)
+    root_token = _replay_root.set(root) if root is not None else None
+    miss_token = _replay_misses.set([])
+    try:
+        yield
+    finally:
+        _replay_mode.reset(mode_token)
+        _replay_misses.reset(miss_token)
+        if root_token is not None:
+            _replay_root.reset(root_token)
+
+
+def replay_misses() -> list[str]:
+    """Fixture ids that raised replay_miss in the active use_llm_replay block."""
+    found = _replay_misses.get()
+    return list(found or [])
+
+
+# Tool traces put elapsed ms into the next prompt. That is a timestamp, not identity.
+_TRACE_MS = re.compile(r"ms=-?[0-9]+(?:\.[0-9]+)?")
+
+
+def _without_timestamps(value: Any) -> Any:
+    """Drop duration stamps so the same logical call keeps one fixture."""
+    if isinstance(value, str):
+        return _TRACE_MS.sub("ms=0", value)
+    if isinstance(value, list):
+        return [_without_timestamps(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _without_timestamps(item) for key, item in value.items()}
+    return value
+
+
+def _fixture_id(operation: str, model: str, payload: dict) -> str:
+    """Identity is operation + model + canonical payload. Not time or retries."""
+    body = {
+        "model": model,
+        "operation": operation,
+        "payload": _without_timestamps(payload),
+    }
+    raw = json.dumps(
+        body,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _write_fixture(fixture_id: str, document: dict) -> None:
+    directory = _replay_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{fixture_id}.json"
+    path.write_text(
+        json.dumps(document, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _load_fixture(fixture_id: str) -> dict:
+    path = _replay_dir() / f"{fixture_id}.json"
+    if not path.is_file():
+        found = _replay_misses.get()
+        if found is not None:
+            found.append(fixture_id)
+        raise WandrLLMError(
+            code="replay_miss",
+            message=f"replay_miss: {fixture_id}",
+        )
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _usage_from_fixture(document: dict) -> LLMUsage:
+    raw = document.get("usage") or {}
+    prompt = int(raw.get("prompt_tokens") or 0)
+    completion = int(raw.get("completion_tokens") or 0)
+    total = int(raw.get("total_tokens") or (prompt + completion))
+    return LLMUsage(
+        prompt_tokens=prompt,
+        completion_tokens=completion,
+        total_tokens=total,
+    )
+
+
+def _usage_document(usage: LLMUsage) -> dict[str, int]:
+    return {
+        "prompt_tokens": usage.prompt_tokens,
+        "completion_tokens": usage.completion_tokens,
+        "total_tokens": usage.total_tokens,
+    }
 
 
 @dataclass(frozen=True)
@@ -246,11 +379,31 @@ async def chat_completion(
     started = time.perf_counter()
     settings = get_settings()
     resolved_model = model or settings.LLM_MODEL
+    payload = {"messages": messages, "response_format": response_format}
+    mode = _effective_replay_mode()
+    if mode == "replay":
+        document = _load_fixture(_fixture_id("chat_completion", resolved_model, payload))
+        return ChatCompletionResult(
+            content=str(document.get("content") or ""),
+            usage=_usage_from_fixture(document),
+            retry_count=int(document.get("retry_count") or 0),
+        )
     try:
         content, usage, resolved_model = await _chat_completion_inner(
             messages, model=model, response_format=response_format
         )
         retries = _retry_bumps.get()
+        if mode == "record":
+            _write_fixture(
+                _fixture_id("chat_completion", resolved_model, payload),
+                {
+                    "operation": "chat_completion",
+                    "model": resolved_model,
+                    "content": content,
+                    "usage": _usage_document(usage),
+                    "retry_count": retries,
+                },
+            )
         _emit_generation_span(
             name="chat_completion",
             model=resolved_model,
@@ -336,12 +489,47 @@ async def chat_with_tools(
     started = time.perf_counter()
     settings = get_settings()
     resolved_model = model or settings.LLM_MODEL
+    payload = {
+        "messages": messages,
+        "tool_choice": tool_choice,
+        "tools": tools,
+    }
+    mode = _effective_replay_mode()
+    if mode == "replay":
+        document = _load_fixture(_fixture_id("chat_with_tools", resolved_model, payload))
+        raw_calls = document.get("tool_calls") or []
+        tool_calls = [
+            {
+                "name": str(call["name"]),
+                "arguments_json": str(call["arguments_json"]),
+            }
+            for call in raw_calls
+        ]
+        content = document.get("content")
+        return LLMToolResponse(
+            tool_calls=tool_calls,
+            content=None if content is None else str(content),
+            usage=_usage_from_fixture(document),
+            retry_count=int(document.get("retry_count") or 0),
+        )
     try:
         result, resolved_model = await _chat_with_tools_inner(
             messages, tools, tool_choice=tool_choice, model=model
         )
         retries = _retry_bumps.get()
         result.retry_count = retries
+        if mode == "record":
+            _write_fixture(
+                _fixture_id("chat_with_tools", resolved_model, payload),
+                {
+                    "operation": "chat_with_tools",
+                    "model": resolved_model,
+                    "content": result.content,
+                    "tool_calls": list(result.tool_calls),
+                    "usage": _usage_document(result.usage),
+                    "retry_count": retries,
+                },
+            )
         _emit_generation_span(
             name="chat_with_tools",
             model=resolved_model,
@@ -417,10 +605,30 @@ async def embed_texts(
     model: str | None = None,
 ) -> list[list[float]]:
     """Hosted embeddings via LiteLLM. Return type unchanged (list of vectors)."""
+    if not texts:
+        return []
     _retry_bumps.set(0)
     started = time.perf_counter()
+    settings = get_settings()
+    resolved_model = model or settings.PLACES_EMBEDDING_MODEL
+    payload = {"texts": texts}
+    mode = _effective_replay_mode()
+    if mode == "replay":
+        document = _load_fixture(_fixture_id("embed_texts", resolved_model, payload))
+        return [list(map(float, row)) for row in document["vectors"]]
     vectors, usage, embed_model = await _embed_texts_inner(texts, model=model)
     retries = _retry_bumps.get()
+    if mode == "record":
+        _write_fixture(
+            _fixture_id("embed_texts", embed_model, payload),
+            {
+                "operation": "embed_texts",
+                "model": embed_model,
+                "vectors": vectors,
+                "usage": _usage_document(usage),
+                "retry_count": retries,
+            },
+        )
     _emit_generation_span(
         name="embed_texts",
         model=embed_model,

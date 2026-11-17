@@ -1,0 +1,17 @@
+{
+  "operation": "chat_with_tools",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": null,
+  "tool_calls": [
+    {
+      "name": "search_places",
+      "arguments_json": "{\"query\":\"family friendly Darjeeling\",\"top_k\":10}"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 667,
+    "completion_tokens": 135,
+    "total_tokens": 802
+  },
+  "retry_count": 0
+}

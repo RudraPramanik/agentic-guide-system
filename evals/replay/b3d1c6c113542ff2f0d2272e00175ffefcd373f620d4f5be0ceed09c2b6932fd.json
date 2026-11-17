@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\n  \"days\": [\n    {\n      \"day\": 1,\n      \"title\": \"Darjeeling Cultural & Scenic Tour\",\n      \"narrative\": \"Darjeeling's first day blends panoramic viewpoints like Gombu Rock with cultural stops at Deshbandu Museum and Himalayan Mountaineering Institute, followed by leisure at Nightingale Park and the bustling Mall Road, offering a mix of sightseeing and local atmosphere.\"\n    },\n    {\n      \"day\": 2,\n      \"title\": \"Darjeeling Peaks & Heritage\",\n      \"narrative\": \"The second day features high-altitude viewpoints such as Tiger Hill and Tenzing Rock, alongside attractions including Sikkim entry, The Mall Market, Street Food Stalls, and the Tomb of Tenzing Norgay, capturing the region's adventurous spirit and mountain heritage.\"\n    },\n    {\n      \"day\": 3,\n      \"title\": \"Darjeeling Memorial & Views\",\n      \"narrative\": \"The final day centers on the War Memorial at Batasia Loop, providing sweeping Himalayan vistas and a reflective tribute, serving as a peaceful conclusion to the Darjeeling itinerary.\"\n    }\n  ]\n}",
+  "usage": {
+    "prompt_tokens": 2642,
+    "completion_tokens": 2952,
+    "total_tokens": 5594
+  },
+  "retry_count": 0
+}

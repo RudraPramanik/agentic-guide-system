@@ -313,6 +313,13 @@ def run_stuck_detector(state: Any) -> None:
         if phase == AgentPhase.DISCOVER:
             candidates = state_get(state, "candidate_pois") or []
             if not isinstance(candidates, list) or not candidates:
+                if not state_get(state, "discover_search_forced"):
+                    _state_set(state, "discover_search_forced", True)
+                    _state_set(state, "force_next_tool", "search_places")
+                    warnings.append("phase_stuck_forced_search")
+                    _state_set(state, "warnings", warnings)
+                    _state_set(state, "stuck_cycles", 0)
+                    return
                 _state_set(state, "abort_triggered", True)
                 _state_set(state, "agent_phase", AgentPhase.WRAP_UP)
                 warnings.append("phase_stuck_discover_no_pois")
@@ -328,6 +335,13 @@ def run_stuck_detector(state: Any) -> None:
 
         if phase == AgentPhase.PLAN:
             if not _schedule_has_stops(state_get(state, "schedule")):
+                if not state_get(state, "plan_schedule_forced"):
+                    _state_set(state, "plan_schedule_forced", True)
+                    _state_set(state, "force_next_tool", "build_schedule")
+                    warnings.append("phase_stuck_forced_schedule")
+                    _state_set(state, "warnings", warnings)
+                    _state_set(state, "stuck_cycles", 0)
+                    return
                 _state_set(state, "abort_triggered", True)
                 _state_set(state, "agent_phase", AgentPhase.WRAP_UP)
                 warnings.append("phase_stuck_plan_no_schedule")

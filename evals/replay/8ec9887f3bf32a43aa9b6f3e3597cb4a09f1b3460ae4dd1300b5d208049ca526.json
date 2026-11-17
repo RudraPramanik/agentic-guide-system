@@ -1,0 +1,17 @@
+{
+  "operation": "chat_with_tools",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": null,
+  "tool_calls": [
+    {
+      "name": "rank_places",
+      "arguments_json": "{}"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 697,
+    "completion_tokens": 161,
+    "total_tokens": 858
+  },
+  "retry_count": 0
+}

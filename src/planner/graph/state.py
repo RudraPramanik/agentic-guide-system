@@ -17,6 +17,7 @@ at graph invoke time.
         "order": int, "travel_time_min": int, "visit_duration_min": int,
         "suggested_start_time": str, "arrival_note": str | None,
         "leg_polyline": str | None,
+        "score": float, "enriched_tags": list[str],
       },
       ...
     ],
@@ -84,3 +85,6 @@ class TravelState(TypedDict, total=False):
     # Loop-internal stuck detector (not checkpointed across requests by design intent)
     stuck_fingerprint: str
     stuck_cycles: int
+    force_next_tool: str | None
+    discover_search_forced: bool
+    plan_schedule_forced: bool

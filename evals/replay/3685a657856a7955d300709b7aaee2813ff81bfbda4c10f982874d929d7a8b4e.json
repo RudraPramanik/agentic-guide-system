@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\n  \"days\": [\n    {\n      \"day\": 1,\n      \"title\": \"Darjeeling Cultural & Natural Explorations\",\n      \"narrative\": \"Start at the Deshbandu Museum, then visit the Himalayan Mountaineering Institute and the Natural history museum to explore the region's heritage and science. Midday brings Street Food Stalls for local flavors, followed by a serene walk through Nightingale Park. The day ends at the Druk museum, offering a final glimpse into Darjeeling's cultural richness.\"\n    }\n  ]\n}",
+  "usage": {
+    "prompt_tokens": 1336,
+    "completion_tokens": 1614,
+    "total_tokens": 2950
+  },
+  "retry_count": 0
+}

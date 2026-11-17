@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\"days\": [{\"day\": 1, \"title\": \"Darjeeling Heritage & Views\", \"narrative\": \"Start with iconic viewpoints including the War Memorial and Batasia Loop, then continue to Tenzing Rock. Explore the Himalayan Mountaineering Institute and the Sikkim entry point, before visiting the Gandhi statue and the Tomb of Tenzing Norgay, each offering a unique perspective on the region's history and landscape.\"}, {\"day\": 2, \"title\": \"Panoramic Vistas & Waterfalls\", \"narrative\": \"Begin at the Kanchendzonga sky walk and Khecheopalri Lake Viewpoint for stunning scenery, then make your way to the Kunchenjunga Waterfall, where nature and mountain views combine for a memorable experience.\"}, {\"day\": 3, \"title\": \"Cultural Gateway & Scenic Vistas\", \"narrative\": \"Head to Yuksom, a tranquil starting point, and onward to the Tikjuk Viewpoint, where elevated vistas complete the journey through Darjeeling's highlands.\"}]}",
+  "usage": {
+    "prompt_tokens": 2304,
+    "completion_tokens": 2899,
+    "total_tokens": 5203
+  },
+  "retry_count": 0
+}

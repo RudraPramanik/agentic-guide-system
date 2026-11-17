@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\n  \"days\": [\n    {\n      \"day\": 1,\n      \"title\": \"Himalayan Vistas and Sacred Waters\",\n      \"narrative\": \"Morning light illuminates the majestic Kanchendzonga range from the skywalk, followed by the peaceful environs of Khecheopalri Lake. The day concludes at the historic Coronation Stone, each site offering a unique blend of natural grandeur and cultural resonance.\"\n    },\n    {\n      \"day\": 2,\n      \"title\": \"Highland Trails and Ilam Explorations\",\n      \"narrative\": \"The day winds through elevated viewpoints and lush landscapes of Ilam, visiting Gagre Vanjyang, the serene zero point, the panoramic Soyak, and the quiet Dhobi dhara, immersing in the region's rural charm and sweeping hill vistas.\"\n    },\n    {\n      \"day\": 3,\n      \"title\": \"Darjeeling at Lease and Cultural Immersion\",\n      \"narrative\": \"A free day in the hills to wander local lanes, engage with community spots, and absorb the layered mountain atmosphere at one's own pace, reflecting on the journeys' scenic and cultural passages.\"\n    },\n    {\n      \"day\": 4,\n      \"title\": \"Farewell Hill Views and Departure\",\n      \"narrative\": \"Final morning captures lingering Himalayan panoramas and market memories before departure, with quiet time for last photographs and reflections on the serene mountain experience.\"\n    }\n  ]\n}",
+  "usage": {
+    "prompt_tokens": 1646,
+    "completion_tokens": 6078,
+    "total_tokens": 7724
+  },
+  "retry_count": 0
+}

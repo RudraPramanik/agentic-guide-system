@@ -79,6 +79,19 @@ def test_trailhead_heavy_respects_visit_budget() -> None:
         assert total <= 5 * 90
 
 
+def test_distant_cluster_is_omitted_from_a_full_near_day() -> None:
+    near = [
+        _scored(f"N{i}", score=5.0, lat=27.04, lng=88.26) for i in range(3)
+    ]
+    far = [
+        _scored(f"F{i}", score=4.0, lat=27.55, lng=88.90) for i in range(3)
+    ]
+    days = allocate_days(near + far, 1)
+    names = [stop.place.name for stop in days[0]]
+    assert names
+    assert all(name.startswith("N") for name in names)
+
+
 def test_nearby_places_prefer_same_day() -> None:
     near_a = _scored("NearA", score=10.0, lat=27.04, lng=88.26)
     near_b = _scored("NearB", score=9.5, lat=27.041, lng=88.261)
@@ -87,6 +100,22 @@ def test_nearby_places_prefer_same_day() -> None:
     flat = {s.place.name: di for di, day in enumerate(days) for s in day}
     assert flat["NearA"] == flat["NearB"]
     assert flat["Far"] != flat["NearA"] or len([d for d in days if d]) == 1
+
+
+def test_unanchored_day_is_cleared_when_the_trip_has_an_anchor() -> None:
+    anchor = _scored("Tiger Hill", score=1.4, lat=27.04, lng=88.26)
+    filler = _scored("Mall", score=0.2, lat=27.041, lng=88.262)
+    far = [
+        _scored("Yuksom", score=0.0, lat=27.37, lng=88.22),
+        _scored("Tikjuk", score=0.0, lat=27.36, lng=88.23),
+    ]
+    days = allocate_days([anchor, filler, *far], 2)
+    assert len(days) == 2
+    occupied = [day for day in days if day]
+    assert len(occupied) == 1
+    names = {stop.place.name for stop in occupied[0]}
+    assert "Tiger Hill" in names
+    assert "Yuksom" not in names
 
 
 def test_returns_exact_day_count_even_if_empty() -> None:

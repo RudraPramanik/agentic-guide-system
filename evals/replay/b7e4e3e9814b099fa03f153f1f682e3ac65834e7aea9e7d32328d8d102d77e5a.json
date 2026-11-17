@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\"days\": [{\"day\": 1, \"title\": \"Darjeeling: Viewpoints, Museums, and Parks\", \"narrative\": \"Start at Gombu Rock for panoramic vistas, then explore the Deshbandu Museum and Natural history museum highlighting local heritage and nature. Stroll through Street Food Stalls for a taste of regional culture, relax at Nightingale Park, and finish with a visit to the Druk museum for more cultural enrichment.\"}, {\"day\": 2, \"title\": \"Darjeeling: Hills, Memorials, and Markets\", \"narrative\": \"Begin with visits to Tiger Hill and the War Memorial at Batasia Loop for scenic and cultural perspectives, then tour the Himalayan Mountaineering Institute before exploring The Mall Market. Conclude at the Tomb of Tenzing Norgay, celebrating the legacy of a mountaineering icon.\"}, {\"day\": 3, \"title\": \"Darjeeling: Signs and Statues\", \"narrative\": \"Capture a photo at the We love Sikkim sign, then pay respects at the Gandhi statue, both set amid cultural and natural surroundings.\"}]}",
+  "usage": {
+    "prompt_tokens": 2864,
+    "completion_tokens": 2736,
+    "total_tokens": 5600
+  },
+  "retry_count": 0
+}

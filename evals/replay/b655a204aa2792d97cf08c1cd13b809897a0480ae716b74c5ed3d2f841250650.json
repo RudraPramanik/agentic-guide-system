@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\n  \"days\": [\n    {\n      \"day\": 1,\n      \"title\": \"Colonial Landmarks & City Views\",\n      \"narrative\": \"Begin your Darjeeling exploration with a blend of hillside viewpoints and cultural museums. Wander through historic sites and green parks, concluding along a bustling boulevard framed by mountain vistas.\"\n    },\n    {\n      \"day\": 2,\n      \"title\": \"Mountain Dawn & Tenzing Legacy\",\n      \"narrative\": \"Start early with iconic hillside panoramas and viewpoints that showcase the region's majestic terrain. Continue to sites honoring mountaineering pioneers, then explore local markets and historical memorials at a relaxed pace.\"\n    },\n    {\n      \"day\": 3,\n      \"title\": \"Tea Gardens & War Memorial\",\n      \"narrative\": \"Spend the morning at a scenic overlook offering sweeping views of the city and tea plantations. Visit a tranquil war memorial nestled in lush surroundings, providing a reflective conclusion to your hill station visit.\"\n    }\n  ]\n}",
+  "usage": {
+    "prompt_tokens": 2445,
+    "completion_tokens": 1924,
+    "total_tokens": 4369
+  },
+  "retry_count": 0
+}

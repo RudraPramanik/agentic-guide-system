@@ -1,0 +1,17 @@
+{
+  "operation": "chat_with_tools",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": null,
+  "tool_calls": [
+    {
+      "name": "ask_clarification",
+      "arguments_json": "{\"question\":\"Which destination or region are you interested in for the 4-day trek and viewpoints?\"}"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 614,
+    "completion_tokens": 215,
+    "total_tokens": 829
+  },
+  "retry_count": 0
+}

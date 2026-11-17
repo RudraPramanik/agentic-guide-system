@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\n  \"days\": [\n    {\n      \"day\": 1,\n      \"title\": \"Hilltops, Culture & Mall Road\",\n      \"narrative\": \"The day opens with panoramic views from multiple hillside viewpoints, followed by a visit to a historic mountaineering museum. Guests can stroll through peaceful parks, enjoy a relaxed break on a bustling thoroughfare, and end at a memorial honoring a legendary figure.\"\n    },\n    {\n      \"day\": 2,\n      \"title\": \"Panoramas, Villages & Border Views\",\n      \"narrative\": \"Morning brings a scenic overlook of the city and tea estates, then a journey through hillside viewpoints and attractions that pass nearby villages and a border crossing, concluding at a site of historical importance.\"\n    },\n    {\n      \"day\": 3,\n      \"title\": \"Waterfalls, Lakes & Sikkim Signs\",\n      \"narrative\": \"The itinerary starts with mountain overlooks and a tranquil lake viewpoint, continues to a landmark stone and an iconic regional sign, crosses a notable bridge, and wraps up at a picturesque waterfall finale.\"\n    }\n  ]\n}",
+  "usage": {
+    "prompt_tokens": 3594,
+    "completion_tokens": 3365,
+    "total_tokens": 6959
+  },
+  "retry_count": 0
+}

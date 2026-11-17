@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import AliasChoices, Field, ValidationError
+from pydantic import AliasChoices, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -59,6 +59,19 @@ class Settings(BaseSettings):
     LLM_API_BASE: str = ""
     LLM_TIMEOUT_SECONDS: int = 20
     LLM_MAX_RETRIES: int = 4
+    # Slice 2.2 gateway fixtures. off keeps live provider calls.
+    LLM_REPLAY_MODE: str = "off"
+
+    @field_validator("LLM_REPLAY_MODE")
+    @classmethod
+    def _check_llm_replay_mode(cls, value: str) -> str:
+        if value not in {"off", "replay", "record"}:
+            raise ValueError("LLM_REPLAY_MODE must be off, replay, or record")
+        return value
+
+    # Offline eval judge. Off keeps generate free of judge calls.
+    EVALUATION_JUDGE_ENABLED: bool = False
+    EVALUATION_JUDGE_TIMEOUT_SECONDS: int = 15
 
     # Planner agent bounds
     PLANNER_MAX_TOOL_CALLS: int = 12

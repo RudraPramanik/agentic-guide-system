@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\n  \"days\": [\n    {\n      \"day\": 1,\n      \"title\": \"Kanchenjunga vistas and heritage sites\",\n      \"narrative\": \"Begin with elevated viewpoints showcasing the Himalayan range, then proceed to a sacred lake overlook and a historic monument. The afternoon features a visit to a sculpture museum and a cascading waterfall, offering a mix of nature and culture.\"\n    },\n    {\n      \"day\": 2,\n      \"title\": \"Yuksom and panoramic viewpoints\",\n      \"narrative\": \"Spend the morning at a highland village viewpoint and a nearby ridge overlook, taking in expansive mountain scenery and fresh alpine air.\"\n    },\n    {\n      \"day\": 3,\n      \"title\": \"Ilam's natural attractions\",\n      \"narrative\": \"Explore three distinct attraction sites in the Ilam region, each offering unique landscapes and points of interest through forested trails and elevated viewpoints.\"\n    },\n    {\n      \"day\": 4,\n      \"title\": \"Darjeeling town exploration\",\n      \"narrative\": \"Start with a rock formation viewpoint, then tour town museums and cultural institutions. The afternoon winds through a park, a famous shopping promenade, and concludes at another museum dedicated to local history.\"\n    }\n  ]\n}",
+  "usage": {
+    "prompt_tokens": 3236,
+    "completion_tokens": 2933,
+    "total_tokens": 6169
+  },
+  "retry_count": 0
+}

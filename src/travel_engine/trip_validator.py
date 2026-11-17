@@ -17,6 +17,7 @@ from src.travel_engine.route_optimizer import DroppedStop
 from src.travel_engine.schedule_builder import ScheduledStop
 from src.travel_engine.travel_rules import (
     ANCHOR_MIN_SCORE,
+    CATEGORY_WEIGHTS,
     GEO_COHERENCE_MAX_STDDEV_KM,
     MAX_DAILY_TRAVEL_MIN,
     MORNING_ONLY_CATEGORIES,
@@ -115,13 +116,36 @@ def check_morning_slots(itinerary: TripItinerary) -> list[str]:
     return errors
 
 
+def _catalog_tag_anchors(stop: ScheduledStop) -> bool:
+    """True when a catalog tag on the place outweighs the anchor line.
+
+    Used only when the traveler named no interest that scores above that line.
+    Preference overlap stays the anchor when any stop clears it.
+    """
+    for tag in stop.place.enriched_tags:
+        weight = CATEGORY_WEIGHTS.get(tag)
+        if weight is not None and weight > ANCHOR_MIN_SCORE:
+            return True
+    return False
+
+
 def check_anchor_per_day(itinerary: TripItinerary) -> list[str]:
+    preference_signal = any(
+        stop.score > ANCHOR_MIN_SCORE
+        for day in itinerary.days
+        for stop in day.stops
+    )
     errors: list[str] = []
     for i, day in enumerate(itinerary.days):
-        if not any(s.score > ANCHOR_MIN_SCORE for s in day.stops):
-            errors.append(
-                f"day {i}: no anchor stop with score > {ANCHOR_MIN_SCORE}"
-            )
+        if any(stop.score > ANCHOR_MIN_SCORE for stop in day.stops):
+            continue
+        if not preference_signal and any(
+            _catalog_tag_anchors(stop) for stop in day.stops
+        ):
+            continue
+        errors.append(
+            f"day {i}: no anchor stop with score > {ANCHOR_MIN_SCORE}"
+        )
     return errors
 
 

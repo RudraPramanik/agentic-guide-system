@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\n  \"days\": 3,\n  \"budget\": \"budget\",\n  \"interests\": [\"monasteries\"],\n  \"include_offbeat\": true,\n  \"include_trekking\": false\n}",
+  "usage": {
+    "prompt_tokens": 69,
+    "completion_tokens": 917,
+    "total_tokens": 986
+  },
+  "retry_count": 0
+}

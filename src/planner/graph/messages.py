@@ -74,12 +74,21 @@ def build_agent_messages(state: TravelState | dict[str, Any]) -> list[dict]:
     dropped = _has_dropped_stops(route)
     tool_trace = data.get("tool_trace") or []
 
+    destination_name = str(data.get("destination_name") or "").strip()
+    destination_line = (
+        f"Destination is already chosen: {destination_name}. "
+        "Do not ask which destination, city, or region."
+        if destination_name
+        else "Destination is already chosen for this run. Do not ask which destination."
+    )
     lines = [
         "You are a trip planner tool-using agent.",
+        destination_line,
         f"Current phase: {phase.value}.",
         f"Allowed tools for this phase only: {', '.join(allowed)}.",
         "Hard rules: never invent places, place IDs, coordinates, times, or stop order.",
         "Call tools to act; do not invent tool names outside the allowed list.",
+        "When readiness_score is missing, call check_readiness before search_places.",
         (
             "State summary: "
             f"days={days if days is not None else 'unknown'}, "

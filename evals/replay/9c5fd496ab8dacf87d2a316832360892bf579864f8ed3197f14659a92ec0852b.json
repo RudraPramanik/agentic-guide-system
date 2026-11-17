@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\n  \"days\": [\n    {\n      \"day\": 1,\n      \"title\": \"Cultural Landmarks & Panoramic Views\",\n      \"narrative\": \"Begin with scenic viewpoints and historic museums, wander through bustling markets and serene parks, and conclude with local street food and reflective monuments that showcase the region’s heritage.\"\n    },\n    {\n      \"day\": 2,\n      \"title\": \"Hilltop Sunrise & Historical Echoes\",\n      \"narrative\": \"Rise early for breathtaking hilltop vistas, then explore war memorials and tributes to mountaineering pioneers, all set against the crisp mountain air of Darjeeling.\"\n    },\n    {\n      \"day\": 3,\n      \"title\": \"Tea Country Reflections & Quirky Signs\",\n      \"narrative\": \"Stroll through heritage viewpoints and tea garden landscapes, stopping at playful roadside signs and relaxed attractions that capture the laid-back spirit of the hills.\"\n    }\n  ]\n}",
+  "usage": {
+    "prompt_tokens": 2465,
+    "completion_tokens": 2524,
+    "total_tokens": 4989
+  },
+  "retry_count": 0
+}

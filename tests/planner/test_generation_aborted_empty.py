@@ -68,7 +68,30 @@ async def test_llm_error_after_readiness_synthesizes_search_places() -> None:
     assert "agent_no_tool_call_default_used" in (out.get("warnings") or [])
 
 
-def test_stuck_discover_without_pois_aborts_wrap_up() -> None:
+def test_stuck_plan_without_schedule_builds_once_then_aborts() -> None:
+    settings = MagicMock()
+    settings.PLANNER_AGENT_PHASE_STUCK_LIMIT = 2
+    state = _make_test_state(agent_phase=AgentPhase.PLAN)
+    state["route"] = [{"ordered": [{"id": "p1"}]}]
+    state["schedule"] = []
+    with patch(
+        "src.planner.tools.orchestration.get_settings",
+        return_value=settings,
+    ):
+        run_stuck_detector(state)
+        run_stuck_detector(state)
+    assert state["agent_phase"] == AgentPhase.PLAN
+    assert state.get("abort_triggered") is not True
+    assert state.get("force_next_tool") == "build_schedule"
+    assert "phase_stuck_forced_schedule" in (state.get("warnings") or [])
+    run_stuck_detector(state)
+    run_stuck_detector(state)
+    assert state["agent_phase"] == AgentPhase.WRAP_UP
+    assert state["abort_triggered"] is True
+    assert "phase_stuck_plan_no_schedule" in (state.get("warnings") or [])
+
+
+def test_stuck_discover_without_pois_searches_once_then_aborts() -> None:
     settings = MagicMock()
     settings.PLANNER_AGENT_PHASE_STUCK_LIMIT = 2
     state = _make_test_state(agent_phase=AgentPhase.DISCOVER)
@@ -79,10 +102,15 @@ def test_stuck_discover_without_pois_aborts_wrap_up() -> None:
     ):
         run_stuck_detector(state)
         run_stuck_detector(state)
+    assert state["agent_phase"] == AgentPhase.DISCOVER
+    assert state.get("abort_triggered") is not True
+    assert state.get("force_next_tool") == "search_places"
+    assert "phase_stuck_forced_search" in (state.get("warnings") or [])
+    run_stuck_detector(state)
+    run_stuck_detector(state)
     assert state["agent_phase"] == AgentPhase.WRAP_UP
     assert state["abort_triggered"] is True
-    assert any("phase_stuck" in str(w) for w in (state.get("warnings") or []))
-    assert state["agent_phase"] != AgentPhase.PLAN
+    assert "phase_stuck_discover_no_pois" in (state.get("warnings") or [])
 
 
 @pytest.mark.asyncio

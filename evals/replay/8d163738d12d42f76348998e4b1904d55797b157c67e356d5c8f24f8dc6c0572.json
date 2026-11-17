@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\"days\": [{\"day\": 1, \"title\": \"Gombu Rock to Druk Museum\", \"narrative\": \"Starting with views from Gombu Rock, the day moves through Deshbandu Museum and the Natural history museum, offers a taste of local fare at Street Food Stalls, a relaxing interlude at Nightingale Park, and concludes at the Druk museum.\"}, {\"day\": 2, \"title\": \"Tiger Hill to Tomb of Tenzing Norgay\", \"narrative\": \"Morning panoramas at Tiger Hill set the tone, followed by the War Memorial at Batasia Loop, the Himalayan Mountaineering Institute, lively finds at The Mall Market, and a reflective visit to the Tomb of Tenzing Norgay.\"}, {\"day\": 3, \"title\": \"We love Sikkim sign to Gandhi statue\", \"narrative\": \"The journey begins at the We love Sikkim sign for a quick photo op, then proceeds to the Gandhi statue, rounding out the visit with a touch of historical resonance.\"}]}",
+  "usage": {
+    "prompt_tokens": 2657,
+    "completion_tokens": 3268,
+    "total_tokens": 5925
+  },
+  "retry_count": 0
+}

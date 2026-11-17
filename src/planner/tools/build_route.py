@@ -81,6 +81,8 @@ async def run(
     used_osrm_fallback = False
 
     for day_places in days:
+        if not day_places:
+            continue
         result = await optimize_route(day_places, base_lat, base_lng, routing)
         for leg in result.legs:
             if getattr(leg, "used_fallback", False):

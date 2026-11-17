@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\"days\": [{\"day\": 1, \"title\": \"Darjeeling Cultural & Scenic Day\", \"narrative\": \"The day unfolds with panoramic hill vistas, followed by explorations of museums and institutes that preserve the region’s mountaineering and historical legacy. A prominent statue and a tranquil park offer moments of cultural reflection, while a memorial site honors a legendary figure, creating a blend of heritage, nature, and inspiration.\"}, {\"day\": 2, \"title\": \"Darjeeling Landmark Visit\", \"narrative\": \"A distinctive local sign provides a fun and photogenic stop, capturing the playful spirit of the area. Surrounded by scenic views, the visit is quick yet memorable, offering a glimpse into regional identity and serving as a pleasant highlight before continuing onward.\"}, {\"day\": 3, \"title\": \"Ilam Countryside & Nature Trail\", \"narrative\": \"Beyond the town center, rolling hills and forested paths reveal viewpoints and natural attractions that showcase the area’s rugged beauty. A bustling local market adds a touch of daily life and commerce, while offbeat spots and serene landscapes provide ample opportunity for reflection, photography, and light adventure.\"}]}",
+  "usage": {
+    "prompt_tokens": 2698,
+    "completion_tokens": 3045,
+    "total_tokens": 5743
+  },
+  "retry_count": 0
+}

@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\n  \"days\": [\n    {\n      \"day\": 1,\n      \"title\": \"Darjeeling Landmarks & Park Stroll\",\n      \"narrative\": \"Begin at Gombu Rock, a scenic viewpoint showcasing Himalayan panoramas. Continue to the Himalayan Mountaineering Institute and Natural History Museum to explore the region’s adventurous heritage and biodiversity. The afternoon features the Gandhi statue, a relaxing visit to Nightingale Park with a lunch break, and a leisurely walk along Mall Road.\"\n    },\n    {\n      \"day\": 2,\n      \"title\": \"Sunrise Views & Cultural Attractions\",\n      \"narrative\": \"Start early with Tiger Hill for breathtaking mountain sunrise vistas. Explore Tenzing Rock, another prominent viewpoint. The day proceeds to The Mall Market and Street Food Stalls for local flavors, before concluding at the Tomb of Tenzing Norgay, preceded by a lunch break.\"\n    },\n    {\n      \"day\": 3,\n      \"title\": \"Tea Estate Panoramas & Historic Memorial\",\n      \"narrative\": \"Begin with views from an old hotel overlooking the city and tea plantations. Journey to the War Memorial at Batasia Loop for sweeping vistas and a tribute to fallen soldiers. The itinerary combines natural beauty with historical reflection in a compact experience.\"\n    }\n  ]\n}",
+  "usage": {
+    "prompt_tokens": 2654,
+    "completion_tokens": 1784,
+    "total_tokens": 4438
+  },
+  "retry_count": 0
+}

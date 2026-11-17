@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\n  \"days\": [\n    {\n      \"day\": 1,\n      \"title\": \"Day 1: Vista, Heritage, and Local Flavors\",\n      \"narrative\": \"Begin with a scenic overlook of the Himalayas, then explore a museum showcasing the region’s natural history. Wander through bustling market stalls, sample authentic street food, reflect at a historic statue, and unwind in a peaceful park overlooking the city.\"\n    },\n    {\n      \"day\": 2,\n      \"title\": \"Day 2: Sunrise Peaks and Memorials\",\n      \"narrative\": \"Start with an early hilltop viewpoint famed for its sunrise vistas, followed by a visit to a war memorial set within a scenic loop. Conclude the day at a serene memorial honoring a legendary mountaineer, surrounded by tranquil gardens.\"\n    },\n    {\n      \"day\": 3,\n      \"title\": \"Day 3: Panoramic Views and Local Landmarks\",\n      \"narrative\": \"Enjoy sweeping views from a historic hotel overlooking tea estates and the cityscape, then visit a quirky regional sign popular with visitors. End with photo opportunities and a relaxed pace before departure.\"\n    }\n  ]\n}",
+  "usage": {
+    "prompt_tokens": 2284,
+    "completion_tokens": 2635,
+    "total_tokens": 4919
+  },
+  "retry_count": 0
+}

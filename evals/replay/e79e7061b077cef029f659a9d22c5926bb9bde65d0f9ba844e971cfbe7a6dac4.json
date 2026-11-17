@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\n  \"days\": [\n    {\n      \"day\": 1,\n      \"title\": \"Yuksom & Sacred Waters\",\n      \"narrative\": \"Begin in Yuksom, then visit the Khecheopalri Lake Viewpoint. See the Coronation Stone, explore the Sculpture Shed, break for lunch at Chamaita, and end at Kunchenjunga Waterfall.\"\n    },\n    {\n      \"day\": 2,\n      \"title\": \"Ilam Valley Views\",\n      \"narrative\": \"Start with views from Ayabari rent and the Kanchendzonga skywalk, descend to zero point Ilam, walk through Soyak, browse Ilam Chok Bazar, and conclude at Dhobi dhara, Ilam.\"\n    },\n    {\n      \"day\": 3,\n      \"title\": \"Culture & Cuisine in Sikkim\",\n      \"narrative\": \"Begin with views from an old hotel overlooking the city and tea, tour the Himalayan Mountaineering Institute, pass the Sikkim entry point, sample Street Food Stalls, visit the Tomb of Tenzing Norgay, and finish at the Druk museum.\"\n    }\n  ]\n}",
+  "usage": {
+    "prompt_tokens": 3594,
+    "completion_tokens": 3321,
+    "total_tokens": 6915
+  },
+  "retry_count": 0
+}

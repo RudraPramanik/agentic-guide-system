@@ -1,0 +1,3 @@
+{
+  "_comment": "Hard-fail bands only. A metric gates when it has a numeric baseline measured in S0. Latency, tokens, cost, and coherence variance are unmeasured, so they are absent and stay report-only."
+}

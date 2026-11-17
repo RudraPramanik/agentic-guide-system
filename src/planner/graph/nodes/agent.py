@@ -71,9 +71,12 @@ def _default_tool_for_state(state: dict[str, Any]) -> str:
     return DEFAULT_TOOL_BY_PHASE.get(phase, "check_readiness")
 
 
-def _synthesize_default(state: dict[str, Any]) -> list[dict[str, Any]]:
-    name = _default_tool_for_state(state)
+def _synthesize_named(name: str) -> list[dict[str, Any]]:
     return [PendingToolCall(name=name, arguments_json="{}").model_dump()]
+
+
+def _synthesize_default(state: dict[str, Any]) -> list[dict[str, Any]]:
+    return _synthesize_named(_default_tool_for_state(state))
 
 
 def _append_warning(state: dict[str, Any], code: str) -> list[str]:
@@ -95,6 +98,16 @@ async def agent_node(
             "abort_triggered": True,
             "agent_phase": AgentPhase.WRAP_UP,
             "pending_tool_calls": [],
+        }
+
+    forced = state.get("force_next_tool")
+    if isinstance(forced, str) and forced:
+        return {
+            "pending_tool_calls": _synthesize_named(forced),
+            "force_next_tool": None,
+            "warnings": _append_warning(state, "agent_forced_tool"),
+            "token_usage": dict(state.get("token_usage") or {}),
+            "llm_retry_count": int(state.get("llm_retry_count") or 0),
         }
 
     phase = _as_phase(state.get("agent_phase"))

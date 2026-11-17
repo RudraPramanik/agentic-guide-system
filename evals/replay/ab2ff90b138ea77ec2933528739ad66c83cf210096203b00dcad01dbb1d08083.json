@@ -1,0 +1,17 @@
+{
+  "operation": "chat_with_tools",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": null,
+  "tool_calls": [
+    {
+      "name": "build_schedule",
+      "arguments_json": "{\"days\":\"3\",\"interests\":\"[\\\"Batasia Loop\\\"]\"}"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 626,
+    "completion_tokens": 304,
+    "total_tokens": 930
+  },
+  "retry_count": 0
+}

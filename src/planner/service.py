@@ -102,6 +102,31 @@ def _initial_state(
     }
 
 
+async def _bind_known_destination(state: dict[str, Any], destination_id: UUID) -> None:
+    """Put the chosen destination and its readiness on state before the graph runs.
+
+    Generate is always for one destination. The agent must see that name, and
+    the golden gate reads readiness_score even when the model skips the tool.
+    A missing row leaves the state unchanged.
+    """
+    from src.core.database.session import AsyncSessionLocal
+    from src.destinations.service import DestinationService
+    from src.destinations.exceptions import DestinationNotFoundError
+
+    session = AsyncSessionLocal()
+    try:
+        service = DestinationService(session)
+        try:
+            dest = await service.get_by_id(destination_id)
+        except DestinationNotFoundError:
+            return
+        state["destination_name"] = dest.name
+        readiness = await service.get_readiness(destination_id)
+        state["readiness_score"] = readiness.score
+    finally:
+        await session.close()
+
+
 class PlannerService:
     """Service-level generation runner — not an HTTP router."""
 
@@ -151,6 +176,7 @@ class PlannerService:
             base_lng=base_lng,
             session_id=session_id,
         )
+        await _bind_known_destination(initial, dest_uuid)
         # Seed last_known so a pre-emit timeout still has destination_id for eval.
         last_known_state.update(initial)
 

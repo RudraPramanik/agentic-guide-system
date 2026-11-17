@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\"days\": [{\"day\": 1, \"title\": \"Darjeeling Heritage & Viewpoints\", \"narrative\": \"Start at Tenzing Rock for panoramic views, then explore the cultural exhibits at Deshbandu Museum. Visit the Himalayan Mountaineering Institute to learn about the region's climbing history, followed by local flavors at Street Food Stalls. Stroll along Mall Road for shopping and relaxation, and conclude with a visit to the Druk museum.\"}, {\"day\": 2, \"title\": \"Sunrise & Local Charms\", \"narrative\": \"Begin early at Tiger Hill for breathtaking sunrise vistas, then visit a historic hotel overlooking the city and tea plantations, soaking in the colonial atmosphere and local charm.\"}]}",
+  "usage": {
+    "prompt_tokens": 1798,
+    "completion_tokens": 2313,
+    "total_tokens": 4111
+  },
+  "retry_count": 0
+}

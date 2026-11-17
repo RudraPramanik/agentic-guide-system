@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\"days\": [{\"day\": 1, \"title\": \"Kanchendzonga Views & Waterfalls\", \"narrative\": \"Begin with panoramic Kanchendzonga views from the skywalk, then visit Khecheopalri Lake Viewpoint, the historic Coronation Stone, and conclude at Kunchenjunga Waterfall.\"}, {\"day\": 2, \"title\": \"Yuksom & Tikjuk Viewpoint\", \"narrative\": \"Explore the offbeat charm of Yuksom and the serene Tikjuk Viewpoint, immersed in nature and cultural surroundings.\"}, {\"day\": 3, \"title\": \"Tiger Hill & Darjeeling Heritage\", \"narrative\": \"Witness the sunrise at Tiger Hill, then tour Tenzing Rock, the Himalayan Mountaineering Institute, Mall Road, and the Tomb of Tenzing Norgay.\"}]}",
+  "usage": {
+    "prompt_tokens": 2588,
+    "completion_tokens": 2450,
+    "total_tokens": 5038
+  },
+  "retry_count": 0
+}

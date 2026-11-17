@@ -81,8 +81,9 @@ def _flat_stop(
         "suggested_start_time": scheduled.suggested_start_time,
         "arrival_note": scheduled.arrival_note,
         "leg_polyline": leg_polyline,
-        # Keep score for validate_itinerary → ScheduledStop reconstruction
+        # Keep score and tags so validate_itinerary can rebuild the stop.
         "score": scheduled.score,
+        "enriched_tags": list(place.enriched_tags),
     }
 
 

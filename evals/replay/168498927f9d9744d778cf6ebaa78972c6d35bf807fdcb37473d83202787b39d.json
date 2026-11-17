@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\"days\": [{\"day\": 1, \"title\": \"Sunrise Views & Heritage Walk\", \"narrative\": \"Traverses elevated viewpoints and cultural sites, moving from hilltops to a central museum and bustling promenade, highlighting the region's natural beauty and local history.\"}, {\"day\": 2, \"title\": \"Border Trails & Riverside Crossings\", \"narrative\": \"Winds through border areas and scenic bridges, linking rural viewpoints with river crossings and local attractions, offering glimpses of cross-cultural connectivity and landscape diversity.\"}, {\"day\": 3, \"title\": \"Mountain Panoramas & Waterfall Wonders\", \"narrative\": \"Features sweeping mountain overlooks and iconic landmarks, progressing from skywalk vistas to waterfall cascades and city symbols, showcasing the area's geological and cultural highlights.\"}]}",
+  "usage": {
+    "prompt_tokens": 3598,
+    "completion_tokens": 2866,
+    "total_tokens": 6464
+  },
+  "retry_count": 0
+}

@@ -1,0 +1,57 @@
+# Nightly live golden run. Does not run on pull requests.
+# A failure here is a ticket, not a PR block. Missing LLM_API_KEY skips.
+name: eval-live
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: wandr
+          POSTGRES_PASSWORD: wandr
+          POSTGRES_DB: wandr
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wandr -d wandr"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      qdrant:
+        image: qdrant/qdrant:v1.12.5
+        ports:
+          - 6335:6333
+    env:
+      SECRET_KEY: ci-test-secret-not-for-prod
+      DATABASE_URL: postgresql+asyncpg://wandr:wandr@localhost:5432/wandr
+      NOMINATIM_USER_AGENT: wandr-ci-evals
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      REDIS_URL: ""
+      LANGFUSE_PUBLIC_KEY: ""
+      LANGFUSE_SECRET_KEY: ""
+      QDRANT_URL: http://localhost:6335
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Live golden suite or skip
+        run: |
+          if [ -z "$LLM_API_KEY" ]; then
+            echo "skip: LLM_API_KEY secret absent"
+            exit 0
+          fi
+          python scripts/run_evals.py --destination darjeeling

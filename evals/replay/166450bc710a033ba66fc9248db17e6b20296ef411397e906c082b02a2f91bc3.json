@@ -1,0 +1,17 @@
+{
+  "operation": "chat_with_tools",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": null,
+  "tool_calls": [
+    {
+      "name": "finish_plan",
+      "arguments_json": "{\"plan_id\":\"none\"}"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 537,
+    "completion_tokens": 38,
+    "total_tokens": 575
+  },
+  "retry_count": 0
+}

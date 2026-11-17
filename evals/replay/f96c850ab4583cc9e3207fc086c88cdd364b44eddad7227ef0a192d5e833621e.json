@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\n  \"days\": [\n    {\n      \"day\": 1,\n      \"title\": \"Darjeeling Viewpoints & Culture\",\n      \"narrative\": \"The day featured a hilltop viewpoint for panoramic scenery, followed by museum visits highlighting local history and mountaineering heritage, and concluded at a central market and main road for shopping and leisure.\"\n    },\n    {\n      \"day\": 2,\n      \"title\": \"Darjeeling Heritage Sites\",\n      \"narrative\": \"A concise itinerary centered on a commemorative statue and a historic memorial, set within natural surroundings, offering cultural reflection and brief exploration.\"\n    },\n    {\n      \"day\": 3,\n      \"title\": \"Ilam Countryside & Nature\",\n      \"narrative\": \"The route moved into the hills' outskirts, passing natural viewpoints, a riverside attraction, a local bazar, and a scenic dhara, reflecting the region's rural character and adventure appeal.\"\n    }\n  ]\n}",
+  "usage": {
+    "prompt_tokens": 2881,
+    "completion_tokens": 2549,
+    "total_tokens": 5430
+  },
+  "retry_count": 0
+}

@@ -12,6 +12,7 @@ import math
 from src.travel_engine.place_selector import ScoredPlace, TripPreferences
 from src.travel_engine.travel_rules import (
     ACTIVE_DAY_VISIT_BUDGET_MIN,
+    ANCHOR_MIN_SCORE,
     CLUSTER_RADIUS_KM,
     MAX_PLACES_PER_DAY,
     MORNING_ONLY_CATEGORIES,
@@ -94,6 +95,27 @@ def _build_clusters(ordered: list[ScoredPlace]) -> list[list[ScoredPlace]]:
     return clusters
 
 
+def _day_for_cluster(
+    day_lists: list[list[ScoredPlace]],
+    cluster: list[ScoredPlace],
+) -> int | None:
+    """Day index for a whole cluster, or None when it must spill or be omitted."""
+    c_lat, c_lng = _cluster_centroid(cluster)
+    nearby: list[int] = []
+    for index, day in enumerate(day_lists):
+        if not day:
+            continue
+        d_lat, d_lng = _cluster_centroid(day)
+        if _haversine_km(c_lat, c_lng, d_lat, d_lng) <= CLUSTER_RADIUS_KM:
+            nearby.append(index)
+    if nearby:
+        return min(nearby, key=lambda index: (len(day_lists[index]), index))
+    empties = [index for index, day in enumerate(day_lists) if not day]
+    if empties:
+        return empties[0]
+    return None
+
+
 def allocate_days(
     selected: list[ScoredPlace],
     days: int,
@@ -107,9 +129,13 @@ def allocate_days(
     - Each day: sum(visit_duration_min(...)) <= ACTIVE_DAY_VISIT_BUDGET_MIN
     - Each day: ≤2 places with category in MORNING_ONLY_CATEGORIES
     - Geographic pre-clustering: places within CLUSTER_RADIUS_KM prefer same day
+    - A cluster farther than CLUSTER_RADIUS_KM from an occupied day does not join it
     - Spill prefers nearer day centroid among days that can accept (soft geo)
     - Higher scores preferred when a day is full
     - Overflow that cannot fit any day is omitted (no logger; observe via sizes)
+    - When any selected place scores above ANCHOR_MIN_SCORE, a day whose
+      places all score at or below that line is cleared. The day slot stays
+      so the result length is still `days`. Callers skip empty slots.
 
     ``preferences`` is accepted for API symmetry with callers; unused in packing.
     """
@@ -132,26 +158,44 @@ def allocate_days(
     )
 
     for cluster in clusters:
-        # Prefer the currently underfilled day (fewest places)
-        preferred = min(range(days), key=lambda i: (len(day_lists[i]), i))
+        # A far cluster must not join a day that already has another region.
+        # Empty days can take it. If every day is occupied and none is within
+        # CLUSTER_RADIUS_KM, the places are omitted rather than mixed in.
+        preferred = _day_for_cluster(day_lists, cluster)
         for item in sorted(
             cluster,
             key=lambda s: (-s.score, s.place.name, str(s.place.id)),
         ):
-            if _can_add(day_lists[preferred], item):
+            if preferred is not None and _can_add(day_lists[preferred], item):
                 day_lists[preferred].append(item)
                 continue
-            # Soft geo spill: nearer centroid among days that can accept
-            candidates = [di for di in range(days) if _can_add(day_lists[di], item)]
+            candidates = [
+                di
+                for di in range(days)
+                if _can_add(day_lists[di], item)
+                and (
+                    not day_lists[di]
+                    or _distance_to_day(day_lists[di], item) <= CLUSTER_RADIUS_KM
+                )
+            ]
             if not candidates:
                 continue  # omit overflow
             candidates.sort(
                 key=lambda di: (
+                    1 if not day_lists[di] else 0,
                     _distance_to_day(day_lists[di], item),
                     len(day_lists[di]),
                     di,
                 )
             )
             day_lists[candidates[0]].append(item)
+
+    if any(place.score > ANCHOR_MIN_SCORE for place in selected):
+        day_lists = [
+            day
+            if any(place.score > ANCHOR_MIN_SCORE for place in day)
+            else []
+            for day in day_lists
+        ]
 
     return day_lists

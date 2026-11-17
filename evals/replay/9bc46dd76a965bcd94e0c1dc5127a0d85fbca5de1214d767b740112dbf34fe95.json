@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\n  \"days\": [\n    {\n      \"day\": 1,\n      \"title\": \"Darjeeling Heritage & Viewpoints\",\n      \"narrative\": \"A journey through Darjeeling’s elevated landscapes and cultural landmarks, blending natural beauty with historical storytelling.\"\n    },\n    {\n      \"day\": 2,\n      \"title\": \"Sunrise Peaks & Mountain Tribute\",\n      \"narrative\": \"A day of mountain horizons and tributes, connecting with the region’s iconic peaks and the legacies they inspire.\"\n    }\n  ]\n}",
+  "usage": {
+    "prompt_tokens": 2410,
+    "completion_tokens": 2371,
+    "total_tokens": 4781
+  },
+  "retry_count": 0
+}

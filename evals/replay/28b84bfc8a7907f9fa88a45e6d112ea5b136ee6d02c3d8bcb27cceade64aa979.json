@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\n  \"days\": [\n    {\n      \"day\": 1,\n      \"title\": \"Hilltop Vistas & Cultural Heritage\",\n      \"narrative\": \"Tiger Hill and Tenzing Rock offer panoramic vistas, followed by the Himalayan Mountaineering Institute and Natural History Museum, and a walk along Mall Road ending at the Druk Museum.\"\n    },\n    {\n      \"day\": 2,\n      \"title\": \"Heritage Landmarks & Local Flavors\",\n      \"narrative\": \"An old hotel overlooking the city, the War Memorial at Batasia Loop, the We love Sikkim sign, Street Food Stalls, Nightingale Park, and the Tomb of Tenzing Norgay provide heritage, views, and local experiences.\"\n    },\n    {\n      \"day\": 3,\n      \"title\": \"Peak Views & Waterfall Finale\",\n      \"narrative\": \"Kancheldzonga skywalk and Khecheopalri Lake viewpoints, the Coronation Stone, the Museum on the third floor, Sculpture Shed, and Kunchenjunga Waterfall showcase mountain scenery and cultural sites.\"\n    }\n  ]\n}",
+  "usage": {
+    "prompt_tokens": 3585,
+    "completion_tokens": 3046,
+    "total_tokens": 6631
+  },
+  "retry_count": 0
+}

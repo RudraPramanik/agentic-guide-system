@@ -35,5 +35,16 @@ When a rule already fails on the current checkout, the suite MUST record each of
 - **THEN** the architecture suite fails and names that module
 
 #### Scenario: Deferred rules are documented, not invented
-- **WHEN** a §10 rule cannot be enforced yet because its module is absent (for example run-status transitions) or is owned by another suite (snapshots, golden replay)
-- **THEN** the violations or suite docs record the deferral and the suite does not invent that module
+- **WHEN** a §10 rule cannot be enforced yet because its module is absent or is owned by another suite (snapshots, golden replay)
+- **THEN** the violations or suite docs record the deferral, the suite does not invent that module, and G15 is not in the deferred list
+
+### Requirement: Run status is written only by the lifecycle service
+The architecture suite MUST fail when a Python file other than `src/planner/runs/service.py` assigns a planner run's status. The model field and its default are not a violation. Other modules MAY call the lifecycle service to request a transition. `tests/architecture/VIOLATIONS.md` MUST NOT list G15 as deferred.
+
+#### Scenario: Router assigning status fails the suite
+- **WHEN** a module outside `src/planner/runs/service.py` assigns a planner run status
+- **THEN** the architecture suite fails and names that module
+
+#### Scenario: G15 is no longer deferred
+- **WHEN** the violations document is read
+- **THEN** the deferred-rule section does not list G15

@@ -1,4 +1,8 @@
-﻿{
+{
+    "schema_version": 2,
+    "case_type": "itinerary_preference",
+    "labels": ["darjeeling"],
+    "quarantined": false,
     "id":  "dar-001",
     "destination":  "Darjeeling",
     "destination_id":  "458854b1-4d2a-4d02-8901-e26ed59c0c8b",

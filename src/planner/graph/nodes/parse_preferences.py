@@ -28,6 +28,11 @@ _INTEREST_ALIASES: dict[str, str] = {
     "hiking": "trek",
     "viewpoint": "viewpoint",
     "views": "viewpoint",
+    "view": "viewpoint",
+    "sunrise": "viewpoint",
+    "sunrises": "viewpoint",
+    "sunset": "viewpoint",
+    "sunsets": "viewpoint",
     "monastery": "monastery",
     "temple": "monastery",
     "cultural": "cultural",
@@ -70,6 +75,27 @@ def _map_interest(raw: str) -> str:
             if tag.lower() == key:
                 return tag
     return raw.strip()
+
+
+def _ground_interests(raw_input: str, interests: list[str]) -> list[str]:
+    """Union catalog words from the traveler's text into the parsed interests.
+
+    The model may name a place ("Tiger Hill") and drop the catalog word that
+    was in the same sentence ("photography", "sunrise"). Scoring only sees
+    catalog tags, so the text is the source for those tags.
+    """
+    grounded = list(interests)
+    seen = {item.lower() for item in grounded}
+    for token in re.split(r"[^A-Za-z]+", raw_input or ""):
+        key = token.strip().lower()
+        if key not in _INTEREST_ALIASES and key not in _VOCAB_SET:
+            continue
+        mapped = _map_interest(key)
+        if mapped.lower() in seen:
+            continue
+        seen.add(mapped.lower())
+        grounded.append(mapped)
+    return grounded
 
 
 def _normalize_interests(raw: Any) -> list[str]:
@@ -172,7 +198,10 @@ async def parse_preferences(
         if parsed is None:
             update = _defaults(llm_retry_count)
         else:
-            interests = _normalize_interests(parsed.get("interests"))
+            interests = _ground_interests(
+                str(raw_input),
+                _normalize_interests(parsed.get("interests")),
+            )
             include_offbeat = bool(parsed.get("include_offbeat", False))
             include_trekking = bool(parsed.get("include_trekking", False))
             interest_keys = {i.lower() for i in interests}
@@ -195,6 +224,13 @@ async def parse_preferences(
             }
     except WandrLLMError:
         update = _defaults(llm_retry_count)
+        interests = _ground_interests(str(raw_input), [])
+        update["interests"] = interests
+        keys = {item.lower() for item in interests}
+        if "offbeat" in keys:
+            update["include_offbeat"] = True
+        if "trek" in keys:
+            update["include_trekking"] = True
 
     update["token_usage"] = token_usage
 

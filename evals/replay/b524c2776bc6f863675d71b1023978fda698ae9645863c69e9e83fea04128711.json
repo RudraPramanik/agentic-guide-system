@@ -1,0 +1,17 @@
+{
+  "operation": "chat_with_tools",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": null,
+  "tool_calls": [
+    {
+      "name": "search_places",
+      "arguments_json": "{\"query\":\"relaxation Darjeeling mid budget\",\"top_k\":10}"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 673,
+    "completion_tokens": 273,
+    "total_tokens": 946
+  },
+  "retry_count": 0
+}

@@ -1,0 +1,17 @@
+{
+  "operation": "chat_with_tools",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": null,
+  "tool_calls": [
+    {
+      "name": "ask_clarification",
+      "arguments_json": "{\"question\":\"Which destination would you like the relaxed 3-day mid-budget itinerary for?\"}"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 612,
+    "completion_tokens": 178,
+    "total_tokens": 790
+  },
+  "retry_count": 0
+}

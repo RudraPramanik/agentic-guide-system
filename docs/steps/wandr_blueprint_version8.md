@@ -513,6 +513,8 @@ Full spec in **§11**. Subslices:
 
 **Exit gate:** reproducible replay run; regression is detected on a seeded bad change; golden minimums (§11.2) met.
 
+Gate correction recorded while closing 2.5: generate is always for a destination id that is already chosen, so the agent prompt names that destination and a clarification that asks which destination does not end the run. A discover loop that repeats without places forces one `search_places` before it may abort. A plan loop that repeats without a schedule forces one `build_schedule` before it may abort. Day allocation does not place a cluster farther than the 10 km pre-cluster onto a day that already holds another region; those places are omitted so a published day can pass the existing geo-coherence check. Slice 4.3 may tune the same rule. It does not put distant places back onto a near day. Catalog words in the traveler's text are interests even when the parser names a place instead (`photography` stays photography; `sunrise` and `sunset` are viewpoint). When the trip has a stop above the anchor score, a day whose stops all fall at or below that score is left empty and is not published. When no stop clears that score, because the traveler named no catalog interest, a place whose catalog tag weight is above the same score anchors the day. `finish_plan` records the engine validation of the itinerary it publishes.
+
 ### Slice 3 — Location intelligence (`LOCATION_V2_ENABLED`)
 
 | ID | Goal | Allowed paths | Required tests | Verify | Rollback | Stop if |

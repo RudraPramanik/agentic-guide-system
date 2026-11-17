@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\"days\": [{\"day\": 1, \"title\": \"Journey Begins\", \"narrative\": \"The trip starts with anticipation and preparation, setting the tone for the days ahead.\"}, {\"day\": 2, \"title\": \"On the Move\", \"narrative\": \"Hours pass through changing landscapes and moments of reflection, connecting the start and end of the adventure.\"}, {\"day\": 3, \"title\": \"Conclusion\", \"narrative\": \"The final day brings closure, memories of the journey, and readiness for what comes next.\"}]}",
+  "usage": {
+    "prompt_tokens": 98,
+    "completion_tokens": 1102,
+    "total_tokens": 1200
+  },
+  "retry_count": 0
+}

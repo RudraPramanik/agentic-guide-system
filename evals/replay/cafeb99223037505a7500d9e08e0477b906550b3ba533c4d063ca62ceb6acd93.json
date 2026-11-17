@@ -1,0 +1,17 @@
+{
+  "operation": "chat_with_tools",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": null,
+  "tool_calls": [
+    {
+      "name": "build_schedule",
+      "arguments_json": "{\"days\":\"1\",\"interests\":\"[\\\"sightseeing\\\", \\\"landmarks\\\", \\\"local cuisine\\\"]\",\"candidate_pois\":\"20\",\"ranked_pois\":\"20\",\"validation_errors\":\"[]\",\"any_day_has_dropped_stops\":\"False\"}"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 522,
+    "completion_tokens": 257,
+    "total_tokens": 779
+  },
+  "retry_count": 0
+}

@@ -1,0 +1,17 @@
+{
+  "operation": "chat_with_tools",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": null,
+  "tool_calls": [
+    {
+      "name": "ask_clarification",
+      "arguments_json": "{\"question\":\"Which city or region are you considering for your weekend trip?\"}"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 616,
+    "completion_tokens": 172,
+    "total_tokens": 788
+  },
+  "retry_count": 0
+}

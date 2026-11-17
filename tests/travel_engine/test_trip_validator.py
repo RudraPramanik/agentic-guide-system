@@ -30,13 +30,14 @@ def _stop(
     lat: float = 27.04,
     lng: float = 88.26,
     place_id: UUID | None = None,
+    tags: list[str] | None = None,
 ) -> ScheduledStop:
     return ScheduledStop(
         place=PlaceCandidate(
             id=place_id or uuid4(),
             name=name,
             category=category,
-            enriched_tags=[],
+            enriched_tags=list(tags or []),
             lat=lat,
             lng=lng,
         ),
@@ -102,6 +103,43 @@ def test_late_morning_viewpoint_error():
     assert result.passed is False
     assert any("morning-only" in e for e in result.errors)
     assert any(e.startswith("morning_slot_violation: ") for e in result.errors)
+
+
+def test_catalog_tag_anchors_a_day_when_no_preference_scores() -> None:
+    day = _good_day(
+        stops=[
+            _stop(
+                "Viewpoint",
+                score=0.0,
+                lat=27.04,
+                lng=88.26,
+                tags=["viewpoint"],
+            )
+        ]
+    )
+    result = validate_trip(TripItinerary(days=[day]))
+    assert result.passed is True
+    assert not any("no anchor" in e for e in result.errors)
+
+
+def test_preference_anchor_still_required_on_every_day() -> None:
+    anchored = _good_day(
+        stops=[_stop("Photo", score=1.4, lat=27.04, lng=88.26, tags=["photography"])]
+    )
+    leftover = _good_day(
+        stops=[
+            _stop(
+                "FarView",
+                score=0.0,
+                lat=27.05,
+                lng=88.27,
+                tags=["viewpoint"],
+            )
+        ]
+    )
+    result = validate_trip(TripItinerary(days=[anchored, leftover]))
+    assert result.passed is False
+    assert any("day 1: no anchor" in e for e in result.errors)
 
 
 def test_no_anchor_error():

@@ -1,0 +1,17 @@
+{
+  "operation": "chat_with_tools",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": null,
+  "tool_calls": [
+    {
+      "name": "ask_clarification",
+      "arguments_json": "{\"question\":\"Which destination or region are you interested for a 3-day adventure and viewpoints trip?\"}"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 613,
+    "completion_tokens": 187,
+    "total_tokens": 800
+  },
+  "retry_count": 0
+}

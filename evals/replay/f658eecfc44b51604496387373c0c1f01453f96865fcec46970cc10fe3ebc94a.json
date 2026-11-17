@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\n  \"days\": [\n    {\n      \"day\": 1,\n      \"title\": \"Darjeeling: Viewpoints & Culture\",\n      \"narrative\": \"The day combines early morning hill views with explorations of local museums and parks, offering a rich blend of natural beauty and cultural heritage. Visits include iconic landmarks, historic institutions, and leisurely walks through green spaces, ending with a stroll along a historic promenade.\"\n    }\n  ]\n}",
+  "usage": {
+    "prompt_tokens": 1351,
+    "completion_tokens": 1928,
+    "total_tokens": 3279
+  },
+  "retry_count": 0
+}

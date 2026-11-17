@@ -1,0 +1,17 @@
+{
+  "operation": "chat_with_tools",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": null,
+  "tool_calls": [
+    {
+      "name": "search_places",
+      "arguments_json": "{\"query\":\"Darjeeling attractions\",\"top_k\":10}"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 672,
+    "completion_tokens": 301,
+    "total_tokens": 973
+  },
+  "retry_count": 0
+}

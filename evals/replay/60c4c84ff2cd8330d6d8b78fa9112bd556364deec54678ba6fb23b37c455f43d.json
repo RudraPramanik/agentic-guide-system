@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\n  \"days\": [\n    {\n      \"day\": 1,\n      \"title\": \"Arrival & Mountain Air\",\n      \"narrative\": \"Touch down in Darjeeling and feel the cool hill breeze. Check in and step out for a relaxed walk through the town’s gentle streets, taking in the everyday life of this highland retreat. As the day winds down, settle in for a view of the distant peaks bathed in golden light.\"\n    },\n    {\n      \"day\": 2,\n      \"title\": \"Tea Country & Valley Views\",\n      \"narrative\": \"Spend the day among Darjeeling’s renowned tea gardens. Stroll through orderly rows of tea bushes, learn about traditional processing, and enjoy panoramic stretches of misty valleys and snow-capped horizons. The experience offers a peaceful connection to the land and its centuries-old craft.\"\n    },\n    {\n      \"day\": 3,\n      \"title\": \"Farewell & Highland Goodbye\",\n      \"narrative\": \"Enjoy a final morning in the hills, watching the sunrise paint the landscape. Before departing, sample local flavors or browse a small workshop for a last keepsake. Leave Darjeeling with the scent of tea smoke and the memory of its tranquil, elevated charm.\"\n    }\n  ]\n}",
+  "usage": {
+    "prompt_tokens": 102,
+    "completion_tokens": 1815,
+    "total_tokens": 1917
+  },
+  "retry_count": 0
+}

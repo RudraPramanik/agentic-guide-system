@@ -1,0 +1,12 @@
+{
+  "rubric_version": "1",
+  "reviewer_id": "reviewer-a",
+  "case_id": "dar-001",
+  "destination": "Darjeeling",
+  "free_text": "Sunrise stop matches the request. Days are distinct.",
+  "dimensions": {
+    "relevance": {"passed": true},
+    "diversity": {"passed": true},
+    "narrative": {"passed": true}
+  }
+}

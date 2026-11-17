@@ -17,13 +17,13 @@
 | `docs/blueprint_final.md` (P0–P7), `docs/v2_blueprint.md` (post-P7) | Finished build prompts. Each file says so at the top. |
 | `docs/FE_guide.md`, `docs/blueprint_frontend.md`, `docs/steps/blueprint_production.md` | |
 
-**Last updated:** 2026-11-17 · **Phase:** post-P7 / v7 · **Next step:** public hosts are in DNS — site `https://explorai.online` and `https://www.explorai.online`, API `https://api.explorai.online`. Confirm liveness with `ops/health.sh` (that check does not cover Redis). Next blueprint slice is Slice 2.
+**Last updated:** 2026-11-17 · **Phase:** post-P7 / v8.3 · **Next step:** public hosts stay in DNS — site `https://explorai.online` and `https://www.explorai.online`, API `https://api.explorai.online`. v8.3 rows 2.5 and 2.6 are closed on the Darjeeling golden set (live record, then `--replay` twice, both exit 0, `pass_rate=1.00`, identical verdicts). The offline judge is sampled and flag-off; it does not change the gate. Slice 2's §11.2 case expansion (more cases and destinations) is still open. Next blueprint feature slice is Slice 3.
 
 ---
 
 ## Current state (one line)
 
-P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode baseline; Tiger Hill indexed); V6.2/V6.3 deferred — misses were enrich/index coverage + agent flakiness, not embedding-model; generate default routing haversine; POI ingest multi-source (`PLACES_SOURCES`). v8.3 Slice 1 run tracking is implemented behind `RUN_TRACKING_ENABLED` (default false), with `GET /api/v1/planner/runs/{run_id}`.
+P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode baseline; Tiger Hill indexed); V6.2/V6.3 deferred — misses were enrich/index coverage + agent flakiness, not embedding-model; generate default routing haversine; POI ingest multi-source (`PLACES_SOURCES`). v8.3 Slice 1 run tracking is implemented behind `RUN_TRACKING_ENABLED` (default false), with `GET /api/v1/planner/runs/{run_id}`. v8.3 rows 2.5–2.6 are closed: the Darjeeling replay gate exits 0, and the offline judge stays off the request path (`EVALUATION_JUDGE_ENABLED` default false).
 
 ---
 
@@ -116,22 +116,24 @@ P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode 
 | V5 | ✅ Done | `places_collection()` + `sparse.py` + `places_v2` named vectors + RRF; kill-switch dense-only; **live** golden harness gate closed 2026-08-26 (`mode: generate` baseline) |
 | V6.1 | ✅ Done | Fusion diagnostics (dense/sparse/fused ids) → `tool_trace`; `SEARCH_FUSION_DIAGNOSTICS` kill-switch |
 | V6.2–V6.3 | ⬜ Deferred | Embedding bump / cross-encoder — **go/no-go: defer** (live evals: Tiger Hill miss was unenriched/unindexed; residual fails = validation/agent prefs, not retrieval-dominant) |
+| v8.3 2.5–2.6 | ✅ Done | Regression gate (quarantine split, measured-only tolerances, PR `--replay`, nightly live) and offline judge. Darjeeling `--replay` ×2 exit 0, `pass_rate=1.00`, 2026-11-17. Judge sample records `skipped` while the flag is false. |
 ---
 
 ## Implemented modules (real code)
 
 | Module | Exports / notes |
 |--------|-----------------|
-| `src/config.py` | `get_settings()` — Qdrant/embeddings (`QDRANT_PLACES_COLLECTION`, `_V2`, `SEARCH_SPARSE_ENABLED`, `SEARCH_RRF_K`, `SEARCH_FUSION_DIAGNOSTICS`), OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo (`PLACES_SOURCES`, OpenTripMap/Geoapify keys), CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `RUN_TRACKING_ENABLED` (default false), `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL`, `ROUTING_BACKEND` (`haversine` default \| `hybrid` \| `osrm`) |
+| `src/config.py` | `get_settings()` — Qdrant/embeddings (`QDRANT_PLACES_COLLECTION`, `_V2`, `SEARCH_SPARSE_ENABLED`, `SEARCH_RRF_K`, `SEARCH_FUSION_DIAGNOSTICS`), OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo (`PLACES_SOURCES`, OpenTripMap/Geoapify keys), CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `RUN_TRACKING_ENABLED` (default false), `EVALUATION_JUDGE_ENABLED` (default false), `EVALUATION_JUDGE_TIMEOUT_SECONDS` (default 15), `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL`, `ROUTING_BACKEND` (`haversine` default \| `hybrid` \| `osrm`) |
 | `src/core/llm/client.py` | `chat_completion` / `chat_with_tools` / `embed_texts` — **only** litellm import; `LLMUsage` + retry counts |
 | `src/core/observability/tracing.py` | `get_tracer()` / `flush_tracer()` / `start_generation_trace` + `end_generation_trace` + tool spans around generate (fail-soft) |
 | `src/evaluation/scorers.py` | Pure golden-case scorers |
-| `scripts/run_evals.py` | Golden harness runner + baseline diff |
+| `scripts/run_evals.py` | Golden harness runner. Gate pass rate ignores quarantined cases. Prints `REGRESSION <id>`. Writes a baseline only with `--update-baseline`. After scoring, samples one case through `judge_case` (flag off → `skipped`, no gateway call). |
 | `src/search/embeddings.py` | `local` MiniLM or `hosted` via `embed_texts`; fail-soft; lazy ST import |
 | `src/search/sparse.py` | Pure-Python BM25-style sparse encode; `is_sparse_available` fail-soft gate |
 | `src/search/client.py` | `places_collection()` accessor; ensure legacy dense or V2 named `dense`+`bm25` |
 | `src/search/places_index.py` | Canonical text + hybrid RRF / dense-only; `search_places_with_diagnostics` sidecar → tool_trace |
-| `scripts/run_evals.py` | Golden harness runner + baseline diff; live path ensures Qdrant/embeddings |
+| `src/evaluation/judge/` | Offline judge. Dimensions relevance, diversity, narrative. Versions `"1"`. Gateway only. Default sample size 1. Flag off returns `skipped`. |
+| `scripts/run_evals.py` | Live path ensures Qdrant and embeddings before generate. Replay serves fixtures and does not call the provider. |
 | `src/core/cache/backends.py` | `CacheBackend` Protocol (`get`/`set`/`delete`); `InMemoryCacheBackend` / `RedisCacheBackend`; `get_cache_backend()` |
 | `src/core/middleware/rate_limit.py` | `InMemoryRateLimiter` / `RedisRateLimiter`; `get_rate_limiter()` selects on `REDIS_URL`; fail-open |
 | `src/planner/schemas.py` | `PlanRequest` (destination_id, raw_input, optional days/base/accommodation_label); `PlannerRunOut` |
@@ -280,7 +282,7 @@ python -m pytest tests/ -v
 - `DATABASE_URL=postgresql+asyncpg://wandr:wandr@localhost:5433/wandr` (port **5433**, not 5432) — host tools; Compose `api` overrides to `postgres:5432`
 - `QDRANT_URL=http://localhost:6335` — host tools; Compose `api` overrides to `http://qdrant:6333`
 - Places collection cutover: `QDRANT_PLACES_COLLECTION=places_v2` (active via `places_collection()`); `SEARCH_SPARSE_ENABLED=false` → dense-only; `SEARCH_FUSION_DIAGNOSTICS=false` → skip diagnostic subqueries; rollback also `QDRANT_PLACES_COLLECTION=places` (keep legacy until soak)
-- Live golden harness: `python scripts/run_evals.py --destination darjeeling` (needs `LLM_MODEL` with LiteLLM provider prefix, e.g. `nvidia_nim/...` — bare `deepseek-ai/...` → BadRequestError); baseline is generate-mode (`evals/baselines/darjeeling.json`)
+- Live golden harness: `python scripts/run_evals.py --destination darjeeling` (needs `LLM_MODEL` with LiteLLM provider prefix, e.g. `nvidia_nim/...` — bare `deepseek-ai/...` → BadRequestError). PR gate is `python scripts/run_evals.py --destination darjeeling --replay` (no provider call). Baseline stays generate-mode (`evals/baselines/darjeeling.json`); do not `--update-baseline` to hide a fail. 2026-11-17 replay ×2 matched and exited 0.
 - Empty host `REDIS_URL` keeps in-memory backends for pytest; Compose `api` sets `redis://redis:6379/0` (published **6380**). Optional host uvicorn: `redis://localhost:6380/0`
 - Stop any other process on **:8001** before `docker compose up` (port clash on the published API port)
 - `.env` must have a **bare** `DATABASE_URL` value — no comment prefix on the same line

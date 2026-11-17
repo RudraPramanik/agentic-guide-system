@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\n  \"days\": [\n    {\n      \"day\": 1,\n      \"title\": \"Kancheddzonga & Khecheopalri Lake\",\n      \"narrative\": \"Start with viewpoints showcasing Kanchendzonga’s peaks, then visit the tranquil Khecheopalri Lake. Continue to the historic Coronation Stone and finish at Kunchenjunga Waterfall, immersing in Darjeeling’s natural and cultural richness.\"\n    },\n    {\n      \"day\": 2,\n      \"title\": \"Tiger Hill & Mall Road\",\n      \"narrative\": \"Begin with views from Tiger Hill, then visit Tenzing Rock before exploring the Himalayan Mountaineering Institute’s exhibits. Conclude with a relaxed walk along Mall Road, experiencing local life and colonial-era charm.\"\n    }\n  ]\n}",
+  "usage": {
+    "prompt_tokens": 1823,
+    "completion_tokens": 2385,
+    "total_tokens": 4208
+  },
+  "retry_count": 0
+}

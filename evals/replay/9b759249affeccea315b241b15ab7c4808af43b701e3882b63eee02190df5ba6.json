@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\n  \"days\": [\n    {\n      \"day\": 1,\n      \"title\": \"Darjeeling Morning & Heritage\",\n      \"narrative\": \"Begin in Darjeeling with a visit to the War Memorial at Batasia Loop, followed by panoramic viewpoints and the Himalayan Mountaineering Institute. The day unfolds through cultural landmarks and natural vistas, ending at the Tomb of Tenzing Norgay, offering a blend of history, adventure, and mountain scenery.\"\n    },\n    {\n      \"day\": 2,\n      \"title\": \"Panoramic Ridges & Sacred Lakes\",\n      \"narrative\": \"Travel through elevated ridgelines with skywalk views of Kanchendzonga, then pause at the tranquil Khecheopalri Lake and the cascading Kunchenjunga Waterfall. The day is framed by nature, photography opportunities, and the quiet majesty of the Himalayas.\"\n    },\n    {\n      \"day\": 3,\n      \"title\": \"Yuksom & SlynteR Heights\",\n      \"narrative\": \"Start in the historic village of Yuksom, immersing in its cultural and natural heritage, before ascending to the Tikjuk Viewpoint for sweeping landscape views. A journey through offbeat trails and serene surroundings concludes the Darjeeling exploration.\"\n    }\n  ]\n}",
+  "usage": {
+    "prompt_tokens": 2516,
+    "completion_tokens": 1771,
+    "total_tokens": 4287
+  },
+  "retry_count": 0
+}

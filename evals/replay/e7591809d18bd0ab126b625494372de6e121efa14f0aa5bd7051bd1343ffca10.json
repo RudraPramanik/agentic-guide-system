@@ -1,0 +1,11 @@
+{
+  "operation": "chat_completion",
+  "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+  "content": "{\"days\": [{\"day\": 1, \"title\": \"Darjeeling Heritage & Landscape Day\", \"narrative\": \"Start the day with a visit to the Himalayan Mountaineering Institute, then explore the Natural history museum. A flavorful break at Street Food Stalls leads to a moment at the Gandhi statue. The afternoon winds through the peaceful Nightingale Park and finishes along the scenic Mall Road.\"}]}",
+  "usage": {
+    "prompt_tokens": 1260,
+    "completion_tokens": 1549,
+    "total_tokens": 2809
+  },
+  "retry_count": 0
+}
