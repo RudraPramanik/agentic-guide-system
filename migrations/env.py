@@ -14,6 +14,7 @@ from src.auth.models import User  # noqa: F401
 from src.destinations.models import Destination  # noqa: F401
 from src.evaluation.models import TripEvaluation  # noqa: F401
 from src.places.models import Place  # noqa: F401
+from src.planner.runs.models import PlannerRun  # noqa: F401
 from src.trips.models import Trip, TripEditEvent, TripPlace, TripStatus  # noqa: F401
 
 config = context.config
