@@ -1,0 +1,21 @@
+{
+  "id": "loc-002",
+  "kind": "type_accuracy",
+  "geocoder_hits": [
+    {
+      "name": "Tiger Hill",
+      "display_name": "Tiger Hill, Darjeeling, India",
+      "lat": 27.0,
+      "lng": 88.3,
+      "osm_place_id": "N2",
+      "addresstype": "peak",
+      "osm_class": "natural",
+      "osm_type_tag": "peak",
+      "bounding_box": null,
+      "country": "IN"
+    }
+  ],
+  "catalog_rows": [],
+  "expected_type": "landmark",
+  "expected_status": "ambiguous"
+}

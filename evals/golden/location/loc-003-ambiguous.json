@@ -1,0 +1,33 @@
+{
+  "id": "loc-003",
+  "kind": "ambiguity",
+  "geocoder_hits": [
+    {
+      "name": "Springfield",
+      "display_name": "Springfield, Illinois, USA",
+      "lat": 39.78,
+      "lng": -89.65,
+      "osm_place_id": "N3a",
+      "addresstype": "city",
+      "osm_class": "place",
+      "osm_type_tag": "city",
+      "bounding_box": [-89.7, 39.7, -89.6, 39.9],
+      "country": "US"
+    },
+    {
+      "name": "Springfield",
+      "display_name": "Springfield, Massachusetts, USA",
+      "lat": 42.1,
+      "lng": -72.59,
+      "osm_place_id": "N3b",
+      "addresstype": "city",
+      "osm_class": "place",
+      "osm_type_tag": "city",
+      "bounding_box": [-72.7, 42.0, -72.5, 42.2],
+      "country": "US"
+    }
+  ],
+  "catalog_rows": [],
+  "expected_status": "ambiguous",
+  "requires_confirmation": true
+}

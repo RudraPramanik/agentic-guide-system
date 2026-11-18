@@ -25,7 +25,9 @@ The system SHALL provide rate limit middleware with default limits read from `Se
 
 ### Requirement: Settings-driven ordered route limit table
 
-The system SHALL resolve per-path rate limits via an ordered table built from `get_settings()` (planner path, then destinations-search path). Lookup MUST be exact path equality. When no row matches, the system SHALL use `RATE_LIMIT_DEFAULT_REQUESTS` / `RATE_LIMIT_DEFAULT_WINDOW_SECONDS`. Fail-open on limiter backend errors MUST remain unchanged. Existing planner limit behavior for the configured planner path MUST remain 10 requests per 60 seconds by default.
+The system SHALL resolve per-path rate limits via an ordered table built from `get_settings()` (planner path, then destinations-search path, then the three location paths). Lookup MUST be exact path equality. When no row matches, the system SHALL use `RATE_LIMIT_DEFAULT_REQUESTS` / `RATE_LIMIT_DEFAULT_WINDOW_SECONDS`. Fail-open on limiter backend errors MUST remain unchanged. Existing planner limit behavior for the configured planner path MUST remain 10 requests per 60 seconds by default.
+
+`RATE_LIMIT_LOCATIONS_SEARCH_PATH`, `RATE_LIMIT_LOCATIONS_RESOLVE_PATH`, and `RATE_LIMIT_LOCATIONS_SEARCH_AREA_PATH` MUST default to `/api/v1/locations/search`, `/api/v1/locations/resolve`, and `/api/v1/locations/search-area`. Each MUST use `RATE_LIMIT_DESTINATIONS_SEARCH_REQUESTS` and `RATE_LIMIT_DESTINATIONS_SEARCH_WINDOW_SECONDS` (defaults 20 and 60). The system MUST NOT add a separate numeric budget for these paths. `.env.example` MUST document the three path names and those defaults.
 
 #### Scenario: Destinations search path resolves to 20/60
 
@@ -51,6 +53,11 @@ The system SHALL resolve per-path rate limits via an ordered table built from `g
 
 - **WHEN** a client issues more than 20 requests to `/api/v1/destinations/search` within the window from the same IP
 - **THEN** a subsequent request returns HTTP 429 with `Retry-After`
+
+#### Scenario: Location search uses the destinations-search budget
+
+- **WHEN** a client calls `POST /api/v1/locations/search` and the same client calls `POST /api/v1/locations/resolve` or `POST /api/v1/locations/search-area`
+- **THEN** each path is limited to 20 requests per 60 seconds per IP, and the 21st request on that path returns HTTP 429 with `Retry-After`
 
 ### Requirement: RateLimiterBackend protocol
 

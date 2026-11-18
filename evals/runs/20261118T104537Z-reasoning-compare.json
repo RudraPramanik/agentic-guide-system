@@ -1,0 +1,191 @@
+{
+  "generated_at": "2026-11-18T10:45:37.326587+00:00",
+  "destination": "darjeeling",
+  "case_count": 12,
+  "control_rows": [
+    {
+      "id": "dar-001",
+      "control": {
+        "passed": true,
+        "reasons": []
+      }
+    },
+    {
+      "id": "dar-002",
+      "control": {
+        "passed": true,
+        "reasons": []
+      }
+    },
+    {
+      "id": "dar-003",
+      "control": {
+        "passed": true,
+        "reasons": []
+      }
+    },
+    {
+      "id": "dar-004",
+      "control": {
+        "passed": true,
+        "reasons": []
+      }
+    },
+    {
+      "id": "dar-005",
+      "control": {
+        "passed": true,
+        "reasons": []
+      }
+    },
+    {
+      "id": "dar-006",
+      "control": {
+        "passed": true,
+        "reasons": []
+      }
+    },
+    {
+      "id": "dar-007",
+      "control": {
+        "passed": true,
+        "reasons": []
+      }
+    },
+    {
+      "id": "dar-008",
+      "control": {
+        "passed": true,
+        "reasons": []
+      }
+    },
+    {
+      "id": "dar-009",
+      "control": {
+        "passed": true,
+        "reasons": []
+      }
+    },
+    {
+      "id": "dar-010",
+      "control": {
+        "passed": true,
+        "reasons": []
+      }
+    },
+    {
+      "id": "dar-011",
+      "control": {
+        "passed": true,
+        "reasons": []
+      }
+    },
+    {
+      "id": "dar-012",
+      "control": {
+        "passed": true,
+        "reasons": []
+      }
+    }
+  ],
+  "treatment_rows": [
+    {
+      "id": "dar-001",
+      "status": "fixture_miss",
+      "note": "missing treatment fixture; provider not called"
+    },
+    {
+      "id": "dar-002",
+      "status": "fixture_miss",
+      "note": "missing treatment fixture; provider not called"
+    },
+    {
+      "id": "dar-003",
+      "status": "fixture_miss",
+      "note": "missing treatment fixture; provider not called"
+    },
+    {
+      "id": "dar-004",
+      "status": "fixture_miss",
+      "note": "missing treatment fixture; provider not called"
+    },
+    {
+      "id": "dar-005",
+      "status": "fixture_miss",
+      "note": "missing treatment fixture; provider not called"
+    },
+    {
+      "id": "dar-006",
+      "status": "fixture_miss",
+      "note": "missing treatment fixture; provider not called"
+    },
+    {
+      "id": "dar-007",
+      "status": "fixture_miss",
+      "note": "missing treatment fixture; provider not called"
+    },
+    {
+      "id": "dar-008",
+      "status": "fixture_miss",
+      "note": "missing treatment fixture; provider not called"
+    },
+    {
+      "id": "dar-009",
+      "status": "fixture_miss",
+      "note": "missing treatment fixture; provider not called"
+    },
+    {
+      "id": "dar-010",
+      "status": "fixture_miss",
+      "note": "missing treatment fixture; provider not called"
+    },
+    {
+      "id": "dar-011",
+      "status": "fixture_miss",
+      "note": "missing treatment fixture; provider not called"
+    },
+    {
+      "id": "dar-012",
+      "status": "fixture_miss",
+      "note": "missing treatment fixture; provider not called"
+    }
+  ],
+  "fixture_misses": [
+    "dar-001.reasoning",
+    "dar-002.reasoning",
+    "dar-003.reasoning",
+    "dar-004.reasoning",
+    "dar-005.reasoning",
+    "dar-006.reasoning",
+    "dar-007.reasoning",
+    "dar-008.reasoning",
+    "dar-009.reasoning",
+    "dar-010.reasoning",
+    "dar-011.reasoning",
+    "dar-012.reasoning"
+  ],
+  "human_pairs": [],
+  "human_clause_met": false,
+  "unmeasured_s0_cells": [
+    "Generate p50 latency",
+    "LLM calls per trip",
+    "Tokens per trip",
+    "Cost per trip"
+  ],
+  "pre_registered_margin": {
+    "pass_rate_pp": 10,
+    "scale_delta": 0.3,
+    "ci_excludes_zero": true
+  },
+  "ship_clauses": {
+    "deterministic_gates": false,
+    "human_margin": false,
+    "human_pairs_present": false,
+    "p95_within_45s": false,
+    "tokens_cost_within_s0": false,
+    "failure_rate_no_worse": false
+  },
+  "decision": "stay_off",
+  "baseline_updated": false,
+  "provider_called": false
+}

@@ -1,0 +1,9 @@
+{
+  "id": "loc-004",
+  "kind": "map_pin_clamp",
+  "lat": 27.0,
+  "lng": 88.0,
+  "requested_radius_km": 80,
+  "expected_radius_km": 50,
+  "expected_fallback_used": false
+}

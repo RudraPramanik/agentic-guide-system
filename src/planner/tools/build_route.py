@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.config import get_settings
 from src.planner.tools._helpers import (
+    dict_to_candidate,
     dict_to_scored,
     preferences_from_state,
     scored_to_dict,
@@ -12,6 +14,7 @@ from src.planner.tools._helpers import (
 )
 from src.planner.tools.schemas import BuildRouteIn, ToolResult
 from src.travel_engine.day_allocator import allocate_days
+from src.travel_engine.place_selector import rank_candidates
 from src.travel_engine.route_optimizer import optimize_route
 
 
@@ -55,17 +58,21 @@ async def run(
 
     # LLM may skip rank_places (or stuck-advance into PLAN before ranking).
     # Auto-rank from candidates so allocate_days is never fed an empty list when
-    # search already produced POIs.
+    # search already produced POIs. Same V2 gate as rank_places.
     if not ranked:
-        from src.planner.tools._helpers import dict_to_candidate
-        from src.travel_engine.place_selector import select_places
-
         raw_cands = state_get(state, "candidate_pois") or []
         candidates = [
             dict_to_candidate(c) if isinstance(c, dict) else c for c in raw_cands
         ]
         if candidates:
-            ranked = select_places(candidates, prefs)
+            v2_enabled = bool(get_settings().TRAVEL_ENGINE_V2_ENABLED)
+            ranked = rank_candidates(
+                candidates,
+                prefs,
+                v2_enabled=v2_enabled,
+                base_lat=base_lat,
+                base_lng=base_lng,
+            )
 
     if not ranked:
         return ToolResult(
@@ -74,7 +81,8 @@ async def run(
             message="no ranked or candidate places to route",
         )
 
-    days = allocate_days(ranked, prefs.days, prefs)
+    v2_enabled = bool(get_settings().TRAVEL_ENGINE_V2_ENABLED)
+    days = allocate_days(ranked, prefs.days, prefs, v2_enabled=v2_enabled)
 
     route_days: list[dict] = []
     all_dropped: list[dict] = []
@@ -83,7 +91,13 @@ async def run(
     for day_places in days:
         if not day_places:
             continue
-        result = await optimize_route(day_places, base_lat, base_lng, routing)
+        result = await optimize_route(
+            day_places,
+            base_lat,
+            base_lng,
+            routing,
+            return_to_base=v2_enabled,
+        )
         for leg in result.legs:
             if getattr(leg, "used_fallback", False):
                 used_osrm_fallback = True
@@ -98,6 +112,7 @@ async def run(
                 "still_over_budget": result.still_over_budget,
                 "leg_polylines": list(result.leg_polylines),
                 "day_polyline": result.day_polyline,
+                "return_polyline": result.return_polyline,
             }
         )
 

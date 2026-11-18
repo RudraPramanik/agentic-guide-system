@@ -1,0 +1,19 @@
+{
+  "id": "loc-005",
+  "kind": "containment",
+  "anchor": {
+    "canonical_name": "Center",
+    "location_type": "landmark",
+    "lat": 27.0,
+    "lng": 88.0,
+    "provider": "user",
+    "provider_id": null,
+    "confidence": 1.0,
+    "explanation": "fixture"
+  },
+  "radius_km": 10,
+  "stops": [
+    {"name": "near", "lat": 27.01, "lng": 88.01, "inside": true},
+    {"name": "far", "lat": 28.0, "lng": 89.0, "inside": false}
+  ]
+}

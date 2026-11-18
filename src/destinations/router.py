@@ -46,9 +46,12 @@ async def resolve_destination(
 async def get_destination_readiness(
     destination_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    days: int = Query(default=1, ge=1, le=30),
 ) -> ApiResponse[DestinationReadinessOut]:
-    """Readiness score for a destination (pure compute_readiness via service)."""
-    return ApiResponse(data=await DestinationService(db).get_readiness(destination_id))
+    """Readiness score. Optional days defaults to 1. Response fields are unchanged."""
+    return ApiResponse(
+        data=await DestinationService(db).get_readiness(destination_id, days=days)
+    )
 
 
 @router.post("/{destination_id}/prepare")

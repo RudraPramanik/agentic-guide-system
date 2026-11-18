@@ -121,7 +121,12 @@ async def test_upgrade_from_previous_head_and_downgrade(scratch_database) -> Non
     assert "planner_runs" in tables
     assert _OLDER_TABLES <= tables
 
-    _alembic("downgrade", "-1")
+    # Current head may include later additive trip columns; step back to the
+    # revision that created planner_runs, then off it.
+    _alembic("downgrade", "b8e1c2d34f50")
+    tables = await _public_tables()
+    assert "planner_runs" in tables
+    _alembic("downgrade", _PREVIOUS_HEAD)
     tables = await _public_tables()
     assert "planner_runs" not in tables
     assert _OLDER_TABLES <= tables

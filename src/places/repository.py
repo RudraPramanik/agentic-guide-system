@@ -78,6 +78,15 @@ class PlaceRepository(BaseRepository[Place, uuid.UUID]):
             params=params,
         )
 
+    async def list_all_for_destination(self, destination_id: uuid.UUID) -> list[Place]:
+        """Every non-deleted place for one destination. No page cap."""
+        stmt = select(Place).where(
+            Place.destination_id == destination_id,
+            self._soft_delete_filter(),
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def count_by_destination(self, destination_id: uuid.UUID) -> int:
         """COUNT non-deleted places for destination — used by seed script."""
         stmt = select(func.count()).select_from(Place).where(

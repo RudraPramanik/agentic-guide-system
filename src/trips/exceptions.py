@@ -56,6 +56,19 @@ class TripStopConflictError(WandrError):
         )
 
 
+class TripVersionConflictError(WandrError):
+    """409 — If-Match or expected_version does not match trips.version."""
+
+    def __init__(self, trip_id: str | None = None) -> None:
+        details = {"trip_id": trip_id} if trip_id else None
+        super().__init__(
+            code="trip_version_conflict",
+            message="Trip version does not match",
+            status_code=409,
+            details=details,
+        )
+
+
 class TripStopNotFoundError(WandrError):
     """404 — place_id not on that day."""
 

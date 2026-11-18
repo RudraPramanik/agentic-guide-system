@@ -17,13 +17,13 @@
 | `docs/blueprint_final.md` (P0–P7), `docs/v2_blueprint.md` (post-P7) | Finished build prompts. Each file says so at the top. |
 | `docs/FE_guide.md`, `docs/blueprint_frontend.md`, `docs/steps/blueprint_production.md` | |
 
-**Last updated:** 2026-11-17 · **Phase:** post-P7 / v8.3 · **Next step:** public hosts stay in DNS — site `https://explorai.online` and `https://www.explorai.online`, API `https://api.explorai.online`. v8.3 rows 3.1–3.3 are a dark `location_intelligence` library (`LOCATION_V2_ENABLED` default false; unread by generate). Destination search/resolve and planner generate are unchanged. Slice 2's §11.2 case expansion is still open. Next blueprint feature row is **3.4** (planner integration).
+**Last updated:** 2026-11-18 · **Phase:** post-P7 / v8.3 · **Next step:** public hosts stay in DNS — site `https://explorai.online` and `https://www.explorai.online`, API `https://api.explorai.online`. The first open Slice 1–4 gap is §11.2 golden case expansion (17 cases on disk: 12 Darjeeling + 5 location; the S2 minimum is 24 cases and 3 destinations). v8.3 rows 7.1–7.4 are implemented behind `REASONING_LAYER_ENABLED` (default false) and `REASONING_SHADOW_SAMPLE_RATE` (default 0): reasoner + critic package, shadow sampling, compare script, ADR-013 **stay off**. Do not claim the §11.9 ship gate passed. Leave `CANONICAL_TRIP_V2_ENABLED` off until the frontend sibling filters `stop_status`. FE compose picker remains a sibling change (`v83-slice-3-6-location-picker`).
 
 ---
 
 ## Current state (one line)
 
-P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode baseline; Tiger Hill indexed); V6.2/V6.3 deferred — misses were enrich/index coverage + agent flakiness, not embedding-model; generate default routing haversine; POI ingest multi-source (`PLACES_SOURCES`). v8.3 Slice 1 run tracking is implemented behind `RUN_TRACKING_ENABLED` (default false), with `GET /api/v1/planner/runs/{run_id}`. v8.3 rows 2.5–2.6 are closed: the Darjeeling replay gate exits 0, and the offline judge stays off the request path (`EVALUATION_JUDGE_ENABLED` default false). v8.3 rows 3.1–3.3: `src/location_intelligence/` resolves candidates and builds `SearchArea`; generate does not call it until 3.4.
+P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode baseline; Tiger Hill indexed); V6.2/V6.3 deferred — misses were enrich/index coverage + agent flakiness, not embedding-model; generate default routing haversine; POI ingest multi-source (`PLACES_SOURCES`). v8.3 Slice 1 run tracking is implemented behind `RUN_TRACKING_ENABLED` (default false), with `GET /api/v1/planner/runs/{run_id}`. v8.3 rows 2.5–2.6 are closed: the Darjeeling replay gate exits 0, and the offline judge stays off the request path (`EVALUATION_JUDGE_ENABLED` default false). v8.3 rows 3.1–3.6: location library + flag-gated planner integration, location HTTP routes, and FE contract docs; flag default false keeps legacy generate. v8.3 rows 4.1–4.2: candidate normalizer + evidence-aware scoring behind `TRAVEL_ENGINE_V2_ENABLED` (default false). v8.3 rows 4.3, 4.5, 4.6: allocator identity after comparison, schedule V2, and validator findings in shadow (`VALIDATOR_V2_ENFORCE` default false). v8.3 rows 4.4 and 4.7: return-to-base legs and finding→REPLAN tool mapping behind `TRAVEL_ENGINE_V2_ENABLED` (default false). Full Slice 4 exit gate not claimed. v8.3 rows 5.1–5.4: Readiness V2, opening-hours parsing, `scripts/ingestion_report.py`, and retrieval recall@10 behind `READINESS_V2_ENABLED` (default false). v8.3 rows 6.1–6.5: canonical trip, map geometry, and optimistic day edits behind `CANONICAL_TRIP_V2_ENABLED` (default false; flag not on). v8.3 rows 7.1–7.4: `src/planner/reasoning/` (reasoner + critic via `chat_completion`), shadow after terminal SSE, cache `:reasoning-v1` suffix when layer on, `scripts/compare_reasoning.py`, ADR-013 stay off. Both reasoning flags default off; shadow does not persist a treatment trip; reasoning traces are `tool_trace` names outside `TOOL_REGISTRY` and do not bump `tool_loop_count`. §11.2 case-count gap remains open. Full Slice 4 exit gate is not claimed. §11.9 ship gate is not claimed.
 
 ---
 
@@ -117,15 +117,19 @@ P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode 
 | V6.1 | ✅ Done | Fusion diagnostics (dense/sparse/fused ids) → `tool_trace`; `SEARCH_FUSION_DIAGNOSTICS` kill-switch |
 | V6.2–V6.3 | ⬜ Deferred | Embedding bump / cross-encoder — **go/no-go: defer** (live evals: Tiger Hill miss was unenriched/unindexed; residual fails = validation/agent prefs, not retrieval-dominant) |
 | v8.3 2.5–2.6 | ✅ Done | Regression gate (quarantine split, measured-only tolerances, PR `--replay`, nightly live) and offline judge. Darjeeling `--replay` ×2 exit 0, `pass_rate=1.00`, 2026-11-17. Judge sample records `skipped` while the flag is false. |
-| v8.3 3.1–3.3 | ✅ Done | Dark `location_intelligence` library: candidate merge, type/confidence resolve, search-area builder. `LOCATION_V2_ENABLED` default false; unread by planner/engine. No HTTP routes. Generate unchanged. |
+| v8.3 3.1–3.3 | ✅ Done | Dark `location_intelligence` library: candidate merge, type/confidence resolve, search-area builder. |
+| v8.3 3.4–3.6 | ✅ Done | Flag-gated planner `SearchArea` integration; `trips.discovery_anchor`/`search_area`; `POST /api/v1/locations/*` (404 when flag off); FE contract in `FE_guide.md`. Flag default false. FE picker = sibling PR. |
+| v8.3 4.1–4.2 | ✅ Done | `candidate_normalizer` + evidence-aware scoring behind `TRAVEL_ENGINE_V2_ENABLED` (default false). Tools inject; engine stays pure. Full Slice 4 exit gate not claimed. |
+| v8.3 4.3, 4.5, 4.6 | ✅ Done | Allocator comparison (no cap miss; V2 packing matches today). Schedule V2 behind the same engine flag. `VALIDATOR_V2_ENFORCE` default false shadows findings. Replay `pass_rate=1.00`. |
+| v8.3 4.4, 4.7 | ✅ Done | Return-to-base behind `TRAVEL_ENGINE_V2_ENABLED` (default false). Drop cap stays `MAX_ROUTE_DROP_ATTEMPTS` (5). `RouteLeg` unchanged. Flag-on REPLAN forces one existing repair tool; no progress forces `accept_partial`. Flag-off replay `pass_rate=1.00` (2026-11-18). Slice 4 golden-improvement exit gate not claimed. Terminal transcript: `mode=open-jaw order=Museum -> Park base_to_first=15 hops=[15] last_to_base=0 total=30 drops=none return_polyline=null` / `mode=return order=Museum -> Park base_to_first=15 hops=[15] last_to_base=15 total=45 drops=none return_polyline=set` / `finding OPENING_HOURS_CONFLICT -> reoptimize_routes` / `unchanged signature -> accept_partial`. |
 ---
 
 ## Implemented modules (real code)
 
 | Module | Exports / notes |
 |--------|-----------------|
-| `src/config.py` | `get_settings()` — Qdrant/embeddings (`QDRANT_PLACES_COLLECTION`, `_V2`, `SEARCH_SPARSE_ENABLED`, `SEARCH_RRF_K`, `SEARCH_FUSION_DIAGNOSTICS`), OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo (`PLACES_SOURCES`, OpenTripMap/Geoapify keys), CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `RUN_TRACKING_ENABLED` (default false), `LOCATION_V2_ENABLED` (default false; unread until 3.4) + location radius/confidence knobs, `EVALUATION_JUDGE_ENABLED` (default false), `EVALUATION_JUDGE_TIMEOUT_SECONDS` (default 15), `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL`, `ROUTING_BACKEND` (`haversine` default \| `hybrid` \| `osrm`) |
-| `src/location_intelligence/` | Dark library: `LocationIntelligenceService.search` / `search_area_for`; pure resolve + `SearchArea`. Reuses `geocode_search` + read-only catalog. No upsert, no router. |
+| `src/config.py` | `get_settings()` — Qdrant/embeddings (`QDRANT_PLACES_COLLECTION`, `_V2`, `SEARCH_SPARSE_ENABLED`, `SEARCH_RRF_K`, `SEARCH_FUSION_DIAGNOSTICS`), OAuth, JWT, rate limits (incl. `RATE_LIMIT_TRIP_EDIT_*`, `RATE_LIMIT_DESTINATIONS_PREPARE_*`), geo (`PLACES_SOURCES`, OpenTripMap/Geoapify keys), CORS, `PLANNER_ABSOLUTE_MIN_PLACES`, `RUN_TRACKING_ENABLED` (default false), `LOCATION_V2_ENABLED` (default false) + location radius/confidence knobs, `TRAVEL_ENGINE_V2_ENABLED` (default false; tools inject into pure engine), `VALIDATOR_V2_ENFORCE` (default false; validate tool only), `EVALUATION_JUDGE_ENABLED` (default false), `EVALUATION_JUDGE_TIMEOUT_SECONDS` (default 15), `DESTINATIONS_PREPARE_LOCK_TTL_SECONDS`, `REDIS_URL`, `ROUTING_BACKEND` (`haversine` default \| `hybrid` \| `osrm`) |
+| `src/location_intelligence/` | Library + router: search/resolve/search-area; containment; map pins. Flag-gated HTTP. Reuses `geocode_search` + read-only catalog. No upsert. |
 | `src/core/llm/client.py` | `chat_completion` / `chat_with_tools` / `embed_texts` — **only** litellm import; `LLMUsage` + retry counts |
 | `src/core/observability/tracing.py` | `get_tracer()` / `flush_tracer()` / `start_generation_trace` + `end_generation_trace` + tool spans around generate (fail-soft) |
 | `src/evaluation/scorers.py` | Pure golden-case scorers |
@@ -144,12 +148,15 @@ P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode 
 | `src/planner/runs/` | `PlannerRun` + flush-only repository; `PlannerRunService` owns status; idempotency key and outcome map. Writes only when `RUN_TRACKING_ENABLED` |
 | `src/destinations/exceptions.py` | + `DestinationNotReadyError` (409 `destination_not_ready`) |
 | `src/travel_engine/protocols.py` | `RouteLeg`, `RoutingProvider` (`travel_matrix` + `route_polyline`), `legs_to_lookup` — pure, no I/O |
-| `src/travel_engine/travel_rules.py` | Caps, structural durations, interest weights, `visit_duration_min` |
-| `src/travel_engine/place_selector.py` | `PlaceCandidate`, `TripPreferences`, `ScoredPlace`, `score_place`, `select_places`, `explain_selection` |
-| `src/travel_engine/day_allocator.py` | `allocate_days` — cluster + caps/budget + morning≤2/day + soft geo spill |
+| `src/travel_engine/travel_rules.py` | Caps, structural durations, interest weights, `visit_duration_min`; Slice 4.1–4.2 normalizer thresholds + V2 score weights; `DAY_END_TIME` |
+| `src/travel_engine/candidate_normalizer.py` | `normalize_candidates` — name/category keys, confidence dedup, user-selected retention (pure) |
+| `src/travel_engine/place_selector.py` | `PlaceCandidate`, `TripPreferences`, `ScoredPlace`, `score_place`, `select_places`, `explain_selection`, `rank_candidates` (injected `v2_enabled`); optional hours fields default `unknown` |
+| `src/travel_engine/day_allocator.py` | `allocate_days` — cluster + caps/budget + morning≤2/day + soft geo spill; `v2_enabled` shares this body (comparison found no miss) |
 | `src/travel_engine/route_optimizer.py` | `optimize_route` — full-matrix legs; drop until under travel or 1 stop; public `populate_leg_polylines` for winning/fixed order |
-| `src/travel_engine/schedule_builder.py` | `build_day_schedule` — morning extract ≤2; `preserve_order=True` skips extract (P7 reorder) |
-| `src/travel_engine/trip_validator.py` | `validate_trip`, `ValidationResult`, `DayPlan`, `TripItinerary` — pure CoR rules; morning errors prefixed `morning_slot_violation:` |
+| `src/travel_engine/schedule_builder.py` | `build_day_schedule` — morning extract ≤2; `preserve_order=True` skips extract (P7 reorder); injected `v2_enabled` adds buffer, day end, verified hours |
+| `src/travel_engine/findings.py` | `ValidationFinding`, `collect_findings`, `FINDING_CODES` — pure; no settings read |
+| `src/travel_engine/finding_codes.py` | Re-exports `FINDING_CODES` for the G14 registry path |
+| `src/travel_engine/trip_validator.py` | `validate_trip`, `ValidationResult`, `DayPlan`, `TripItinerary` — pure CoR rules; morning errors prefixed `morning_slot_violation:`; string result unchanged by findings |
 | `src/planner/routing_provider.py` | `get_routing_provider()` — `HaversineRoutingProvider` (default), `HybridRoutingProvider` (haversine matrix + OSRM `route_polyline`), or `OsrmRoutingProvider` (full live matrix + polylines) |
 | `src/planner/tools/schemas.py` | `AgentPhase`, `PHASE_TOOLS`, `ToolResult` (+`fallback_used`), `ToolContext`, 12 input models |
 | `src/planner/tools/registry.py` | 12-tool `TOOL_REGISTRY`, phase/precondition `execute_tool`, re-exports orchestration helpers |
@@ -164,7 +171,10 @@ P7 done; v7 **V0–V6.1 done** + **V5 live harness gate closed** (generate-mode 
 | `src/planner/graph/nodes/write_narrative.py` | Titles/paragraphs via `chat_completion`; templates on LLM fail; geometry locked |
 | `src/planner/graph/nodes/record_evaluation.py` | Best-effort `EvaluationService.record_generation`; warning on DB fail |
 | `src/planner/graph/builder.py` | Compiled graph singleton — agent→executor unconditional; bookends on `plan_complete` |
-| `src/planner/service.py` | `PlannerService.generate` — fresh ToolContext (`get_routing_provider()` default), emit/`last_known_state`, `wait_for`, recursion ceiling |
+| `src/planner/service.py` | `PlannerService.generate` — fresh ToolContext (`get_routing_provider()` default), emit/`last_known_state`, `wait_for`, recursion ceiling; post-terminal flush of reasoning notes + optional shadow/critic |
+| `src/planner/reasoning/` | Slice 7 experience reasoner + advisory critic (`chat_completion` only); shadow sampler; budget/deadline; not registry tools |
+| `scripts/compare_reasoning.py` | Slice 7.4 replay/fixture comparison → `evals/runs/*-reasoning-compare.json`; does not update baselines |
+| `docs/v8.2/adr/013-reasoning-layer-ship.md` | ADR-013: stay off (§11.9 not met; human pairs and §4 cells missing) |
 | `src/evaluation/repository.py` | `EvaluationRepository` — flush-only create; `get_latest_for_trip`; `mark_user_edited(evaluation)` |
 | `src/evaluation/service.py` | `record_generation(state)` + `mark_trip_edited` flag-only (no TripEditEvent; skip if missing/already flagged) |
 | `src/planner/tools/schemas.py` | + `DEFAULT_TOOL_BY_PHASE` (nudge / LLM-fail defaults) |

@@ -395,6 +395,30 @@ async def search_places(
     return outcome.hits
 
 
+def filter_places_in_area(
+    places: list[Place],
+    *,
+    contains: Any,
+) -> list[Place]:
+    """Keep places whose coordinates satisfy ``contains(lat, lng)``.
+
+    Does not change the Qdrant query. ``contains`` is a pure callable.
+    """
+    from geoalchemy2.shape import to_shape
+
+    kept: list[Place] = []
+    for place in places:
+        try:
+            point = to_shape(place.location)
+            lat = float(point.y)
+            lng = float(point.x)
+        except Exception:  # noqa: BLE001 — drop unreadable geometry
+            continue
+        if contains(lat, lng):
+            kept.append(place)
+    return kept
+
+
 async def count_indexed(destination_id: uuid.UUID) -> int:
     """
     Ground truth for Destination.indexed_count — Qdrant count filtered by destination_id.

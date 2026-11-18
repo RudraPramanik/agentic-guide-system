@@ -42,6 +42,22 @@ def test_key_differs_on_days() -> None:
     assert build_planner_cache_key(a, 1.0, 2.0) != build_planner_cache_key(b, 1.0, 2.0)
 
 
+def test_flag_off_key_has_no_reasoning_suffix() -> None:
+    dest = uuid4()
+    body = PlanRequest(destination_id=dest, raw_input="trip")
+    assert build_planner_cache_key(body, 1.0, 2.0) == build_planner_cache_key(
+        body, 1.0, 2.0, reasoning_suffix=""
+    )
+
+
+def test_reasoning_suffix_differs_from_flag_off() -> None:
+    dest = uuid4()
+    body = PlanRequest(destination_id=dest, raw_input="trip")
+    off = build_planner_cache_key(body, 1.0, 2.0)
+    on = build_planner_cache_key(body, 1.0, 2.0, reasoning_suffix="reasoning-v1")
+    assert off != on
+
+
 @pytest.mark.asyncio
 async def test_maybe_get_set_roundtrip() -> None:
     dest = uuid4()

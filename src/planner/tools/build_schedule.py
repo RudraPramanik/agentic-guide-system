@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
+from src.config import get_settings
 from src.planner.tools._helpers import dict_to_scored, state_get
 from src.planner.tools.schemas import BuildScheduleIn, ToolResult
 from src.travel_engine.protocols import RouteLeg, legs_to_lookup
@@ -160,6 +161,7 @@ async def run(
             )
 
     schedule: list[dict[str, Any]] = []
+    v2_enabled = bool(get_settings().TRAVEL_ENGINE_V2_ENABLED)
 
     for day_idx, day in enumerate(route):
         if not isinstance(day, dict):
@@ -170,7 +172,7 @@ async def run(
             dict_to_scored(s) if isinstance(s, dict) else s for s in ordered_raw
         ]
         legs = _legs_from_dicts(legs_raw)
-        timed = build_day_schedule(ordered, legs)
+        timed = build_day_schedule(ordered, legs, v2_enabled=v2_enabled)
         schedule.append(_day_dict(day_idx + 1, day, timed))
 
     data: dict[str, Any] = {"schedule": schedule}

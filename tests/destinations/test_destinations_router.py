@@ -125,6 +125,38 @@ async def test_readiness_endpoint(client, db_session) -> None:
 
 
 @pytest.mark.asyncio
+async def test_readiness_days_query_is_ignored_when_flag_off(client, db_session) -> None:
+    dest = Destination(
+        name="Days Ignored",
+        country="IN",
+        display_name="Days Ignored",
+        osm_place_id=f"relation/days-{uuid.uuid4().hex[:8]}",
+        lat=27.041,
+        lng=88.263,
+        place_count=100,
+        enriched_count=0,
+        indexed_count=0,
+    )
+    db_session.add(dest)
+    await db_session.flush()
+
+    omitted = await client.get(f"/api/v1/destinations/{dest.id}/readiness")
+    with_days = await client.get(f"/api/v1/destinations/{dest.id}/readiness?days=3")
+
+    assert omitted.status_code == 200
+    assert with_days.status_code == 200
+    assert omitted.json()["data"] == with_days.json()["data"]
+
+
+@pytest.mark.asyncio
+async def test_readiness_days_out_of_range(client) -> None:
+    response = await client.get(
+        "/api/v1/destinations/00000000-0000-0000-0000-000000000001/readiness?days=0"
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_readiness_unknown_destination_404(client) -> None:
     response = await client.get(
         "/api/v1/destinations/00000000-0000-0000-0000-000000000001/readiness"

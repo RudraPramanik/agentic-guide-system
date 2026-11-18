@@ -273,7 +273,39 @@ def finish_run(
     return 0, messages
 
 
+def _run_location_suite() -> int:
+    from src.evaluation.location_suite import run_location_suite
+
+    folder = ROOT / "evals" / "golden" / "location"
+    code, messages = run_location_suite(folder)
+    stream = sys.stdout if code == 0 else sys.stderr
+    for line in messages:
+        print(line, file=stream)
+    return code
+
+
+def _run_retrieval_suite(update_baseline: bool) -> int:
+    from src.evaluation.retrieval_suite import run_retrieval_suite
+
+    folder = ROOT / "evals" / "golden" / "retrieval"
+    baseline = ROOT / "evals" / "baselines" / "retrieval.json"
+    code, messages = run_retrieval_suite(
+        folder,
+        baseline,
+        update_baseline=update_baseline,
+    )
+    stream = sys.stdout if code == 0 else sys.stderr
+    for line in messages:
+        print(line, file=stream)
+    return code
+
+
 async def _amain(args: argparse.Namespace) -> int:
+    if getattr(args, "suite", None) == "location":
+        # Pure fixtures; --replay is accepted and does not open provider fixtures.
+        return _run_location_suite()
+    if getattr(args, "suite", None) == "retrieval":
+        return _run_retrieval_suite(bool(args.update_baseline))
     if args.replay:
         from src.core.llm.client import use_llm_replay
 
@@ -369,6 +401,12 @@ def main() -> None:
         "--replay",
         action="store_true",
         help="Serve LLM calls from evals/replay. Does not call the provider.",
+    )
+    parser.add_argument(
+        "--suite",
+        choices=["location", "retrieval"],
+        default=None,
+        help="Run a non-itinerary suite (location or retrieval).",
     )
     args = parser.parse_args()
     import asyncio

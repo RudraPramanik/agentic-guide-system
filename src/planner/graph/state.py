@@ -42,6 +42,8 @@ class TravelState(TypedDict, total=False):
     session_id: str
     base_lat: float
     base_lng: float
+    discovery_anchor: dict[str, Any]
+    search_area: dict[str, Any]
 
     # Parsed prefs (from parse_preferences)
     days: int
@@ -76,6 +78,8 @@ class TravelState(TypedDict, total=False):
     schedule: list[Any]
     itinerary: dict[str, Any]
     validation_result: Any
+    v2_findings: list[Any]
+    replan_progress_signature: str
 
     # Output
     errors: list[str]

@@ -1,6 +1,6 @@
 ﻿"""Trip service — save_from_state UoW, ownership, claim, GeoJSON, day surgery.
 
-P7 edit concurrency: last-write-wins — no row locking in MVP.
+Flag off, edits stay last-write-wins. Flag on, trips.version rejects a stale If-Match.
 """
 
 from __future__ import annotations
@@ -10,14 +10,18 @@ from typing import Any
 from uuid import UUID
 
 from geoalchemy2.shape import to_shape
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import NotFoundError
 from src.core.pagination import PageParams
 from src.destinations.repository import DestinationRepository
 from src.evaluation.service import EvaluationService
+from src.config import get_settings
+from src.places.opening_hours import apply_hours
 from src.places.repository import PlaceRepository
 from src.planner.routing_provider import get_routing_provider
+from src.travel_engine.findings import collect_findings
 from src.travel_engine.place_selector import PlaceCandidate, ScoredPlace
 from src.travel_engine.protocols import RouteLeg, RoutingProvider, legs_to_lookup
 from src.travel_engine.route_optimizer import (
@@ -39,12 +43,77 @@ from src.trips.exceptions import (
     TripNotFoundError,
     TripStopConflictError,
     TripStopNotFoundError,
+    TripVersionConflictError,
 )
-from src.trips.models import EditType, Trip, TripPlace, TripStatus
+from src.trips.models import (
+    EditType,
+    GeometryProvenance,
+    StopStatus,
+    Trip,
+    TripPlace,
+    TripStatus,
+)
 from src.trips.polyline import decode_polyline
 from src.trips.repository import TripRepository
 
 _MORNING_SLOT_PREFIX = "morning_slot_violation"
+_ROUTED_STATUSES = {StopStatus.CONFIRMED.value, StopStatus.USER_ADDED.value}
+
+
+def _canonical_enabled() -> bool:
+    return bool(get_settings().CANONICAL_TRIP_V2_ENABLED)
+
+
+def _status_value(trip_place: TripPlace) -> str:
+    status = trip_place.stop_status
+    if isinstance(status, StopStatus):
+        return status.value
+    return str(status)
+
+
+def _is_routed(trip_place: TripPlace) -> bool:
+    return _status_value(trip_place) in _ROUTED_STATUSES
+
+
+def _persisted_status(existing: TripPlace | None, edit_type: EditType) -> StopStatus:
+    if edit_type == EditType.ADD_STOP and (
+        existing is None or not _is_routed(existing)
+    ):
+        return StopStatus.USER_ADDED
+    if existing is not None and isinstance(existing.stop_status, StopStatus):
+        return existing.stop_status
+    return StopStatus.CONFIRMED
+
+
+def _search_area_args(trip: Trip) -> tuple[tuple[float, float] | None, float | None]:
+    area = trip.search_area if isinstance(trip.search_area, dict) else None
+    if not area:
+        return None, None
+    anchor = area.get("anchor")
+    radius = area.get("radius_km")
+    if not isinstance(anchor, dict) or radius is None:
+        return None, None
+    lat = anchor.get("lat")
+    lng = anchor.get("lng")
+    if not isinstance(lat, (int, float)) or isinstance(lat, bool):
+        return None, None
+    if not isinstance(lng, (int, float)) or isinstance(lng, bool):
+        return None, None
+    try:
+        radius_km = float(radius)
+    except (TypeError, ValueError):
+        return None, None
+    return (float(lat), float(lng)), radius_km
+
+
+def _provenance_for_polyline(polyline: str | None) -> GeometryProvenance:
+    """Label a polyline that was just written. Never invents a straight line."""
+    if polyline:
+        return GeometryProvenance.OSRM
+    backend = str(get_settings().ROUTING_BACKEND or "").strip().lower()
+    if backend in {"osrm", "hybrid"}:
+        return GeometryProvenance.NONE
+    return GeometryProvenance.HAVERSINE_ESTIMATE
 
 def _as_uuid(value: Any) -> UUID:
     if isinstance(value, UUID):
@@ -58,6 +127,60 @@ def _trip_status(state: dict[str, Any]) -> TripStatus:
     if state.get("abort_triggered"):
         return TripStatus.FAILED
     return TripStatus.DRAFT
+
+
+def _suggestion_rows(
+    state: dict[str, Any],
+    schedule: list[Any],
+    routed_ids: set[UUID],
+) -> list[dict[str, Any]]:
+    if not _canonical_enabled():
+        return []
+    cap = max(0, int(get_settings().CANONICAL_TRIP_MAX_SUGGESTIONS_PER_DAY))
+    route = state.get("route") or []
+    if not isinstance(route, list):
+        route = []
+    schedule_days = [day for day in schedule if isinstance(day, dict)]
+    rows: list[dict[str, Any]] = []
+    seen = set(routed_ids)
+    for index, day in enumerate(schedule_days):
+        day_number = int(day.get("day") or 0)
+        route_day: dict[str, Any] = {}
+        for candidate in route:
+            if isinstance(candidate, dict) and int(candidate.get("day") or -1) == day_number:
+                route_day = candidate
+                break
+        if not route_day and index < len(route) and isinstance(route[index], dict):
+            route_day = route[index]
+        dropped = route_day.get("dropped_stops") or []
+        if not isinstance(dropped, list):
+            continue
+        taken = 0
+        for item in dropped:
+            if taken >= cap:
+                break
+            if not isinstance(item, dict) or item.get("place_id") is None:
+                continue
+            place_id = _as_uuid(item["place_id"])
+            if place_id in seen or place_id == BASE_SENTINEL_ID:
+                continue
+            seen.add(place_id)
+            taken += 1
+            rows.append(
+                {
+                    "place_id": place_id,
+                    "day_number": day_number,
+                    "order_in_day": 0,
+                    "travel_time_min": 0,
+                    "visit_duration_min": 60,
+                    "suggested_start_time": None,
+                    "arrival_note": None,
+                    "polyline": None,
+                    "stop_status": StopStatus.SUGGESTED,
+                    "geometry_provenance": GeometryProvenance.NONE,
+                }
+            )
+    return rows
 
 
 def _schedule_usable(schedule: Any) -> bool:
@@ -141,15 +264,17 @@ def _hydrate_scored(trip_place: TripPlace) -> ScoredPlace:
         )
     point = to_shape(place.location)
     tags = place.enriched_tags if isinstance(place.enriched_tags, list) else []
+    candidate = PlaceCandidate(
+        id=place.id,
+        name=place.name,
+        category=place.category,
+        enriched_tags=[str(t) for t in tags],
+        lat=float(point.y),
+        lng=float(point.x),
+    )
+    osm_tags = place.tags if isinstance(place.tags, dict) else None
     return ScoredPlace(
-        place=PlaceCandidate(
-            id=place.id,
-            name=place.name,
-            category=place.category,
-            enriched_tags=[str(t) for t in tags],
-            lat=float(point.y),
-            lng=float(point.x),
-        ),
+        place=apply_hours(candidate, osm_tags, get_settings().READINESS_V2_ENABLED),
         score=1.0,
         score_breakdown={},
     )
@@ -266,7 +391,8 @@ class TripService:
     """
     Trip persistence + P7 day surgery.
 
-    Concurrent edits are last-write-wins (no SELECT FOR UPDATE in P7).
+    Flag off, concurrent edits are last-write-wins. Flag on, version is checked
+    before mutation and incremented in the same transaction as the edit.
     """
 
     def __init__(
@@ -294,6 +420,28 @@ class TripService:
             for tp in (getattr(trip, "places", None) or [])
             if tp.day_number == day
         ]
+
+    @staticmethod
+    def _prepare_add(trip: Trip, day: int, place_id: UUID) -> None:
+        matches = [tp for tp in (trip.places or []) if tp.place_id == place_id]
+        if not matches:
+            return
+        if not _canonical_enabled() or any(_is_routed(tp) for tp in matches):
+            raise TripStopConflictError()
+        matches[0].day_number = day
+
+    def _routed_for_day(self, trip: Trip, day: int) -> list[TripPlace]:
+        rows = self._places_for_day(trip, day)
+        if not _canonical_enabled():
+            return rows
+        return [tp for tp in rows if _is_routed(tp)]
+
+    @staticmethod
+    def _guard_version(trip: Trip, expected: int | None) -> None:
+        if not _canonical_enabled() or expected is None:
+            return
+        if int(expected) != int(trip.version):
+            raise TripVersionConflictError(trip_id=str(trip.id))
 
     async def _load_owned_trip(self, trip_id: UUID, user_id: UUID) -> Trip:
         trip = await self.repo.get_with_places(trip_id)
@@ -351,20 +499,27 @@ class TripService:
         *,
         edit_type: EditType,
     ) -> None:
+        flag = _canonical_enabled()
+        source_rows = [
+            tp
+            for tp in (trip.places or [])
+            if not flag or _is_routed(tp)
+        ]
         days_present = sorted(
-            {tp.day_number for tp in (trip.places or [])} | {mutated_day_number}
+            {tp.day_number for tp in source_rows} | {mutated_day_number}
         )
         day_plans: list[DayPlan] = []
         for day_num in days_present:
             if day_num == mutated_day_number:
                 day_plans.append(new_day_plan)
             else:
-                stored = self._places_for_day(trip, day_num)
+                stored = self._routed_for_day(trip, day_num)
                 if not stored:
                     continue
                 day_plans.append(_day_plan_from_stored(stored))
 
-        result = validate_trip(TripItinerary(days=day_plans))
+        itinerary = TripItinerary(days=day_plans)
+        result = validate_trip(itinerary)
         errors = list(result.errors)
         warnings = list(result.warnings)
 
@@ -383,6 +538,30 @@ class TripService:
                 details={"errors": errors, "warnings": warnings},
             )
 
+        if not flag:
+            return
+        center, radius = _search_area_args(trip)
+        findings = collect_findings(
+            itinerary,
+            search_center=center,
+            search_radius_km=radius,
+            geometry_promised=[False] * len(itinerary.days),
+        )
+        blocking = [
+            item
+            for item in findings
+            if item.blocks_publish and item.code != "MISSING_ROUTE_GEOMETRY"
+        ]
+        if blocking:
+            raise TripEditValidationError(
+                "trip edit failed validation",
+                details={
+                    "errors": errors,
+                    "warnings": warnings,
+                    "findings": [item.code for item in blocking],
+                },
+            )
+
     async def _persist_day_and_audit(
         self,
         trip: Trip,
@@ -399,19 +578,37 @@ class TripService:
         lookup = legs_to_lookup(legs)
         poly_map = _polyline_by_place_id(ordered_for_poly, leg_polylines)
         after: list[dict[str, Any]] = []
+        flag = _canonical_enabled()
+        loaded_rows = list(
+            (
+                await self.session.execute(
+                    select(TripPlace).where(TripPlace.trip_id == trip.id)
+                )
+            ).scalars()
+        )
         existing_by_place = {
-            tp.place_id: tp for tp in self._places_for_day(trip, day)
+            tp.place_id: tp for tp in loaded_rows if tp.day_number == day
         }
+        any_by_place = {tp.place_id: tp for tp in loaded_rows}
         scheduled_ids = {stop.place.id for stop in scheduled}
 
         try:
             # SQL DELETE — not session.delete(): Trip.places has cascade
             # delete-orphan, which resurrects ORM-deleted children still in the
-            # parent's collection on flush.
+            # parent's collection on flush. Flag on keeps the row as removed.
             for pid, tp in list(existing_by_place.items()):
-                if pid not in scheduled_ids:
-                    await self.repo.delete_trip_place(trip.id, pid, day)
-                    del existing_by_place[pid]
+                if pid in scheduled_ids:
+                    continue
+                if flag and _is_routed(tp):
+                    tp.stop_status = StopStatus.REMOVED
+                    tp.order_in_day = 0
+                    tp.polyline = None
+                    tp.geometry_provenance = GeometryProvenance.NONE
+                    continue
+                if flag:
+                    continue
+                await self.repo.delete_trip_place(trip.id, pid, day)
+                del existing_by_place[pid]
 
             new_rows: list[dict[str, Any]] = []
             prev = BASE_SENTINEL_ID
@@ -419,14 +616,19 @@ class TripService:
                 travel = _travel_into_stop(lookup, prev, stop.place.id)
                 poly = poly_map.get(stop.place.id)
                 order_in_day = i + 1
-                existing = existing_by_place.get(stop.place.id)
+                provenance = _provenance_for_polyline(poly)
+                existing = any_by_place.get(stop.place.id)
+                next_status = _persisted_status(existing, edit_type)
                 if existing is not None:
+                    existing.day_number = day
                     existing.order_in_day = order_in_day
                     existing.travel_time_min = travel
                     existing.visit_duration_min = stop.visit_duration_min
                     existing.suggested_start_time = stop.suggested_start_time
                     existing.arrival_note = stop.arrival_note
                     existing.polyline = poly
+                    existing.stop_status = next_status
+                    existing.geometry_provenance = provenance
                 else:
                     new_rows.append(
                         {
@@ -439,6 +641,8 @@ class TripService:
                             "suggested_start_time": stop.suggested_start_time,
                             "arrival_note": stop.arrival_note,
                             "polyline": poly,
+                            "stop_status": next_status,
+                            "geometry_provenance": provenance,
                         }
                     )
                 after.append(
@@ -455,6 +659,8 @@ class TripService:
 
             if new_rows:
                 await self.repo.create_trip_places(new_rows)
+            if flag:
+                trip.version = int(trip.version or 1) + 1
             await self.session.flush()
             await self.repo.insert_edit_event(
                 trip_id=trip.id,
@@ -483,8 +689,10 @@ class TripService:
         user_id: UUID,
         *,
         routing: RoutingProvider | None = None,
+        expected_version: int | None = None,
     ) -> Trip:
         trip = await self._load_owned_trip(trip_id, user_id)
+        self._guard_version(trip, expected_version)
         dest = await self._dest_repo.get_by_id(trip.destination_id)
         if dest is None:
             raise NotFoundError(
@@ -492,7 +700,7 @@ class TripService:
                 details={"id": str(trip.destination_id)},
             )
         base_lat, base_lng = self._resolve_base(trip, dest)
-        day_stops = self._places_for_day(trip, day)
+        day_stops = self._routed_for_day(trip, day)
         before = _snapshot_day(day_stops)
         current_ids = [tp.place_id for tp in day_stops]
         if len(place_ids) != len(current_ids) or set(place_ids) != set(current_ids):
@@ -538,8 +746,10 @@ class TripService:
         user_id: UUID,
         *,
         routing: RoutingProvider | None = None,
+        expected_version: int | None = None,
     ) -> Trip:
         trip = await self._load_owned_trip(trip_id, user_id)
+        self._guard_version(trip, expected_version)
         dest = await self._dest_repo.get_by_id(trip.destination_id)
         if dest is None:
             raise NotFoundError(
@@ -547,7 +757,7 @@ class TripService:
                 details={"id": str(trip.destination_id)},
             )
         base_lat, base_lng = self._resolve_base(trip, dest)
-        day_stops = self._places_for_day(trip, day)
+        day_stops = self._routed_for_day(trip, day)
         before = _snapshot_day(day_stops)
         if not any(tp.place_id == place_id for tp in day_stops):
             raise TripStopNotFoundError()
@@ -592,8 +802,10 @@ class TripService:
         user_id: UUID,
         *,
         routing: RoutingProvider | None = None,
+        expected_version: int | None = None,
     ) -> Trip:
         trip = await self._load_owned_trip(trip_id, user_id)
+        self._guard_version(trip, expected_version)
         dest = await self._dest_repo.get_by_id(trip.destination_id)
         if dest is None:
             raise NotFoundError(
@@ -601,7 +813,8 @@ class TripService:
                 details={"id": str(trip.destination_id)},
             )
         base_lat, base_lng = self._resolve_base(trip, dest)
-        day_stops = self._places_for_day(trip, day)
+        self._prepare_add(trip, day, place_id)
+        day_stops = self._routed_for_day(trip, day)
         before = _snapshot_day(day_stops)
 
         place = await self._place_repo.get_by_id(place_id)
@@ -618,19 +831,20 @@ class TripService:
                     "trip_destination_id": str(trip.destination_id),
                 },
             )
-        if any(tp.place_id == place_id for tp in (trip.places or [])):
-            raise TripStopConflictError()
-
         point = to_shape(place.location)
         tags = place.enriched_tags if isinstance(place.enriched_tags, list) else []
+        candidate = PlaceCandidate(
+            id=place.id,
+            name=place.name,
+            category=place.category,
+            enriched_tags=[str(t) for t in tags],
+            lat=float(point.y),
+            lng=float(point.x),
+        )
+        osm_tags = place.tags if isinstance(place.tags, dict) else None
         new_scored = ScoredPlace(
-            place=PlaceCandidate(
-                id=place.id,
-                name=place.name,
-                category=place.category,
-                enriched_tags=[str(t) for t in tags],
-                lat=float(point.y),
-                lng=float(point.x),
+            place=apply_hours(
+                candidate, osm_tags, get_settings().READINESS_V2_ENABLED
             ),
             score=1.0,
             score_breakdown={},
@@ -667,8 +881,10 @@ class TripService:
         user_id: UUID,
         *,
         routing: RoutingProvider | None = None,
+        expected_version: int | None = None,
     ) -> Trip:
         trip = await self._load_owned_trip(trip_id, user_id)
+        self._guard_version(trip, expected_version)
         dest = await self._dest_repo.get_by_id(trip.destination_id)
         if dest is None:
             raise NotFoundError(
@@ -676,7 +892,7 @@ class TripService:
                 details={"id": str(trip.destination_id)},
             )
         base_lat, base_lng = self._resolve_base(trip, dest)
-        day_stops = self._places_for_day(trip, day)
+        day_stops = self._routed_for_day(trip, day)
         before = _snapshot_day(day_stops)
         if not day_stops:
             raise TripEditValidationError(
@@ -753,21 +969,40 @@ class TripService:
             for stop in stops:
                 if not isinstance(stop, dict):
                     continue
-                place_rows.append(
-                    {
-                        "place_id": _as_uuid(stop["place_id"]),
-                        "day_number": day_number,
-                        "order_in_day": int(stop.get("order") or 0),
-                        "travel_time_min": int(stop.get("travel_time_min") or 0),
-                        "visit_duration_min": int(stop.get("visit_duration_min") or 60),
-                        "suggested_start_time": stop.get("suggested_start_time"),
-                        "arrival_note": stop.get("arrival_note"),
-                        "polyline": stop.get("leg_polyline"),
-                    }
-                )
+                polyline = stop.get("leg_polyline")
+                row: dict[str, Any] = {
+                    "place_id": _as_uuid(stop["place_id"]),
+                    "day_number": day_number,
+                    "order_in_day": int(stop.get("order") or 0),
+                    "travel_time_min": int(stop.get("travel_time_min") or 0),
+                    "visit_duration_min": int(stop.get("visit_duration_min") or 60),
+                    "suggested_start_time": stop.get("suggested_start_time"),
+                    "arrival_note": stop.get("arrival_note"),
+                    "polyline": polyline,
+                }
+                if _canonical_enabled():
+                    row["stop_status"] = StopStatus.CONFIRMED
+                    row["geometry_provenance"] = _provenance_for_polyline(polyline)
+                place_rows.append(row)
 
         if not place_rows:
             return None
+
+        if _canonical_enabled():
+            place_rows.extend(
+                _suggestion_rows(
+                    state,
+                    schedule,
+                    {row["place_id"] for row in place_rows},
+                )
+            )
+
+        discovery_anchor = state.get("discovery_anchor")
+        search_area = state.get("search_area")
+        if not isinstance(discovery_anchor, dict):
+            discovery_anchor = None
+        if not isinstance(search_area, dict):
+            search_area = None
 
         try:
             trip = await self.repo.create(
@@ -777,6 +1012,8 @@ class TripService:
                     "destination_id": destination_id,
                     "days": len(schedule),
                     "preferences": preferences,
+                    "discovery_anchor": discovery_anchor,
+                    "search_area": search_area,
                     "status": status,
                 }
             )
@@ -902,8 +1139,18 @@ class TripService:
         features: list[dict[str, Any]] = []
         day_legs: dict[int, list[list[tuple[float, float]]]] = defaultdict(list)
 
+        flag = _canonical_enabled()
         places = list(getattr(trip, "places", None) or [])
+        if flag:
+            places = [tp for tp in places if _is_routed(tp)]
         places.sort(key=lambda tp: (tp.day_number, tp.order_in_day))
+
+        day_ready: dict[int, bool] = {}
+        for tp in places:
+            provenance = getattr(tp, "geometry_provenance", None)
+            value = provenance.value if isinstance(provenance, GeometryProvenance) else provenance
+            ready = value == GeometryProvenance.OSRM.value and bool(decode_polyline(tp.polyline))
+            day_ready[tp.day_number] = day_ready.get(tp.day_number, True) and ready
 
         for tp in places:
             name: str | None = None
@@ -936,13 +1183,21 @@ class TripService:
                 )
 
             decoded = decode_polyline(tp.polyline)
-            if decoded:
+            if decoded and (not flag or day_ready.get(tp.day_number, False)):
                 day_legs[tp.day_number].append(decoded)
 
         for day_number, legs in sorted(day_legs.items()):
+            if flag and not day_ready.get(day_number, False):
+                continue
             coords = _concat_day_coords(legs)
             if len(coords) < 2:
                 continue
+            properties: dict[str, Any] = {
+                "day": day_number,
+                "trip_id": str(trip.id),
+            }
+            if flag:
+                properties["geometry_provenance"] = GeometryProvenance.OSRM.value
             features.append(
                 {
                     "type": "Feature",
@@ -950,10 +1205,7 @@ class TripService:
                         "type": "LineString",
                         "coordinates": coords,
                     },
-                    "properties": {
-                        "day": day_number,
-                        "trip_id": str(trip.id),
-                    },
+                    "properties": properties,
                 }
             )
 

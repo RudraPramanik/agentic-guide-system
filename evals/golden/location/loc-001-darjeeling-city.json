@@ -1,0 +1,21 @@
+{
+  "id": "loc-001",
+  "kind": "type_accuracy",
+  "geocoder_hits": [
+    {
+      "name": "Darjeeling",
+      "display_name": "Darjeeling, West Bengal, India",
+      "lat": 27.036,
+      "lng": 88.263,
+      "osm_place_id": "N1",
+      "addresstype": "city",
+      "osm_class": "place",
+      "osm_type_tag": "city",
+      "bounding_box": [88.2, 26.9, 88.3, 27.1],
+      "country": "IN"
+    }
+  ],
+  "catalog_rows": [],
+  "expected_type": "city",
+  "expected_status": "resolved"
+}

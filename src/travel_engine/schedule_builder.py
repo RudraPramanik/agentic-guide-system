@@ -24,9 +24,11 @@ from src.travel_engine.place_selector import PlaceCandidate, ScoredPlace
 from src.travel_engine.protocols import RouteLeg, legs_to_lookup
 from src.travel_engine.travel_rules import (
     BASE_SENTINEL_ID,
+    DAY_END_TIME,
     DAY_START_TIME,
     LUNCH_BREAK_MIN,
     LUNCH_BREAK_START,
+    MIN_TRAVEL_BUFFER_MIN,
     MORNING_ONLY_CATEGORIES,
     visit_duration_min,
 )
@@ -86,44 +88,28 @@ def _hop_duration(
     return leg.duration_min
 
 
-def build_day_schedule(
-    ordered_stops: list[ScoredPlace],
-    route_legs: list[RouteLeg],
-    *,
-    preserve_order: bool = False,
+def _claims_open(note: str | None) -> bool:
+    if not note:
+        return False
+    return "open" in note.lower()
+
+
+def _window_minutes(value: str | None) -> int | None:
+    if not value or ":" not in value:
+        return None
+    hours, minutes = value.split(":", 1)
+    if not hours.isdigit() or not minutes.isdigit():
+        return None
+    return int(hours) * 60 + int(minutes)
+
+
+def _time_legacy(
+    order: list[ScoredPlace],
+    lookup: dict[tuple[UUID, UUID], RouteLeg],
 ) -> list[ScheduledStop]:
-    """
-    Assign naive suggested_start_time for each stop.
-
-    Common path: len(route_legs) == len(ordered_stops) consecutive chain
-    (base→first, …). Larger lists are treated as lookup-complete.
-
-    When preserve_order=True (P7 reorder), skip morning-only extract/omit and
-    time stops in the given order. Default False keeps generation behavior.
-    """
-    if not ordered_stops:
-        return []
-
-    if len(route_legs) < len(ordered_stops):
-        raise ValueError(
-            f"route_legs length {len(route_legs)} incompatible with "
-            f"{len(ordered_stops)} stops (need at least one consecutive chain)"
-        )
-
-    lookup = legs_to_lookup(route_legs)
-    order = (
-        list(ordered_stops)
-        if preserve_order
-        else _extract_morning_first(ordered_stops)
-    )
-
-    for frm, to in _required_hops(order):
-        if (frm, to) not in lookup:
-            raise ValueError(f"missing route leg for {frm} -> {to}")
-
+    """Current clock. Hop minutes are the leg duration only."""
     lunch_start = _parse_hhmm(LUNCH_BREAK_START)
     clock = _parse_hhmm(DAY_START_TIME)
-    # Travel from base to first before first visit starts
     clock += _hop_duration(lookup, BASE_SENTINEL_ID, order[0].place.id)
 
     lunch_taken = False
@@ -133,8 +119,6 @@ def build_day_schedule(
         visit = visit_duration_min(scored.place.category)
         note: str | None = None
 
-        # If starting this visit would cross lunch without having taken it,
-        # insert the lunch gap first.
         if not lunch_taken and clock < lunch_start < clock + visit:
             clock = lunch_start + LUNCH_BREAK_MIN
             lunch_taken = True
@@ -157,18 +141,134 @@ def build_day_schedule(
         clock = start + visit
 
         if i + 1 < len(order):
-            travel = _hop_duration(
-                lookup, scored.place.id, order[i + 1].place.id
-            )
+            travel = _hop_duration(lookup, scored.place.id, order[i + 1].place.id)
             next_arrival = clock + travel
-            # Crossing lunch during travel / before next visit
-            if (
-                not lunch_taken
-                and clock < lunch_start <= next_arrival
-            ):
+            if not lunch_taken and clock < lunch_start <= next_arrival:
                 clock = lunch_start + LUNCH_BREAK_MIN
                 lunch_taken = True
             else:
                 clock = next_arrival
 
     return scheduled
+
+
+def _preview_v2(
+    clock: int,
+    lunch_taken: bool,
+    travel: int,
+    visit: int,
+) -> tuple[int, int, str | None, bool]:
+    """Return start, end, note, and whether lunch is taken after this stop."""
+    lunch_start = _parse_hhmm(LUNCH_BREAK_START)
+    note: str | None = None
+    lunch = lunch_taken
+    next_arrival = clock + travel
+    if not lunch and clock < lunch_start <= next_arrival:
+        cursor = lunch_start + LUNCH_BREAK_MIN
+        lunch = True
+    else:
+        cursor = next_arrival
+    if not lunch and cursor < lunch_start < cursor + visit:
+        cursor = lunch_start + LUNCH_BREAK_MIN
+        lunch = True
+        note = "lunch break before visit"
+    elif not lunch and cursor >= lunch_start:
+        cursor = cursor + LUNCH_BREAK_MIN
+        lunch = True
+        note = "lunch break before visit"
+    return cursor, cursor + visit, note, lunch
+
+
+def _time_v2(
+    order: list[ScoredPlace],
+    lookup: dict[tuple[UUID, UUID], RouteLeg],
+) -> list[ScheduledStop]:
+    """Real leg minutes plus one buffer. Verified hours only. Naive clock."""
+    day_end = _parse_hhmm(DAY_END_TIME)
+    clock = _parse_hhmm(DAY_START_TIME)
+    lunch_taken = False
+    last_id = BASE_SENTINEL_ID
+    scheduled: list[ScheduledStop] = []
+
+    for scored in order:
+        travel = _hop_duration(lookup, last_id, scored.place.id) + MIN_TRAVEL_BUFFER_MIN
+        visit = visit_duration_min(scored.place.category)
+        start, end, note, lunch_after = _preview_v2(clock, lunch_taken, travel, visit)
+        place = scored.place
+        verified = (
+            place.opening_hours_status == "verified"
+            and _window_minutes(place.opening_open) is not None
+            and _window_minutes(place.opening_close) is not None
+        )
+        if verified:
+            open_min = _window_minutes(place.opening_open)
+            close_min = _window_minutes(place.opening_close)
+            assert open_min is not None and close_min is not None
+            if start < open_min:
+                start = open_min
+                end = start + visit
+                note = None
+            if end > close_min or end > day_end:
+                continue
+        else:
+            if end > day_end:
+                continue
+            if _claims_open(note):
+                note = None
+        scheduled.append(
+            ScheduledStop(
+                place=place,
+                score=scored.score,
+                visit_duration_min=visit,
+                suggested_start_time=_format_hhmm(start),
+                arrival_note=note,
+            )
+        )
+        clock = end
+        lunch_taken = lunch_after
+        last_id = place.id
+
+    return scheduled
+
+
+def build_day_schedule(
+    ordered_stops: list[ScoredPlace],
+    route_legs: list[RouteLeg],
+    *,
+    preserve_order: bool = False,
+    v2_enabled: bool = False,
+) -> list[ScheduledStop]:
+    """
+    Assign naive suggested_start_time for each stop.
+
+    Common path: len(route_legs) == len(ordered_stops) consecutive chain
+    (base→first, …). Larger lists are treated as lookup-complete.
+
+    When preserve_order=True (P7 reorder), skip morning-only extract/omit and
+    time stops in the given order. That path ignores V2 omission and hour waits.
+    Default False keeps generation behavior. v2_enabled defaults false and
+    must be injected by the caller; this module does not read settings.
+    """
+    if not ordered_stops:
+        return []
+
+    if len(route_legs) < len(ordered_stops):
+        raise ValueError(
+            f"route_legs length {len(route_legs)} incompatible with "
+            f"{len(ordered_stops)} stops (need at least one consecutive chain)"
+        )
+
+    lookup = legs_to_lookup(route_legs)
+    order = (
+        list(ordered_stops)
+        if preserve_order
+        else _extract_morning_first(ordered_stops)
+    )
+
+    for frm, to in _required_hops(order):
+        if (frm, to) not in lookup:
+            raise ValueError(f"missing route leg for {frm} -> {to}")
+
+    if preserve_order or not v2_enabled:
+        return _time_legacy(order, lookup)
+    return _time_v2(order, lookup)

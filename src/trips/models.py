@@ -23,6 +23,23 @@ class TripStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class StopStatus(str, enum.Enum):
+    CONFIRMED = "confirmed"
+    SUGGESTED = "suggested"
+    REMOVED = "removed"
+    USER_ADDED = "user_added"
+
+
+class GeometryProvenance(str, enum.Enum):
+    OSRM = "osrm"
+    HAVERSINE_ESTIMATE = "haversine_estimate"
+    NONE = "none"
+
+
+def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+    return [member.value for member in enum_cls]
+
+
 class Trip(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "trips"
 
@@ -42,10 +59,18 @@ class Trip(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     )
     days: Mapped[int] = mapped_column(Integer, nullable=False)
     preferences: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    discovery_anchor: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    search_area: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[TripStatus] = mapped_column(
         SAEnum(TripStatus, name="trip_status"),
         default=TripStatus.DRAFT,
         nullable=False,
+    )
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
     )
 
     places: Mapped[list[TripPlace]] = relationship(
@@ -85,6 +110,24 @@ class TripPlace(Base, UUIDMixin, TimestampMixin):
     suggested_start_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
     arrival_note: Mapped[str | None] = mapped_column(String(512), nullable=True)
     polyline: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stop_status: Mapped[StopStatus] = mapped_column(
+        SAEnum(
+            StopStatus,
+            name="stop_status",
+            values_callable=_enum_values,
+        ),
+        nullable=False,
+        default=StopStatus.CONFIRMED,
+        server_default=StopStatus.CONFIRMED.value,
+    )
+    geometry_provenance: Mapped[GeometryProvenance | None] = mapped_column(
+        SAEnum(
+            GeometryProvenance,
+            name="geometry_provenance",
+            values_callable=_enum_values,
+        ),
+        nullable=True,
+    )
 
     trip: Mapped[Trip] = relationship("Trip", back_populates="places")
     place: Mapped[Place] = relationship("Place")

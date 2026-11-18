@@ -14,19 +14,38 @@ def _sha256(material: str) -> str:
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
-def request_material(body: PlanRequest, base_lat: float, base_lng: float) -> str:
+def request_material(
+    body: PlanRequest,
+    base_lat: float,
+    base_lng: float,
+    *,
+    location_suffix: str = "",
+) -> str:
     """Canonical plan body. Accommodation label is display-only and excluded."""
     normalized = normalize_raw_input(body.raw_input)
     raw_hash = _sha256(normalized)
     days_or_0 = body.days if body.days is not None else 0
-    return (
+    material = (
         f"{body.destination_id}:{raw_hash}:{days_or_0}:"
         f"{round(base_lat, 3)}:{round(base_lng, 3)}"
     )
+    if location_suffix:
+        material = f"{material}:{location_suffix}"
+    return material
 
 
-def compute_input_hash(body: PlanRequest, base_lat: float, base_lng: float) -> str:
-    return _sha256(request_material(body, base_lat, base_lng))
+def compute_input_hash(
+    body: PlanRequest,
+    base_lat: float,
+    base_lng: float,
+    *,
+    location_suffix: str = "",
+) -> str:
+    return _sha256(
+        request_material(
+            body, base_lat, base_lng, location_suffix=location_suffix
+        )
+    )
 
 
 def compute_fallback_key(
@@ -34,8 +53,16 @@ def compute_fallback_key(
     base_lat: float,
     base_lng: float,
     session_id: str,
+    *,
+    location_suffix: str = "",
 ) -> str:
-    material = request_material(body, base_lat, base_lng) + ":" + session_id
+    material = (
+        request_material(
+            body, base_lat, base_lng, location_suffix=location_suffix
+        )
+        + ":"
+        + session_id
+    )
     return _sha256(material)
 
 
@@ -45,14 +72,23 @@ def resolve_idempotency_key(
     base_lat: float,
     base_lng: float,
     session_id: str,
+    *,
+    location_suffix: str = "",
 ) -> tuple[str, str]:
     """Return ``(idempotency_key, input_hash)``.
 
     A header of 1..128 characters is the key. Missing, blank, and longer
     headers use the session digest. The request still proceeds.
     """
-    digest = compute_input_hash(body, base_lat, base_lng)
+    digest = compute_input_hash(
+        body, base_lat, base_lng, location_suffix=location_suffix
+    )
     raw = (header or "").strip()
     if 1 <= len(raw) <= _KEY_MAX_LEN:
         return raw, digest
-    return compute_fallback_key(body, base_lat, base_lng, session_id), digest
+    return (
+        compute_fallback_key(
+            body, base_lat, base_lng, session_id, location_suffix=location_suffix
+        ),
+        digest,
+    )

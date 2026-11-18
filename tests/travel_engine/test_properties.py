@@ -137,6 +137,7 @@ def test_distant_point_does_not_improve_coherence() -> None:
 
 
 def test_allocated_days_respect_caps() -> None:
+    """Default allocator only. V2 mode is covered by its own feature tests."""
     candidates, prefs = _pair()
     selected = select_places(candidates, prefs)
     for day in allocate_days(selected, 1, prefs):
@@ -178,13 +179,75 @@ def test_engine_does_not_read_v2_flag() -> None:
     for path in sorted(_ENGINE.glob("*.py")):
         text = path.read_text(encoding="utf-8-sig")
         assert "TRAVEL_ENGINE_V2_ENABLED" not in text
+        assert "VALIDATOR_V2_ENFORCE" not in text
+        assert "get_settings" not in text
 
 
-@pytest.mark.skip(reason="slice 4.1 owns candidate normalizer")
+def test_injected_off_matches_legacy_scoring() -> None:
+    prefs = TripPreferences(interests=["photography", "viewpoint"])
+    place = _candidate(
+        "Tiger Hill",
+        "viewpoint",
+        lat=27.04,
+        lng=88.26,
+        place_id=UUID("00000000-0000-4000-8000-0000000000aa"),
+        tags=["photography", "viewpoint"],
+    )
+    legacy = select_places([place], prefs)
+    off = select_places([place], prefs, v2_enabled=False)
+    assert legacy[0].score == off[0].score
+    assert legacy[0].score_breakdown == off[0].score_breakdown
+
+
 def test_idempotent_dedup() -> None:
-    raise AssertionError("normalizer is not part of this slice")
+    from src.travel_engine.candidate_normalizer import normalize_candidates
+
+    a = _candidate(
+        "Ghoom Monastery",
+        "monastery",
+        lat=27.3300,
+        lng=88.1300,
+        place_id=UUID("00000000-0000-4000-8000-0000000000b1"),
+    )
+    b = _candidate(
+        "ghoom monastery",
+        "monastery",
+        lat=27.3301,
+        lng=88.1301,
+        place_id=UUID("00000000-0000-4000-8000-0000000000b2"),
+    )
+    first = normalize_candidates([a, b])
+    second = normalize_candidates(first)
+    assert {c.id for c in first} == {c.id for c in second}
 
 
-@pytest.mark.skip(reason="slice 3 owns SearchArea")
 def test_area_respect() -> None:
-    raise AssertionError("search area is not part of this slice")
+    """Containment is pure; the engine package still does not import it."""
+    from src.location_intelligence.containment import point_in_search_area
+    from src.location_intelligence.schemas import (
+        LocationType,
+        ResolvedLocation,
+        SearchArea,
+    )
+
+    anchor = ResolvedLocation(
+        canonical_name="Center",
+        location_type=LocationType.LANDMARK,
+        lat=27.0,
+        lng=88.0,
+        provider="user",
+        provider_id=None,
+        confidence=1.0,
+        explanation="fixture",
+    )
+    area = SearchArea(
+        strategy="radius",
+        anchor=anchor,
+        radius_km=10.0,
+        boundary_geojson=None,
+        fallback_used=False,
+        description="10 km",
+    )
+    assert point_in_search_area(27.01, 88.01, area) is True
+    assert point_in_search_area(28.0, 89.0, area) is False
+

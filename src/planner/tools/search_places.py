@@ -10,6 +10,11 @@ from sqlalchemy import select
 from src.core.database.session import AsyncSessionLocal
 from src.destinations.models import Destination
 from src.geo.country import countries_match, country_from_tags, normalize_country
+from src.location_intelligence.containment import (
+    covering_radius_km,
+    point_in_search_area,
+)
+from src.location_intelligence.schemas import SearchArea
 from src.places.models import Place
 from src.places.repository import PlaceRepository
 from src.planner.tools._helpers import (
@@ -41,6 +46,16 @@ def _base_coords(ctx: Any, state: Any) -> tuple[float | None, float | None]:
     return lat, lng
 
 
+def _search_area_from_state(state: Any) -> SearchArea | None:
+    raw = state_get(state, "search_area")
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return SearchArea.model_validate(raw)
+    except Exception:  # noqa: BLE001 — ignore malformed state
+        return None
+
+
 async def _load_places_by_ids(session: Any, ids: list[UUID]) -> list[Place]:
     if not ids:
         return []
@@ -70,6 +85,35 @@ def _filter_same_country(places: list[Place], destination_country: str | None) -
     return kept
 
 
+def _apply_area(places: list[Place], area: SearchArea | None) -> list[Place]:
+    if area is None:
+        return places
+    return places_index.filter_places_in_area(
+        places,
+        contains=lambda lat, lng: point_in_search_area(lat, lng, area),
+    )
+
+
+def _fallback_center_and_radius(
+    ctx: Any,
+    state: Any,
+    area: SearchArea | None,
+) -> tuple[float | None, float | None, float]:
+    """Return (lat, lng, radius_km) for PostGIS. Area path never uses 30 km."""
+    if area is None:
+        lat, lng = _base_coords(ctx, state)
+        return lat, lng, SEARCH_DEFAULT_RADIUS_KM
+    if area.strategy == "radius":
+        return area.anchor.lat, area.anchor.lng, float(area.radius_km or 0.0)
+    if area.boundary_geojson is not None:
+        radius = covering_radius_km(
+            area.boundary_geojson,
+            center_lat=area.anchor.lat,
+        )
+        return area.anchor.lat, area.anchor.lng, radius
+    return area.anchor.lat, area.anchor.lng, float(area.radius_km or 0.0)
+
+
 async def run(
     inp: SearchPlacesIn,
     ctx: Any = None,
@@ -88,6 +132,7 @@ async def run(
         top_k = state_get(state, "search_top_k") or SEARCH_DEFAULT_TOP_K
     top_k = max(int(top_k), SEARCH_DEFAULT_TOP_K)
     query = search_query_from_state(state, inp.query)
+    area = _search_area_from_state(state)
 
     own_session = False
     session = getattr(ctx, "db", None) if ctx is not None else None
@@ -114,11 +159,12 @@ async def run(
                 continue
 
         places = await _load_places_by_ids(session, place_ids) if place_ids else []
+        places = _apply_area(places, area)
 
         if not places:
             used_geo_fallback = True
-            lat, lng = _base_coords(ctx, state)
-            if lat is None or lng is None:
+            lat, lng, radius_km = _fallback_center_and_radius(ctx, state, area)
+            if lat is None or lng is None or radius_km <= 0:
                 data: dict = {
                     "candidate_pois": [],
                     "used_geo_fallback": True,
@@ -137,11 +183,12 @@ async def run(
             places = await repo.find_within_radius(
                 float(lat),
                 float(lng),
-                SEARCH_DEFAULT_RADIUS_KM,
+                float(radius_km),
                 limit=top_k,
             )
             # Prefer destination-scoped results when available
             places = [p for p in places if p.destination_id == dest_id] or places
+            places = _apply_area(places, area)
 
         places = _filter_same_country(places, dest_country)
 

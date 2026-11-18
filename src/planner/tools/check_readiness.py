@@ -6,9 +6,21 @@ from typing import Any
 
 from src.config import get_settings
 from src.core.database.session import AsyncSessionLocal
+from src.destinations.readiness import resolve_trip_days
 from src.destinations.service import DestinationService
 from src.planner.tools._helpers import as_uuid, state_get
 from src.planner.tools.schemas import CheckReadinessIn, ToolResult
+
+
+def _trip_days(ctx: Any, state: Any) -> int:
+    if ctx is not None:
+        raw = getattr(ctx, "readiness_days", None)
+        if isinstance(raw, int) and not isinstance(raw, bool):
+            return resolve_trip_days(raw)
+    raw_state = state_get(state, "days", None)
+    if isinstance(raw_state, int) and not isinstance(raw_state, bool):
+        return resolve_trip_days(raw_state)
+    return resolve_trip_days(None)
 
 
 def _destination_id(ctx: Any, state: Any) -> Any:
@@ -40,7 +52,7 @@ async def run(
 
     try:
         service = DestinationService(session)
-        readiness = await service.get_readiness(dest_id)
+        readiness = await service.get_readiness(dest_id, days=_trip_days(ctx, state))
         settings = get_settings()
         warning = None
         if readiness.score < settings.PLANNER_MIN_READINESS_SCORE:

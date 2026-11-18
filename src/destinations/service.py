@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 
+from geoalchemy2.shape import to_shape
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import get_settings
@@ -15,7 +16,11 @@ from src.core.observability.logging import get_logger
 from src.destinations.exceptions import DestinationNotFoundError
 from src.destinations.ingest import ingest_destination_pois
 from src.destinations.models import Destination
-from src.destinations.readiness import compute_readiness
+from src.destinations.readiness import (
+    ReadinessPlace,
+    compute_readiness,
+    compute_readiness_v2,
+)
 from src.destinations.repository import DestinationRepository
 from src.destinations.schemas import (
     DestinationOut,
@@ -31,13 +36,39 @@ from src.geo.geocoder import (
     is_oversized,
     viewbox_from_place,
 )
+from geoalchemy2.shape import to_shape
+
 from src.geo.schemas import GeocodedPlace
+from src.location_intelligence.schemas import LocationType, ResolvedLocation
+from src.places.repository import PlaceRepository
 from src.search.client import is_qdrant_available
 
 log = get_logger(__name__)
 
 _HUB_LIMIT = 5
 _AMBIGUOUS_LIMIT = 5
+
+
+def _counter_ratios(dest: Destination) -> tuple[float, float]:
+    count = dest.place_count or 0
+    if count <= 0:
+        return 0.0, 0.0
+    return dest.enriched_count / count, dest.indexed_count / count
+
+
+def _readiness_place(place: object) -> ReadinessPlace:
+    point = to_shape(place.location)  # type: ignore[attr-defined]
+    osm_id = getattr(place, "osm_id", None)
+    source = str(osm_id).strip() if osm_id else None
+    return ReadinessPlace(
+        id=str(place.id),  # type: ignore[attr-defined]
+        name=str(getattr(place, "name", "") or ""),
+        category=getattr(place, "category", None),
+        lat=float(point.y),
+        lng=float(point.x),
+        source=source or None,
+        retrieved_at=getattr(place, "created_at", None),
+    )
 
 
 def _prepare_lock_key(destination_id: uuid.UUID) -> str:
@@ -229,23 +260,71 @@ class DestinationService:
             raise DestinationNotFoundError(destination_id=str(destination_id))
         return dest
 
-    async def get_readiness(self, destination_id: uuid.UUID) -> DestinationReadinessOut:
-        """Compute readiness from denormalized counters + live Qdrant availability."""
-        dest = await self.get_by_id(destination_id)
-        search_available = is_qdrant_available()
-        result = compute_readiness(
-            dest.place_count,
-            dest.enriched_count,
-            dest.indexed_count,
-            search_available,
+    def to_city_anchor(self, dest: Destination) -> ResolvedLocation:
+        """Read-only destination-center city anchor. No commit, no geocode."""
+        country = normalize_country(dest.country)
+        country_code = country if country is not None and len(country) == 2 else None
+        return ResolvedLocation(
+            canonical_name=dest.name,
+            location_type=LocationType.CITY,
+            lat=float(dest.lat),
+            lng=float(dest.lng),
+            country_code=country_code,
+            admin_area=None,
+            provider="catalog",
+            provider_id=dest.osm_place_id,
+            confidence=0.92,
+            bounding_box=None,
+            boundary_geojson=None,
+            catalog_id=dest.id,
+            explanation="destination catalog center",
         )
+
+    async def get_readiness(
+        self,
+        destination_id: uuid.UUID,
+        days: int = 1,
+    ) -> DestinationReadinessOut:
+        """Counter formula, or Readiness V2 when the flag is on."""
+        if days < 1 or days > 30:
+            raise ValueError("days out of range")
+        dest = await self.get_by_id(destination_id)
+        settings = get_settings()
+        if not settings.READINESS_V2_ENABLED:
+            search_available = is_qdrant_available()
+            result = compute_readiness(
+                dest.place_count,
+                dest.enriched_count,
+                dest.indexed_count,
+                search_available,
+            )
+            return DestinationReadinessOut(
+                destination_id=dest.id,
+                score=result.score,
+                tier=result.tier,
+                place_count=result.place_count,
+                enriched_pct=result.enriched_pct,
+                indexed_pct=result.indexed_pct,
+                message=result.message,
+            )
+
+        rows = await PlaceRepository(self.session).list_all_for_destination(destination_id)
+        result = compute_readiness_v2(
+            [_readiness_place(place) for place in rows],
+            days,
+            min_usable_per_day=settings.READINESS_MIN_USABLE_PLACES_PER_DAY,
+            min_categories=settings.READINESS_MIN_CATEGORIES,
+            min_clusters_multi_day=settings.READINESS_MIN_CLUSTERS_MULTI_DAY,
+            absolute_min_places=settings.PLANNER_ABSOLUTE_MIN_PLACES,
+        )
+        enriched_pct, indexed_pct = _counter_ratios(dest)
         return DestinationReadinessOut(
             destination_id=dest.id,
             score=result.score,
             tier=result.tier,
             place_count=result.place_count,
-            enriched_pct=result.enriched_pct,
-            indexed_pct=result.indexed_pct,
+            enriched_pct=enriched_pct,
+            indexed_pct=indexed_pct,
             message=result.message,
         )
 

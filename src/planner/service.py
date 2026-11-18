@@ -14,6 +14,7 @@ from uuid import UUID
 from langgraph.errors import GraphRecursionError
 
 from src.config import get_settings
+from src.destinations.readiness import resolve_trip_days
 from src.core.observability.tracing import (
     emit_tool_spans_from_trace,
     end_generation_trace,
@@ -22,6 +23,8 @@ from src.core.observability.tracing import (
 from src.planner.emit_terminals import emit_terminal_from_state
 from src.planner.graph.builder import get_compiled_graph
 from src.planner.graph.nodes.record_evaluation import record_evaluation
+from src.planner.reasoning.budget import InvocationBudget
+from src.planner.reasoning.trace import flush_reasoning_notes
 from src.planner.routing_provider import get_routing_provider
 from src.planner.tools.schemas import AgentPhase, ToolContext
 
@@ -69,10 +72,12 @@ def _initial_state(
     base_lat: float,
     base_lng: float,
     session_id: str,
+    discovery_anchor: dict[str, Any] | None = None,
+    search_area: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     settings = get_settings()
     dest = str(destination_id)
-    return {
+    state: dict[str, Any] = {
         "destination_id": dest,
         "raw_input": raw_input,
         "base_lat": float(base_lat),
@@ -100,9 +105,18 @@ def _initial_state(
         "errors": [],
         "warnings": [],
     }
+    if discovery_anchor is not None:
+        state["discovery_anchor"] = discovery_anchor
+    if search_area is not None:
+        state["search_area"] = search_area
+    return state
 
 
-async def _bind_known_destination(state: dict[str, Any], destination_id: UUID) -> None:
+async def _bind_known_destination(
+    state: dict[str, Any],
+    destination_id: UUID,
+    days: int | None = None,
+) -> None:
     """Put the chosen destination and its readiness on state before the graph runs.
 
     Generate is always for one destination. The agent must see that name, and
@@ -121,7 +135,10 @@ async def _bind_known_destination(state: dict[str, Any], destination_id: UUID) -
         except DestinationNotFoundError:
             return
         state["destination_name"] = dest.name
-        readiness = await service.get_readiness(destination_id)
+        readiness = await service.get_readiness(
+            destination_id,
+            days=resolve_trip_days(days),
+        )
         state["readiness_score"] = readiness.score
     finally:
         await session.close()
@@ -129,6 +146,83 @@ async def _bind_known_destination(state: dict[str, Any], destination_id: UUID) -
 
 class PlannerService:
     """Service-level generation runner — not an HTTP router."""
+
+    async def _run_post_terminal_reasoning(
+        self,
+        state: dict[str, Any],
+        *,
+        budget: InvocationBudget,
+    ) -> dict[str, Any]:
+        """Shadow or live critic after the terminal event. Never mutates itinerary."""
+        settings = get_settings()
+        notes: list[dict[str, Any]] = []
+
+        if settings.REASONING_LAYER_ENABLED:
+            if budget.remaining() > 0:
+                from src.planner.reasoning.critic import run_critic
+
+                findings: list[Any] = []
+                vr = state.get("validation_result")
+                if isinstance(vr, dict):
+                    raw = vr.get("findings") or vr.get("v2_findings") or []
+                    if isinstance(raw, list):
+                        findings = list(raw)
+                elif state.get("v2_findings"):
+                    findings = list(state.get("v2_findings") or [])
+                critic = await run_critic(
+                    raw_input=str(state.get("raw_input") or ""),
+                    search_area=state.get("search_area")
+                    if isinstance(state.get("search_area"), dict)
+                    else None,
+                    evidence_refs=[],
+                    itinerary=state.get("itinerary")
+                    if isinstance(state.get("itinerary"), dict)
+                    else {},
+                    findings=findings,
+                    budget=budget,
+                    mode="live",
+                )
+                notes.append(
+                    {
+                        "name": "itinerary_critic",
+                        "ok": not critic.skipped,
+                        "code": critic.reason,
+                        "ms": critic.ms,
+                        "diagnostics": critic.as_trace_diagnostics(),
+                        "usage": critic.usage,
+                    }
+                )
+            return flush_reasoning_notes(state, notes)
+
+        if float(settings.REASONING_SHADOW_SAMPLE_RATE) <= 0.0:
+            return state
+
+        from src.planner.reasoning.shadow import run_shadow_pass
+
+        reasoner, critic, _ranked = await run_shadow_pass(state, budget=budget)
+        if reasoner is not None:
+            notes.append(
+                {
+                    "name": "experience_reasoner",
+                    "ok": not reasoner.skipped,
+                    "code": reasoner.reason,
+                    "ms": reasoner.ms,
+                    "diagnostics": reasoner.as_trace_diagnostics(),
+                    "usage": reasoner.usage,
+                }
+            )
+        if critic is not None:
+            notes.append(
+                {
+                    "name": "itinerary_critic",
+                    "ok": not critic.skipped,
+                    "code": critic.reason,
+                    "ms": critic.ms,
+                    "diagnostics": critic.as_trace_diagnostics(),
+                    "usage": critic.usage,
+                }
+            )
+        return flush_reasoning_notes(state, notes)
 
     async def generate(
         self,
@@ -141,6 +235,9 @@ class PlannerService:
         on_event: Callable[[str, dict], None] | None = None,
         routing: Any | None = None,
         user_id: UUID | str | None = None,
+        discovery_anchor: dict[str, Any] | None = None,
+        search_area: dict[str, Any] | None = None,
+        days: int | None = None,
     ) -> dict[str, Any]:
         """Run compiled planner graph with timeout + emit checkpoints.
 
@@ -148,6 +245,7 @@ class PlannerService:
         uses get_routing_provider(). Always persists evaluation after return/timeout.
         """
         settings = get_settings()
+        trip_days = resolve_trip_days(days)
         dest_uuid = _as_uuid(destination_id)
         last_known_state: dict[str, Any] = {}
 
@@ -162,12 +260,16 @@ class PlannerService:
             if on_event:
                 on_event(event, data)
 
+        reasoning_budget = InvocationBudget()
         ctx = ToolContext(
             destination_id=dest_uuid,
             base_lat=float(base_lat),
             base_lng=float(base_lng),
             routing=routing if routing is not None else get_routing_provider(),
             db=None,
+            readiness_days=trip_days,
+            reasoning_notes=[],
+            reasoning_budget=reasoning_budget,
         )
         initial = _initial_state(
             destination_id=dest_uuid,
@@ -175,8 +277,10 @@ class PlannerService:
             base_lat=base_lat,
             base_lng=base_lng,
             session_id=session_id,
+            discovery_anchor=discovery_anchor,
+            search_area=search_area,
         )
-        await _bind_known_destination(initial, dest_uuid)
+        await _bind_known_destination(initial, dest_uuid, days=trip_days)
         # Seed last_known so a pre-emit timeout still has destination_id for eval.
         last_known_state.update(initial)
 
@@ -235,6 +339,22 @@ class PlannerService:
                     _capture_and_emit if on_event else None,
                     already_emitted_error=already_emitted_error,
                 )
+
+            # Slice 7: flush live notes, then shadow/critic outside the graph wait.
+            if isinstance(final, dict):
+                final = flush_reasoning_notes(final, list(ctx.reasoning_notes or []))
+                if ctx.reasoning_notes is not None:
+                    ctx.reasoning_notes.clear()
+                try:
+                    final = await self._run_post_terminal_reasoning(
+                        final,
+                        budget=reasoning_budget,
+                    )
+                except Exception:
+                    # Named soft-fail: never rewrite a finished graph into timeout.
+                    pass
+                last_known_state.clear()
+                last_known_state.update(final)
 
             eval_update = await record_evaluation(final)
             if eval_update.get("warnings"):

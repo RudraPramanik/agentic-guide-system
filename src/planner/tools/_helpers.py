@@ -7,7 +7,9 @@ from uuid import UUID
 
 from geoalchemy2.shape import to_shape
 
+from src.config import get_settings
 from src.places.models import Place
+from src.places.opening_hours import apply_hours
 from src.travel_engine.place_selector import (
     PlaceCandidate,
     ScoredPlace,
@@ -35,14 +37,19 @@ def state_get(state: Any, key: str, default: Any = None) -> Any:
 def place_to_candidate(place: Place) -> PlaceCandidate:
     point = to_shape(place.location)
     tags = place.enriched_tags if isinstance(place.enriched_tags, list) else []
-    return PlaceCandidate(
+    osm_id = getattr(place, "osm_id", None)
+    candidate = PlaceCandidate(
         id=place.id,
         name=place.name,
         category=place.category,
         enriched_tags=list(tags),
         lat=float(point.y),
         lng=float(point.x),
+        source="osm" if osm_id else None,
+        source_id=str(osm_id) if osm_id else None,
     )
+    osm_tags = place.tags if isinstance(place.tags, dict) else None
+    return apply_hours(candidate, osm_tags, get_settings().READINESS_V2_ENABLED)
 
 
 def candidate_to_dict(c: PlaceCandidate) -> dict:

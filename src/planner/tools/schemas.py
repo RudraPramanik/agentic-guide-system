@@ -83,6 +83,12 @@ class ToolContext(BaseModel):
     base_lng: float
     routing: Any = None
     db: Any = None
+    # Requested trip length for readiness. 3 matches an omitted generate day count.
+    readiness_days: int = 3
+    # Slice 7 side notes (not graph state). Flushed onto tool_trace after terminal.
+    reasoning_notes: list[dict[str, Any]] | None = None
+    # Shared reasoner+critic invocation budget for one generate.
+    reasoning_budget: Any = None
 
 
 # ── Per-tool input models (minimal; tools also read state/ctx) ──

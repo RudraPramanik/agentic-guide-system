@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from src.config import get_settings
 from src.core.database.base import Base
 from src.core.database.session import get_db
+from src.core.middleware.rate_limit import InMemoryRateLimiter, _reset_rate_limiter_for_tests
 from src.main import create_app
 
 # Register all models on Base.metadata before create_all
@@ -83,6 +84,9 @@ async def client(db_session) -> AsyncGenerator[AsyncClient, None]:
             new_callable=AsyncMock,
         ),
     ):
+        # .env may point REDIS_URL at an HTTPS REST host. HTTP tests must not
+        # build that client; rate-limit cases install their own backend.
+        _reset_rate_limiter_for_tests(InMemoryRateLimiter())
         app = create_app()
 
         async def _override_get_db():
@@ -91,10 +95,12 @@ async def client(db_session) -> AsyncGenerator[AsyncClient, None]:
         app.dependency_overrides[get_db] = _override_get_db
 
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            yield ac
-
-        app.dependency_overrides.clear()
+        try:
+            async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                yield ac
+        finally:
+            app.dependency_overrides.clear()
+            _reset_rate_limiter_for_tests(None)
 
 
 @pytest.fixture

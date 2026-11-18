@@ -59,3 +59,18 @@ def test_interest_only_tags_not_in_duration_map() -> None:
 
 def test_drop_attempts_allow_thinning_full_day() -> None:
     assert MAX_ROUTE_DROP_ATTEMPTS == MAX_PLACES_PER_DAY - 1
+
+
+def test_day_end_is_eight_hours_after_start() -> None:
+    from src.travel_engine.travel_rules import (
+        ACTIVE_DAY_VISIT_BUDGET_MIN,
+        CLUSTER_RADIUS_KM,
+        DAY_END_TIME,
+        DAY_START_TIME,
+        MIN_TRAVEL_BUFFER_MIN,
+    )
+
+    assert DAY_START_TIME == "08:00"
+    assert DAY_END_TIME == "16:00"
+    assert ACTIVE_DAY_VISIT_BUDGET_MIN == 8 * 60 - MIN_TRAVEL_BUFFER_MIN
+    assert CLUSTER_RADIUS_KM == 10.0

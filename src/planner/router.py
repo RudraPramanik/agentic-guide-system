@@ -34,11 +34,12 @@ from src.planner.cache import (
     maybe_get_cached_state,
     maybe_set_cached_state,
 )
+from src.planner.location import build_generate_location
 from src.planner.runs.identity import resolve_idempotency_key
 from src.planner.runs.models import TERMINAL_RUN_STATUSES, RunStatus
 from src.planner.runs.outcomes import map_generate_outcome
 from src.planner.runs.service import PlannerRunService
-from src.planner.schemas import PlanRequest, PlannerRunOut
+from src.planner.schemas import PlanRequest, PlannerRunOut, location_key_suffix
 from src.planner.service import PlannerService
 from src.trips.service import TripService
 
@@ -103,6 +104,15 @@ async def generate_plan(
     base_lng = body.base_lng if body.base_lng is not None else float(dest.lng)
     user_id: UUID | None = payload.user_id if payload else None
 
+    discovery_anchor: dict[str, Any] | None = None
+    search_area: dict[str, Any] | None = None
+    loc_suffix = ""
+    if settings.LOCATION_V2_ENABLED:
+        discovery_anchor, search_area = await build_generate_location(body, dest, db)
+        if body.discovery_anchor is not None or body.radius_km is not None:
+            loc_suffix = location_key_suffix(body)
+    reasoning_suffix = "reasoning-v1" if settings.REASONING_LAYER_ENABLED else ""
+
     async def event_gen():
         queue: asyncio.Queue[tuple[str, dict[str, Any]]] = asyncio.Queue()
         run_id_value: UUID | None = None
@@ -121,6 +131,7 @@ async def generate_plan(
                     base_lat,
                     base_lng,
                     session_id,
+                    location_suffix=loc_suffix,
                 )
                 run, created = await PlannerRunService(db).resolve(
                     session_id=session_id,
@@ -138,7 +149,13 @@ async def generate_plan(
                     yield sse_frame(event, _with_run_id(data, run_id_value))
                     return
 
-            cached_state = await maybe_get_cached_state(body, base_lat, base_lng)
+            cached_state = await maybe_get_cached_state(
+                body,
+                base_lat,
+                base_lng,
+                location_suffix=loc_suffix,
+                reasoning_suffix=reasoning_suffix,
+            )
             from_cache = cached_state is not None
 
             if from_cache:
@@ -176,6 +193,9 @@ async def generate_plan(
                         session_id=session_id,
                         on_event=on_event,
                         user_id=user_id,
+                        discovery_anchor=discovery_anchor,
+                        search_area=search_area,
+                        days=body.days,
                     )
                 )
 
@@ -232,7 +252,12 @@ async def generate_plan(
                             }
                         if not from_cache:
                             await maybe_set_cached_state(
-                                body, base_lat, base_lng, state
+                                body,
+                                base_lat,
+                                base_lng,
+                                state,
+                                location_suffix=loc_suffix,
+                                reasoning_suffix=reasoning_suffix,
                             )
                     if trip is None and run_id_value is not None:
                         await PlannerRunService(db).finish_open(

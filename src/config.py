@@ -85,13 +85,55 @@ class Settings(BaseSettings):
     PLANNER_CACHE_TTL_SECONDS: int = 3600
     # Slice 1 run rows and idempotency. Off keeps today's generate path.
     RUN_TRACKING_ENABLED: bool = False
-    # Slice 3 location library. Off until row 3.4 branches generate.
+    # Slice 3 location V2. Off → legacy generate / 404 on /locations/*.
     LOCATION_V2_ENABLED: bool = False
     LOCATION_AUTO_RESOLVE_CONFIDENCE: float = 0.90
     LOCATION_POI_RADIUS_KM: float = 10.0
     LOCATION_NEIGHBORHOOD_RADIUS_KM: float = 5.0
     LOCATION_CITY_FALLBACK_RADIUS_KM: float = 15.0
     LOCATION_MAX_RADIUS_KM: float = 50.0
+    # Slice 4 travel-engine V2. Tools inject into pure engine; engine must not read this.
+    TRAVEL_ENGINE_V2_ENABLED: bool = False
+    # Validator V2 shadow. The validate tool reads this via get_settings(); the engine must not.
+    # False: findings are logged and do not change the publish bit. Do not flip the default here.
+    VALIDATOR_V2_ENFORCE: bool = False
+    # Slice 5 readiness V2 and opening-hours parsing. Off keeps the P2 formula and unknown hours.
+    READINESS_V2_ENABLED: bool = False
+    READINESS_MIN_USABLE_PLACES_PER_DAY: int = 4
+    READINESS_MIN_CATEGORIES: int = 3
+    READINESS_MIN_CLUSTERS_MULTI_DAY: int = 2
+    # Slice 6 canonical trip. Off keeps today's trip JSON, GeoJSON, and hard-delete edits.
+    CANONICAL_TRIP_V2_ENABLED: bool = False
+    CANONICAL_TRIP_MAX_SUGGESTIONS_PER_DAY: int = 3
+    # Slice 7 experimental reasoning. Off keeps today's ranking; shadow needs rate > 0.
+    REASONING_LAYER_ENABLED: bool = False
+    REASONING_SHADOW_SAMPLE_RATE: float = 0.0
+    ORCHESTRATION_MAX_AGENT_INVOCATIONS: int = 2
+    ORCHESTRATION_MAX_REPAIR_ATTEMPTS: int = 0
+    # Empty ⇒ LLM_MODEL for that role.
+    AGENT_REASONING_MODEL: str = ""
+    AGENT_CRITIC_MODEL: str = ""
+
+    @field_validator("REASONING_SHADOW_SAMPLE_RATE")
+    @classmethod
+    def _check_reasoning_shadow_rate(cls, value: float) -> float:
+        if value < 0.0 or value > 1.0:
+            raise ValueError("REASONING_SHADOW_SAMPLE_RATE must be between 0 and 1")
+        return value
+
+    @field_validator("ORCHESTRATION_MAX_AGENT_INVOCATIONS")
+    @classmethod
+    def _check_orchestration_invocations(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("ORCHESTRATION_MAX_AGENT_INVOCATIONS must be >= 0")
+        return value
+
+    @field_validator("ORCHESTRATION_MAX_REPAIR_ATTEMPTS")
+    @classmethod
+    def _check_orchestration_repairs(cls, value: int) -> int:
+        if value != 0:
+            raise ValueError("ORCHESTRATION_MAX_REPAIR_ATTEMPTS must be 0")
+        return value
 
     # Observability — empty keys → NoOpTracer; LANGFUSE_BASE_URL accepted as alias
     LANGFUSE_PUBLIC_KEY: str = ""
@@ -142,6 +184,10 @@ class Settings(BaseSettings):
     RATE_LIMIT_DESTINATIONS_RESOLVE_REQUESTS: int = 20
     RATE_LIMIT_DESTINATIONS_RESOLVE_WINDOW_SECONDS: int = 60
     RATE_LIMIT_DESTINATIONS_RESOLVE_PATH: str = "/api/v1/destinations/resolve"
+    # Location routes share the destinations-search numeric budget (20/60).
+    RATE_LIMIT_LOCATIONS_SEARCH_PATH: str = "/api/v1/locations/search"
+    RATE_LIMIT_LOCATIONS_RESOLVE_PATH: str = "/api/v1/locations/resolve"
+    RATE_LIMIT_LOCATIONS_SEARCH_AREA_PATH: str = "/api/v1/locations/search-area"
     # User-keyed trip edit dependency (not path-table); middleware IP default may still apply
     RATE_LIMIT_TRIP_EDIT_REQUESTS: int = 20
     RATE_LIMIT_TRIP_EDIT_WINDOW_SECONDS: int = 60

@@ -166,3 +166,35 @@ def test_deferred_rules_documented() -> None:
         assert rule in text, f"{rule} deferral missing from VIOLATIONS.md"
     deferred = text.split("## Deferred", 1)[1]
     assert "G15" not in deferred
+
+
+def test_slice7_reasoning_package_no_provider_sdk() -> None:
+    """Reasoning package uses the gateway only; engine never imports it."""
+    import ast
+
+    from tests.architecture._helpers import parse_tree
+
+    reasoning = SRC_ROOT / "planner" / "reasoning"
+    assert reasoning.is_dir()
+    forbidden = {"litellm", "groq", "openai"}
+    for path in sorted(reasoning.rglob("*.py")):
+        tree = parse_tree(path)
+        assert tree is not None, rel(path)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    assert alias.name.split(".")[0] not in forbidden, rel(path)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                assert node.module.split(".")[0] not in forbidden, rel(path)
+
+    engine = SRC_ROOT / "travel_engine"
+    for path in sorted(engine.rglob("*.py")):
+        tree = parse_tree(path)
+        if tree is None:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                assert not node.module.startswith("src.planner.reasoning"), rel(path)
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    assert not alias.name.startswith("src.planner.reasoning"), rel(path)

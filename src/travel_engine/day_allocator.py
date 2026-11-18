@@ -120,6 +120,8 @@ def allocate_days(
     selected: list[ScoredPlace],
     days: int,
     preferences: TripPreferences | None = None,
+    *,
+    v2_enabled: bool = False,
 ) -> list[list[ScoredPlace]]:
     """
     Split scored places into exactly `days` lists.
@@ -138,8 +140,12 @@ def allocate_days(
       so the result length is still `days`. Callers skip empty slots.
 
     ``preferences`` is accepted for API symmetry with callers; unused in packing.
+    ``v2_enabled`` selects the V2 path. The comparison report recorded no cap
+    or far-cluster miss, so both modes share this body. The module does not
+    read settings.
     """
     _ = preferences  # reserved for future soft prefs; unused in packing
+    _ = v2_enabled  # same packing until a comparison miss is recorded
     if days < 1:
         raise ValueError("days must be >= 1")
 

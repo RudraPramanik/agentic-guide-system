@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.config import get_settings
 from src.planner.graph.state import TravelState
+from src.planner.tools.orchestration import choose_replan_tool
 from src.planner.tools.schemas import PHASE_TOOLS, AgentPhase
 
 _TOOL_TRACE_LIMIT = 5
@@ -19,6 +21,21 @@ def _as_phase(value: Any) -> AgentPhase:
         except ValueError:
             pass
     return AgentPhase.DISCOVER
+
+
+def _drop_reasons(route: Any) -> list[str]:
+    if not isinstance(route, list):
+        return []
+    reasons: list[str] = []
+    for day in route:
+        if not isinstance(day, dict):
+            continue
+        for stop in day.get("dropped_stops") or []:
+            if isinstance(stop, dict):
+                reason = stop.get("reason")
+                if reason:
+                    reasons.append(str(reason))
+    return reasons
 
 
 def _has_dropped_stops(route: Any) -> bool:
@@ -100,7 +117,18 @@ def build_agent_messages(state: TravelState | dict[str, Any]) -> list[dict]:
         ),
         f"Recent tool_trace (last {_TOOL_TRACE_LIMIT}):\n{_format_tool_trace(list(tool_trace) if isinstance(tool_trace, list) else [])}",
     ]
-    if phase == AgentPhase.REPLAN and dropped:
+    engine_v2 = bool(get_settings().TRAVEL_ENGINE_V2_ENABLED)
+    mapped: str | None = None
+    if phase == AgentPhase.REPLAN and engine_v2:
+        mapped = choose_replan_tool(data.get("v2_findings"))
+        if mapped:
+            lines.append(
+                f"REPLAN guidance: call {mapped}. Do not call a different repair."
+            )
+        reasons = _drop_reasons(route)
+        if reasons:
+            lines.append("Dropped stop reasons: " + ", ".join(reasons) + ".")
+    if phase == AgentPhase.REPLAN and dropped and not (engine_v2 and mapped):
         lines.append(
             "REPLAN guidance: dropped_stops are present — prefer expand_poi_search "
             "over drop_weakest_stop."

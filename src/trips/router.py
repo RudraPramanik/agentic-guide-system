@@ -4,20 +4,60 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Header, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.router import COOKIE_SESSION
+from src.config import get_settings
 from src.core.database.session import get_db
 from src.core.pagination import PageParams, PaginatedResponse, paginate
 from src.core.responses import ApiResponse
 from src.core.security.jwt import TokenPayload
 from src.core.security.permissions import optional_auth, require_auth
 from src.trips.dependencies import rate_limit_trip_edit
+from src.trips.exceptions import TripEditValidationError
 from src.trips.schemas import AddStopIn, ReorderStopsIn, TripOut
 from src.trips.service import TripService
 
 router = APIRouter(prefix="/api/v1/trips", tags=["trips"])
+
+
+def _parse_if_match(header: str | None) -> int | None:
+    if header is None or not str(header).strip():
+        return None
+    token = str(header).strip()
+    if token.startswith("W/"):
+        token = token[2:].strip()
+    if len(token) >= 2 and token[0] == '"' and token[-1] == '"':
+        token = token[1:-1]
+    try:
+        return int(token)
+    except ValueError as exc:
+        raise TripEditValidationError(
+            "If-Match must be an integer trip version",
+            code="invalid_if_match",
+        ) from exc
+
+
+def _expected_version(if_match: str | None, body_version: int | None) -> int | None:
+    if not get_settings().CANONICAL_TRIP_V2_ENABLED:
+        return None
+    header = _parse_if_match(if_match)
+    if header is not None and body_version is not None and header != body_version:
+        raise TripEditValidationError(
+            "If-Match and expected_version disagree",
+            code="version_header_mismatch",
+        )
+    return header if header is not None else body_version
+
+
+def _set_etag(response: Response, trip: object) -> None:
+    if not get_settings().CANONICAL_TRIP_V2_ENABLED:
+        return
+    version = getattr(trip, "version", None)
+    if version is None:
+        return
+    response.headers["ETag"] = f'"{int(version)}"'
 
 
 @router.get("")
@@ -35,6 +75,7 @@ async def list_trips(
 async def get_trip(
     trip_id: uuid.UUID,
     request: Request,
+    response: Response,
     payload: TokenPayload | None = Depends(optional_auth),
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse[TripOut]:
@@ -44,6 +85,7 @@ async def get_trip(
     trip = await TripService(db).get_for_access(
         trip_id, user_id=user_id, session_id=session_id
     )
+    _set_etag(response, trip)
     return ApiResponse(data=TripOut.from_trip(trip))
 
 
@@ -95,12 +137,19 @@ async def reorder_day_stops(
     trip_id: uuid.UUID,
     day: int,
     body: ReorderStopsIn,
+    response: Response,
     payload: TokenPayload = Depends(rate_limit_trip_edit),
     db: AsyncSession = Depends(get_db),
+    if_match: str | None = Header(default=None, alias="If-Match"),
 ) -> ApiResponse[TripOut]:
     trip = await TripService(db).reorder_stops(
-        trip_id, day, body.place_ids, payload.user_id
+        trip_id,
+        day,
+        body.place_ids,
+        payload.user_id,
+        expected_version=_expected_version(if_match, body.expected_version),
     )
+    _set_etag(response, trip)
     return ApiResponse(data=TripOut.from_trip(trip))
 
 
@@ -109,12 +158,19 @@ async def remove_day_stop(
     trip_id: uuid.UUID,
     day: int,
     place_id: uuid.UUID,
+    response: Response,
     payload: TokenPayload = Depends(rate_limit_trip_edit),
     db: AsyncSession = Depends(get_db),
+    if_match: str | None = Header(default=None, alias="If-Match"),
 ) -> ApiResponse[TripOut]:
     trip = await TripService(db).remove_stop(
-        trip_id, day, place_id, payload.user_id
+        trip_id,
+        day,
+        place_id,
+        payload.user_id,
+        expected_version=_expected_version(if_match, None),
     )
+    _set_etag(response, trip)
     return ApiResponse(data=TripOut.from_trip(trip))
 
 
@@ -123,12 +179,19 @@ async def add_day_stop(
     trip_id: uuid.UUID,
     day: int,
     body: AddStopIn,
+    response: Response,
     payload: TokenPayload = Depends(rate_limit_trip_edit),
     db: AsyncSession = Depends(get_db),
+    if_match: str | None = Header(default=None, alias="If-Match"),
 ) -> ApiResponse[TripOut]:
     trip = await TripService(db).add_stop(
-        trip_id, day, body.place_id, payload.user_id
+        trip_id,
+        day,
+        body.place_id,
+        payload.user_id,
+        expected_version=_expected_version(if_match, body.expected_version),
     )
+    _set_etag(response, trip)
     return ApiResponse(data=TripOut.from_trip(trip))
 
 
@@ -136,8 +199,16 @@ async def add_day_stop(
 async def reoptimize_day(
     trip_id: uuid.UUID,
     day: int,
+    response: Response,
     payload: TokenPayload = Depends(rate_limit_trip_edit),
     db: AsyncSession = Depends(get_db),
+    if_match: str | None = Header(default=None, alias="If-Match"),
 ) -> ApiResponse[TripOut]:
-    trip = await TripService(db).reoptimize_day(trip_id, day, payload.user_id)
+    trip = await TripService(db).reoptimize_day(
+        trip_id,
+        day,
+        payload.user_id,
+        expected_version=_expected_version(if_match, None),
+    )
+    _set_etag(response, trip)
     return ApiResponse(data=TripOut.from_trip(trip))

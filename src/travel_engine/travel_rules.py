@@ -8,6 +8,7 @@ MAX_PLACES_PER_DAY = 6
 MIN_TRAVEL_BUFFER_MIN = 30
 MAX_DAILY_TRAVEL_MIN = 180
 DAY_START_TIME = "08:00"  # destination-local wall-clock; timezone-naive
+DAY_END_TIME = "16:00"  # eight hours after DAY_START_TIME; naive wall-clock, no timezone
 LUNCH_BREAK_START = "13:00"
 LUNCH_BREAK_MIN = 60
 MORNING_SLOT_LATEST_START = "10:30"
@@ -49,6 +50,42 @@ CATEGORY_WEIGHTS: dict[str, float] = {
     "nature": 1.1,
     "adventure": 1.2,
 }
+
+# ── Slice 4.1 candidate normalizer (comparison keys / dedup thresholds) ──
+NORMALIZER_PROXIMITY_M = 150.0
+NORMALIZER_MERGE_CONFIDENCE = 0.85
+# Per-rule confidences. A pair collapses only when its confidence is at or above
+# NORMALIZER_MERGE_CONFIDENCE (exact id always clears).
+NORMALIZER_CONF_EXACT_ID = 1.0
+NORMALIZER_CONF_NAME_PROXIMITY = 0.92
+NORMALIZER_CONF_ALIAS = 0.88
+NORMALIZER_CONF_PARENT_CHILD = 0.86
+# Tiny fixture-driven spelling variants (normalized name keys). Prefer candidate.aliases.
+NORMALIZER_ALIAS_PAIRS: list[tuple[str, str]] = [
+    ("ghoom monastery", "ghum monastery"),
+]
+CATEGORY_SYNONYMS: dict[str, str] = {
+    "view point": "viewpoint",
+    "view-point": "viewpoint",
+}
+
+# ── Slice 4.2 evidence-aware scoring (additive on v6.1 base; flag-gated) ──
+# Conservative defaults for unit directionality only; do not raise without golden evidence.
+SCORE_W_DIVERSITY = 0.15
+SCORE_W_GEO_FIT = 0.10
+SCORE_W_EVIDENCE = 0.05
+SCORE_W_DUP_PENALTY = -0.25
+SCORE_GEO_FIT_REF_KM = 5.0
+SCORE_EVIDENCE_CAP = 3
+SCORE_KEY_DIVERSITY = "diversity"
+SCORE_KEY_GEO_FIT = "geo_fit"
+SCORE_KEY_EVIDENCE = "evidence"
+SCORE_KEY_DUP_PENALTY = "dup_penalty"
+# Slice 7 reasoner boosts (injected map only). High stays below smallest interest weight.
+SCORE_W_PRIORITY_HIGH = 0.30
+SCORE_W_PRIORITY_MEDIUM = 0.15
+SCORE_W_PRIORITY_LOW = 0.0
+SCORE_KEY_REASONING_PRIORITY = "reasoning_priority"
 
 
 def visit_duration_min(category: str) -> int:

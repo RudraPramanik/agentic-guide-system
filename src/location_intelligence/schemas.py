@@ -39,7 +39,7 @@ class ResolvedLocation(BaseModel):
     lng: float
     country_code: str | None = None
     admin_area: str | None = None
-    provider: Literal["nominatim", "catalog"]
+    provider: Literal["nominatim", "catalog", "user"]
     provider_id: str | None = None
     confidence: float = Field(ge=0.0, le=1.0)
     bounding_box: list[float] | None = None  # [west, south, east, north]

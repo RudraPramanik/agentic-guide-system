@@ -1,0 +1,16 @@
+{
+  "destination": "Goa",
+  "note": "Checked-in sample for the ingestion report. Not a live catalog dump.",
+  "as_of": "2026-01-31",
+  "places": [
+    {
+      "id": "g1",
+      "name": "Calangute",
+      "category": "park",
+      "lat": 15.54,
+      "lng": 73.75,
+      "retrieved_at": "2026-01-15"
+    }
+  ],
+  "failures": []
+}

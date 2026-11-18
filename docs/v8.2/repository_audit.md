@@ -27,6 +27,8 @@ Status values: `implemented-tested`, `implemented-untested`, `partial`, `stub`, 
 | Place HTTP | implemented-tested | `src/places/router.py` | `list_places`, `get_place` | `tests/places/test_places_router.py::test_list_places_paginated` |
 | Place enrich | implemented-tested | `src/places/service.py` | `PlaceService.enrich_place` | `tests/places/test_place_enrichment.py::test_enrich_place_filters_vocab_and_never_writes_tags` |
 | Readiness function | implemented-tested | `src/destinations/readiness.py` | `compute_readiness` | `tests/destinations/test_readiness.py::test_compute_readiness_ready` |
+| Readiness V2 | implemented-tested | `src/destinations/readiness.py` | `compute_readiness_v2` | `tests/destinations/test_readiness_v2.py::test_ten_clustered_places_are_limited_for_three_days` |
+| Opening hours parser | implemented-tested | `src/places/opening_hours.py` | `parse_opening_hours` | `tests/places/test_opening_hours.py::test_weekday_only_stays_unknown` |
 | Destination readiness | implemented-tested | `src/destinations/service.py` | `DestinationService.get_readiness` | `tests/destinations/test_readiness_integration.py::test_get_readiness_reaches_ready_when_qdrant_up` |
 | Destination search | implemented-tested | `src/destinations/service.py` | `DestinationService.search` | `tests/destinations/test_destinations_service_search.py::test_search_geocode_none_raises_not_found` |
 | Qdrant client | implemented-tested | `src/search/client.py` | `ensure_places_collection` | `tests/search/test_client.py::test_ensure_fail_soft_on_qdrant_error` |
@@ -42,11 +44,13 @@ Imports under `src/travel_engine/` are `__future__`, stdlib, `pydantic`, and sib
 |---|---|---|---|---|
 | Protocols | implemented-tested | `src/travel_engine/protocols.py` | `RouteLeg`, `RoutingProvider` | `tests/travel_engine/test_route_optimizer.py::test_fake_matrix_complete_ordered_day` (uses `FakeRoutingProvider` against `RouteLeg`) |
 | Rules | implemented-tested | `src/travel_engine/travel_rules.py` | `visit_duration_min` | `tests/travel_engine/test_travel_rules.py::test_duration_keys_cover_p2_categories` |
-| Place selector | implemented-tested | `src/travel_engine/place_selector.py` | `select_places` | `tests/travel_engine/test_place_selector.py::test_multi_interest_outranks_single` |
-| Day allocator | implemented-tested | `src/travel_engine/day_allocator.py` | `allocate_days` | `tests/travel_engine/test_day_allocator.py::test_never_more_than_max_places_per_day` |
-| Route optimizer | implemented-tested | `src/travel_engine/route_optimizer.py` | `optimize_route` | `tests/travel_engine/test_route_optimizer.py::test_over_budget_records_dropped_stops` |
-| Schedule builder | implemented-tested | `src/travel_engine/schedule_builder.py` | `build_day_schedule` | `tests/travel_engine/test_schedule_builder.py::test_viewpoint_lands_in_morning_slot` |
+| Place selector | implemented-tested | `src/travel_engine/place_selector.py` | `select_places`, `rank_candidates` | `tests/travel_engine/test_place_selector.py::test_multi_interest_outranks_single`; V2: `test_v2_off_matches_legacy_totals` |
+| Candidate normalizer | implemented-tested | `src/travel_engine/candidate_normalizer.py` | `normalize_candidates` | `tests/travel_engine/test_candidate_normalizer.py::test_monastery_name_variants_collapse` |
+| Day allocator | implemented-tested | `src/travel_engine/day_allocator.py` | `allocate_days` | `tests/travel_engine/test_day_allocator_v2.py::test_far_cluster_does_not_join_a_near_day`; comparison `docs/v8.2/allocator_v2_comparison.md` (no cap miss) |
+| Route optimizer | implemented-tested | `src/travel_engine/route_optimizer.py` | `optimize_route` (`return_to_base` default false) | `tests/travel_engine/test_route_optimizer_return.py::test_return_mode_on_adds_last_stop_to_base` |
+| Schedule builder | implemented-tested | `src/travel_engine/schedule_builder.py` | `build_day_schedule` | `tests/travel_engine/test_schedule_v2.py::test_v2_hop_adds_buffer` |
 | Trip validator | implemented-tested | `src/travel_engine/trip_validator.py` | `validate_trip` | `tests/travel_engine/test_trip_validator.py::test_repeat_place_error` |
+| Findings | implemented-tested | `src/travel_engine/findings.py` | `collect_findings`, `FINDING_CODES` | `tests/travel_engine/test_findings.py::test_registry_is_the_sixteen_codes` |
 
 ### Planner, trips, evaluation, ownership
 
@@ -174,9 +178,9 @@ None of these are fields on `Settings`.
 |---|---|---|---|
 | `RUN_TRACKING_ENABLED` | blueprint-only | absent | S1 |
 | `LOCATION_V2_ENABLED` | `src/config.py` `Settings` | `false` (unread by planner until 3.4) | S3 |
-| `TRAVEL_ENGINE_V2_ENABLED` | blueprint-only | absent | S4 |
-| `VALIDATOR_V2_ENFORCE` | blueprint-only | absent | S4 |
-| `READINESS_V2_ENABLED` | blueprint-only | absent | S5 |
+| `TRAVEL_ENGINE_V2_ENABLED` | present | `Settings` default `false`; read by `rank_places`, `build_route` (including `allocate_days`), and `build_schedule`; injected into the pure engine | S4 4.1–4.3, 4.5 |
+| `VALIDATOR_V2_ENFORCE` | present | `Settings` default `false`; read only by `validate_itinerary`. False keeps the v6.1 publish bit and logs findings | S4 4.6 |
+| `READINESS_V2_ENABLED` | `src/config.py` `Settings` | `false` | S5 5.1–5.4 |
 | `CANONICAL_TRIP_V2_ENABLED` | blueprint-only | absent | S6 |
 | `REASONING_LAYER_ENABLED` | blueprint-only | absent | S7 |
 | `REASONING_SHADOW_SAMPLE_RATE` | blueprint-only | absent | S7 |
@@ -264,8 +268,8 @@ Absent means the checkout has no symbol. Path is the file that was inspected. St
 | `src/geo/media/` | deferred | `src/geo/` (no `media/` package) | absent | no test |
 | `planner_runs` table | deferred | `src/trips/models.py` | absent | no test |
 | Unique idempotency key | deferred | `src/trips/models.py` | absent | no test |
-| `trips.search_area` | deferred | `src/trips/models.py` `Trip` | absent | no test |
-| `trips.discovery_anchor` | deferred | `src/trips/models.py` `Trip` | absent | no test |
+| `trips.search_area` | implemented-tested | `src/trips/models.py` `Trip` | `Trip.search_area` | `tests/location_intelligence/` + planner area tests |
+| `trips.discovery_anchor` | implemented-tested | `src/trips/models.py` `Trip` | `Trip.discovery_anchor` | `tests/location_intelligence/` + planner area tests |
 | Stop status (`confirmed` / `suggested` / …) | deferred | `src/trips/models.py` `TripPlace` | absent | no test |
 | `trips.version` | deferred | `src/trips/models.py` `Trip` | absent | no test |
 | Feedback table | deferred | `src/evaluation/models.py` `TripEvaluation` | absent | no test |
@@ -273,7 +277,7 @@ Absent means the checkout has no symbol. Path is the file that was inspected. St
 | Lodging rows (`category=lodging`) | deferred | `src/geo/overpass.py` `_category_from_tags` | absent | no test |
 | Each §7.1 flag and §7.2 knob in the inventory above | deferred | `src/config.py` `Settings` | absent | no test |
 
-`Trip` stores `base_lat` / `base_lng` inside `preferences` JSON (`TripService.save_from_state`), not as `search_area` or `discovery_anchor`. `TripEvaluation` records generation quality (`user_saved`, `user_edited`, `tool_trace`). That is not a user-feedback table. `TripPlace` has `order_in_day` and no status field.
+`Trip` stores `base_lat` / `base_lng` inside `preferences` JSON (`TripService.save_from_state`). When `LOCATION_V2_ENABLED` is on, `discovery_anchor` and `search_area` are nullable JSONB columns (null when flag off). `TripEvaluation` records generation quality (`user_saved`, `user_edited`, `tool_trace`). That is not a user-feedback table. `TripPlace` has `order_in_day` and no status field.
 
 ## 7. Contradiction log
 
@@ -283,3 +287,25 @@ Absent means the checkout has no symbol. Path is the file that was inspected. St
 | `docs/FE_guide.md` §7 progress list | `tool_started` and `validation_done` are progress events | No emitter under `src/` sends those names. Live progress names are `preferences_done`, `phase_changed`, `tool_done`, `tool_batch_done`. The same guide section says a run may omit `tool_started` / `validation_done`. `openspec/specs/planner-sse-generate/spec.md` still says those names MUST be included. | `src/planner/graph/nodes/tool_executor.py` `tool_executor_node`; `docs/FE_guide.md` §7 |
 
 Audit continued after both rows. No ADR file was written.
+
+## 8. Slice 1–4 completeness exam (2026-11-18)
+
+Commands run at default flags. No `--update-baseline`.
+
+| Command | Result |
+|---|---|
+| `pytest tests/planner/runs -q` (with location and travel-engine) | 188 passed |
+| `pytest tests/trips tests/planner -k idempotent -q` | 8 passed, 193 deselected |
+| `pytest tests/location_intelligence -q` (same combined run) | included in the 188 |
+| `pytest tests/travel_engine -q` (same combined run) | included in the 188 |
+| `pytest tests/planner -q` | 150 passed |
+| `python scripts/run_evals.py --replay` | exit 0, `pass_rate=1.00` |
+
+Rows 4.4 and 4.7 are in that tree behind `TRAVEL_ENGINE_V2_ENABLED` (default false). The replay is the flag-off path, so it does not show a gain on duplicate rate, schedule feasibility, or coherence. The Slice 4 exit gate is not claimed.
+
+Still open, and not closed by this exam:
+
+- §11.2 case expansion. 17 golden files on disk (12 Darjeeling, 5 location). The S2 minimum is 24 cases and 3 destinations.
+- FE location picker (`v83-slice-3-6-location-picker`).
+- `VALIDATOR_V2_ENFORCE` soak. The default stays false.
+- Slice 5 and later. Not started here.

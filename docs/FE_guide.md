@@ -274,6 +274,16 @@ Auth vocabulary: **None** | **Optional** | **Required** (+ ownership notes).
 | GET | `/api/v1/places?destination_id=` | None | Bare `PaginatedResponse<PlaceOut>`; unknown destination → 404 |
 | GET | `/api/v1/places/{id}` | None | `ApiResponse<PlaceOut>` |
 
+### `locations` (Slice 3.5 — dark when `LOCATION_V2_ENABLED=false`)
+
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| POST | `/api/v1/locations/search` | None | Body `{ query }` (2–200 chars). `ApiResponse<LocationResolution>`. **HTTP 404** when the flag is off (do not call Nominatim). Does **not** upsert destinations. Rate limit **20/min/IP** (same budget as destinations search). |
+| POST | `/api/v1/locations/resolve` | None | Body `{ query, provider?, provider_id? }`. Without provider id → library auto-resolve (may be `ambiguous`). With provider id → confirms that candidate only (`anchor_not_confirmed` if missing). 404 when flag off. |
+| POST | `/api/v1/locations/search-area` | None | Body `{ anchor, radius_km?, polygon_geojson? }`. Returns `SearchArea`. 422 `oversized_admin` / `invalid_polygon` / `invalid_coordinates`. 404 when flag off. |
+
+**Compose-page contract (3.6):** Home and explore still use `GET /api/v1/destinations/resolve` to obtain `destination_id`. After that id is chosen, `/generate` may show a location panel when search does not 404: candidate list with **type labels**, selected anchor, editable radius only for radius/map-pin strategies, text preview of strategy / radius / `fallback_used` / description. **Anchor ≠ trip base** — never copy anchor lat/lng into `base_lat`/`base_lng`. Omit optional generate fields when search 404s.
+
 ### `planner`
 
 | Method | Path | Auth | Notes |
@@ -522,13 +532,25 @@ type PlaceOut = {
 };
 
 // Planner — src/planner/schemas.py
+type DiscoveryAnchorIn = {
+  canonical_name: string;
+  location_type: string;
+  lat: number;
+  lng: number;
+  provider: "nominatim" | "catalog" | "user";
+  query?: string | null;
+  provider_id?: string | null;
+};
+
 type PlanRequest = {
   destination_id: string;
   raw_input: string; // min length 1
   days?: number | null;
-  base_lat?: number | null;
+  base_lat?: number | null; // trip base / route start — not the discovery anchor
   base_lng?: number | null;
   accommodation_label?: string | null; // display-only; not a Trip column
+  discovery_anchor?: DiscoveryAnchorIn | null; // ignored when LOCATION_V2_ENABLED=false
+  radius_km?: number | null; // ignored when flag off; clamped server-side when on
 };
 
 // Trips — src/trips/schemas.py
@@ -544,6 +566,9 @@ type TripPlaceOut = {
   suggested_start_time: string | null;
   arrival_note: string | null;
   polyline: string | null;
+  // Present only when CANONICAL_TRIP_V2_ENABLED is true. Absent on flag-off JSON.
+  stop_status?: "confirmed" | "suggested" | "removed" | "user_added";
+  geometry_provenance?: "osrm" | "haversine_estimate" | "none" | null;
   name: string | null;
   lat: number | null;
   lng: number | null;
@@ -555,15 +580,20 @@ type TripOut = {
   session_id: string;
   destination_id: string;
   days: number;
-  preferences: Record<string, unknown>;
+  preferences: Record<string, unknown>; // may include base_lat/base_lng
+  // Present only when non-null (flag-on located trips). Absent on legacy rows.
+  discovery_anchor?: Record<string, unknown>;
+  search_area?: Record<string, unknown>;
   status: TripStatus;
+  // Present only when CANONICAL_TRIP_V2_ENABLED is true. Also sent as ETag `"<version>"`.
+  version?: number;
   created_at: string;
   updated_at: string;
-  places: TripPlaceOut[]; // may be empty on list endpoints
+  places: TripPlaceOut[]; // may be empty on list endpoints; flag on includes suggested and removed
 };
 
-type ReorderStopsIn = { place_ids: string[] };
-type AddStopIn = { place_id: string };
+type ReorderStopsIn = { place_ids: string[]; expected_version?: number | null };
+type AddStopIn = { place_id: string; expected_version?: number | null };
 ```
 
 ---
@@ -599,13 +629,19 @@ type TripLineFeature = {
   properties: {
     day: number;
     trip_id: string;
+    // Present only when CANONICAL_TRIP_V2_ENABLED is true and the line is a real road route.
+    geometry_provenance?: "osrm";
   };
 };
 ```
 
-MapLibre: use Point features for markers; LineString features for day routes. Missing polylines → points only (never invent coordinates).
+MapLibre: use Point features for markers; LineString features for day routes. Missing polylines → points only (never invent coordinates). A line is a road when `geometry_provenance` is `osrm` or the property is absent (flag-off lines). Do not draw a LineString for `haversine_estimate` or `none`.
 
-**Backend routing for lines:** `TripPlace.polyline` is populated at generate/edit via `RoutingProvider.route_polyline`. Default `ROUTING_BACKEND=haversine` yields Point-only GeoJSON. Operators who want road routes set `ROUTING_BACKEND=hybrid` (in-process travel times + OSRM geometry; fail-soft → still Point-only). Full `osrm` is optional/spike. Existing trips stay Point-only until regenerate or owner day reoptimize — no GeoJSON schema change. FE sibling OpenSpec: `trip-route-polyline-map`. `build_geojson` remains decode-only (no network I/O).
+**Canonical trip (`CANONICAL_TRIP_V2_ENABLED`, default false):** one id space. `places[].place_id` and GeoJSON `properties.place_id` are the place. `places[].id` and `properties.trip_place_id` are the stop row. Routed stops are `confirmed` and `user_added`. Flag on, GeoJSON points are routed rows only; a day LineString is emitted only when every routed leg that day is `osrm` and decodes, with `geometry_provenance: "osrm"`. A mixed day is points only. Suggested and removed rows stay on `TripOut.places` and are omitted from the map. Flag off JSON omits `version`, `stop_status`, and `geometry_provenance`, and GeoJSON stays points plus concatenated lines with no provenance property.
+
+**Optimistic edits:** when `version` is a number, send it as `If-Match: "<version>"` on the four day-edit routes. Do not also send `expected_version` in the JSON body. Success responses set `ETag` to the new quoted version. `409` `trip_version_conflict` means a stale edit; refetch the trip and GeoJSON. A legacy client that omits the version still succeeds and the server increments `version`. Flag off ignores `If-Match` and does not change `version`.
+
+**Backend routing for lines:** `TripPlace.polyline` is populated at generate/edit via `RoutingProvider.route_polyline`. Default `ROUTING_BACKEND=haversine` yields Point-only GeoJSON. Operators who want road routes set `ROUTING_BACKEND=hybrid` (in-process travel times + OSRM geometry; fail-soft → still Point-only). Full `osrm` is optional/spike. Existing trips stay Point-only until regenerate or owner day reoptimize. `build_geojson` remains decode-only (no network I/O). FE sibling OpenSpec: `v83-slice-6-6-trip-map-selection`.
 
 ---
 
@@ -621,6 +657,12 @@ MapLibre: use Point features for markers; LineString features for day routes. Mi
 | `forbidden` | 403 | Ownership / claim failure |
 | `rate_limit_exceeded` | 429 | Middleware or trip-edit limiter |
 | `validation_error` | 422 | Bad query/body |
+| `trip_edit_validation_failed` | 422 | Day edit failed validation; trip unchanged |
+| `version_header_mismatch` | 422 | `If-Match` and body `expected_version` both set and unequal; no mutation |
+| `invalid_if_match` | 422 | `If-Match` is not a quoted integer version |
+| `stop_already_on_trip` | 409 | Place is already a routed stop |
+| `trip_version_conflict` | 409 | Flag on, `If-Match` or `expected_version` ≠ `trips.version`; no edit event. Refetch trip + GeoJSON |
+| `stop_not_found_on_day` | 404 | Place is not a routed stop on that day |
 | `external_service_error` | 502 | Upstream geo/etc. |
 | `llm_unavailable` | 503 | LLM gateway down |
 | `db_unavailable` | 503 | DB health |

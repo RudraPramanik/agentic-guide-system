@@ -39,6 +39,7 @@ _MERGE_KEYS = frozenset(
         "itinerary",
         "dropped_stops",
         "search_top_k",
+        "v2_findings",
     }
 )
 
@@ -52,6 +53,68 @@ _REPLAN_TOOLS = frozenset(
         "accept_partial",
     }
 )
+
+_REPAIR_TOOLS = (
+    "reoptimize_routes",
+    "drop_weakest_stop",
+    "expand_poi_search",
+)
+
+
+def choose_replan_tool(findings: Any) -> str | None:
+    """One existing repair tool, or None. Never accept_partial. Never a new name."""
+    from src.travel_engine.findings import FINDING_CODES
+
+    if not isinstance(findings, list):
+        return None
+    order = {code: index for index, code in enumerate(FINDING_CODES)}
+    legal: list[tuple[int, int, str]] = []
+    for item in findings:
+        if not isinstance(item, dict):
+            continue
+        action = item.get("suggested_action")
+        if action not in _REPAIR_TOOLS:
+            continue
+        blocks = 0 if item.get("blocks_publish") else 1
+        code = str(item.get("code") or "")
+        legal.append((blocks, order.get(code, 10_000), str(action)))
+    if not legal:
+        return None
+    legal.sort()
+    return legal[0][2]
+
+
+def _replan_progress_signature(state: Any) -> str:
+    findings = state_get(state, "v2_findings") or []
+    codes: list[str] = []
+    if isinstance(findings, list):
+        for item in findings:
+            if isinstance(item, dict):
+                codes.append(str(item.get("code") or ""))
+    codes.sort()
+    dropped: list[str] = []
+    route = state_get(state, "route") or []
+    if isinstance(route, list):
+        for day in route:
+            if not isinstance(day, dict):
+                continue
+            for stop in day.get("dropped_stops") or []:
+                if isinstance(stop, dict):
+                    dropped.append(str(stop.get("place_id") or ""))
+    dropped.sort()
+    return f"codes={','.join(codes)}|drops={','.join(dropped)}"
+
+
+def _arm_replan(state: Any) -> None:
+    signature = _replan_progress_signature(state)
+    previous = state_get(state, "replan_progress_signature")
+    if previous is not None and previous == signature:
+        _state_set(state, "force_next_tool", "accept_partial")
+        return
+    _state_set(state, "replan_progress_signature", signature)
+    tool = choose_replan_tool(state_get(state, "v2_findings") or [])
+    if tool:
+        _state_set(state, "force_next_tool", tool)
 
 
 def _state_set(state: Any, key: str, value: Any) -> None:
@@ -160,6 +223,10 @@ def apply_tool_result(
                         existing.append(value)
                     _state_set(state, key, existing)
                 elif key in _MERGE_KEYS:
+                    if key == "v2_findings" and not bool(
+                        get_settings().TRAVEL_ENGINE_V2_ENABLED
+                    ):
+                        continue
                     _state_set(state, key, value)
 
         phase = _phase_from_state(state) or AgentPhase.DISCOVER
@@ -232,9 +299,13 @@ def maybe_transition_phase(
             if replan_count < max_replan:
                 _state_set(state, "agent_phase", AgentPhase.REPLAN)
                 _state_set(state, "replan_loop_count", replan_count + 1)
+                if bool(settings.TRAVEL_ENGINE_V2_ENABLED):
+                    _arm_replan(state)
                 return
             _state_set(state, "agent_phase", AgentPhase.WRAP_UP)
             _state_set(state, "abort_triggered", True)
+            if bool(settings.TRAVEL_ENGINE_V2_ENABLED):
+                _state_set(state, "force_next_tool", None)
             return
 
     if phase == AgentPhase.REPLAN:
@@ -364,6 +435,12 @@ def run_stuck_detector(state: Any) -> None:
             return
 
         if phase == AgentPhase.REPLAN:
+            if bool(settings.TRAVEL_ENGINE_V2_ENABLED):
+                _state_set(state, "force_next_tool", "accept_partial")
+                warnings.append("phase_stuck_replan_accept_partial")
+                _state_set(state, "warnings", warnings)
+                _state_set(state, "stuck_cycles", 0)
+                return
             _state_set(state, "abort_triggered", True)
             _state_set(state, "agent_phase", AgentPhase.WRAP_UP)
             warnings.append("phase_stuck_replan_abort")

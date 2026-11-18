@@ -157,3 +157,33 @@ The next Alembic revision after `a1b2c3d4e5f6` MUST create `planner_runs` and MU
 #### Scenario: Env load registers the table
 - **WHEN** `migrations/env.py` is loaded
 - **THEN** `planner_runs` is present in `Base.metadata`
+
+### Requirement: Trips gain nullable anchor and search-area columns
+An Alembic revision MUST add nullable JSONB columns `trips.discovery_anchor` and `trips.search_area`. It MUST NOT backfill existing rows, MUST NOT drop or retype any existing column, and MUST NOT change `preferences`. Downgrade MUST drop only those two columns. Upgrade then downgrade then upgrade MUST leave an existing trip's other columns intact, with the two new columns null after the second upgrade.
+
+#### Scenario: Upgrade adds the columns on an empty database
+- **WHEN** `alembic upgrade head` runs on an empty database
+- **THEN** `trips` has nullable `discovery_anchor` and `search_area` columns
+
+#### Scenario: Downgrade removes only the new columns
+- **WHEN** `alembic downgrade -1` runs after that upgrade
+- **THEN** those two columns are gone and the rest of `trips` remains
+
+#### Scenario: Existing rows are not rewritten
+- **WHEN** upgrade runs against a database that already has trips
+- **THEN** those rows keep their previous columns and the new columns are null
+
+### Requirement: Trips gain version and trip places gain status and provenance
+An Alembic revision MUST add `trips.version` as a non-null integer with server default 1, and MUST backfill existing rows to 1. It MUST add `trip_places.stop_status` as a non-null string enum of `confirmed`, `suggested`, `removed`, and `user_added`, with server default `confirmed`, and MUST backfill existing rows to `confirmed`. It MUST add nullable `trip_places.geometry_provenance` limited to `osrm`, `haversine_estimate`, and `none`. It MUST NOT drop or retype `polyline`, `order_in_day`, `place_id`, or the unique constraint on `(trip_id, place_id)`. Downgrade MUST drop only `trips.version`, `trip_places.stop_status`, and `trip_places.geometry_provenance`.
+
+#### Scenario: Upgrade adds the columns
+- **WHEN** `alembic upgrade head` runs
+- **THEN** `trips.version` exists and is non-null, `trip_places.stop_status` exists, and `trip_places.geometry_provenance` exists and is nullable
+
+#### Scenario: Existing stops stay confirmed
+- **WHEN** upgrade runs against a database that already has trip places
+- **THEN** those rows have `stop_status=confirmed` and `version=1` on their trip, and their polyline and order are unchanged
+
+#### Scenario: Downgrade removes only the new columns
+- **WHEN** `alembic downgrade -1` runs after that upgrade
+- **THEN** those three columns are gone and the unique `(trip_id, place_id)` constraint remains

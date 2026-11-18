@@ -36,6 +36,8 @@ _CACHEABLE_FIELDS = (
     "base_lng",
     "raw_input",
     "warnings",
+    "discovery_anchor",
+    "search_area",
 )
 
 
@@ -48,11 +50,17 @@ def build_planner_cache_key(
     body: PlanRequest,
     base_lat: float,
     base_lng: float,
+    *,
+    location_suffix: str = "",
+    reasoning_suffix: str = "",
 ) -> str:
     """
     Locked MVP key (step6 v2):
       sha256(f"{destination_id}:{sha256(normalized_raw_input)}:{days_or_0}:"
              f"{round(base_lat,3)}:{round(base_lng,3)}")
+    Optional location_suffix distinguishes flag-on anchors without changing the
+    empty-suffix material used by every legacy caller.
+    Optional reasoning_suffix (``reasoning-v1``) separates layer-on trips.
     """
     normalized = normalize_raw_input(body.raw_input)
     raw_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
@@ -61,6 +69,10 @@ def build_planner_cache_key(
         f"{body.destination_id}:{raw_hash}:{days_or_0}:"
         f"{round(base_lat, 3)}:{round(base_lng, 3)}"
     )
+    if location_suffix:
+        material = f"{material}:{location_suffix}"
+    if reasoning_suffix:
+        material = f"{material}:{reasoning_suffix}"
     digest = hashlib.sha256(material.encode("utf-8")).hexdigest()
     return f"{_KEY_PREFIX}{digest}"
 
@@ -85,12 +97,21 @@ async def maybe_get_cached_state(
     body: PlanRequest,
     base_lat: float,
     base_lng: float,
+    *,
+    location_suffix: str = "",
+    reasoning_suffix: str = "",
 ) -> dict[str, Any] | None:
     """
     Lookup cached TravelState subset for PlanRequest + resolved base coords.
     Backend errors → miss (None). Never raises.
     """
-    key = build_planner_cache_key(body, base_lat, base_lng)
+    key = build_planner_cache_key(
+        body,
+        base_lat,
+        base_lng,
+        location_suffix=location_suffix,
+        reasoning_suffix=reasoning_suffix,
+    )
     try:
         raw = await get_cache_backend().get(key)
     except Exception as exc:
@@ -113,12 +134,21 @@ async def maybe_set_cached_state(
     base_lat: float,
     base_lng: float,
     state: dict[str, Any],
+    *,
+    location_suffix: str = "",
+    reasoning_suffix: str = "",
 ) -> None:
     """Best-effort cache write after a successful fresh generation. Never raises."""
     subset = _cacheable_subset(state)
     if subset is None:
         return
-    key = build_planner_cache_key(body, base_lat, base_lng)
+    key = build_planner_cache_key(
+        body,
+        base_lat,
+        base_lng,
+        location_suffix=location_suffix,
+        reasoning_suffix=reasoning_suffix,
+    )
     ttl = get_settings().PLANNER_CACHE_TTL_SECONDS
     try:
         payload = json.dumps(subset, default=str)

@@ -424,6 +424,7 @@ Error code catalog for toasts: **`FE_guide.md` §16**.
 
 #### 3.1 Compose `PlanRequest`
 - Fields: `destination_id`, `raw_input` (min 1), optional `days`, `base_lat`/`base_lng`, `accommodation_label`
+- Slice 3.6 (flag-gated): optional `discovery_anchor` + `radius_km` when `POST /api/v1/locations/search` is available. Home/explore still resolve `destination_id` via `GET /api/v1/destinations/resolve`. Compose panel: type-labeled candidates, selected anchor, radius control (radius/map-pin only), text search-area preview, **anchor ≠ base**. Hide panel and omit new fields on HTTP 404 (flag off). Never copy anchor into `base_lat`/`base_lng`.
 - 🏗️ Form + Zod mirror of `FE_guide.md` §14 (typed against `types/generated/api.d.ts`)
 - 🚨 Invalid client → no fetch
 - ✅ Validation errors visible
